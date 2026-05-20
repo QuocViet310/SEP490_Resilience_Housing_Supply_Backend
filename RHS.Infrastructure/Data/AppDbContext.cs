@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using RHS.Domain.Entities;
+using RHS.Infrastructure.Configurations;
 
 namespace RHS.Infrastructure.Data;
 
@@ -12,10 +13,16 @@ public class AppDbContext : DbContext
     public DbSet<User> Users { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
     public DbSet<OtpCode> OtpCodes { get; set; }
+    public DbSet<HousingProject> HousingProjects { get; set; }
+    public DbSet<HousingProjectStatus> HousingProjectStatuses { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // Apply configurations
+        modelBuilder.ApplyConfiguration(new HousingProjectStatusConfiguration());
+        modelBuilder.ApplyConfiguration(new HousingProjectConfiguration());
 
         // User Configuration
         modelBuilder.Entity<User>(entity =>
