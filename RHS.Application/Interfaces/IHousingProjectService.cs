@@ -6,4 +6,15 @@ public interface IHousingProjectService
 {
     Task<PagedResultDto<HousingProjectResponseDto>> GetHousingProjectsAsync(
         HousingProjectFilterRequestDto request);
+
+    Task<HousingProjectResponseDto> CreateHousingProjectAsync(
+        CreateHousingProjectRequestDto request);
+
+    Task<HousingProjectResponseDto> UpdateHousingProjectAsync(
+        Guid id,
+        UpdateHousingProjectRequestDto request);
+
+    Task DeleteHousingProjectAsync(Guid id);
+
+    Task<HousingProjectResponseDto> GetHousingProjectByIdAsync(Guid id);
 }
