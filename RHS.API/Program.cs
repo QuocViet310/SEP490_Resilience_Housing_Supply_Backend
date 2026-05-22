@@ -54,6 +54,7 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IFileStorageService, FileStorageService>();
 
 // CORS Configuration
 builder.Services.AddCors(options =>
