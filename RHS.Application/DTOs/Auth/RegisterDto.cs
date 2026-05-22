@@ -19,6 +19,14 @@ public class RegisterDto
     [Phone(ErrorMessage = "Số điện thoại không hợp lệ")]
     public string? PhoneNumber { get; set; }
 
+    [StringLength(20, ErrorMessage = "Số CMND/CCCD không được vượt quá 20 ký tự")]
+    public string? CitizenId { get; set; }
+
+    public DateTime? DateOfBirth { get; set; }
+
+    [StringLength(500, ErrorMessage = "Địa chỉ không được vượt quá 500 ký tự")]
+    public string? Address { get; set; }
+
     [Required(ErrorMessage = "Vai trò là bắt buộc")]
     public string Role { get; set; } = "Applicant";
 }

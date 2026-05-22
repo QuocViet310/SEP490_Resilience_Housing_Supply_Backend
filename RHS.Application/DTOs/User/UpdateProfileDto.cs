@@ -11,4 +11,9 @@ public class UpdateProfileDto
     [Phone(ErrorMessage = "Số điện thoại không hợp lệ")]
     [StringLength(15, ErrorMessage = "Số điện thoại không được vượt quá 15 ký tự")]
     public string? PhoneNumber { get; set; }
+
+    public DateTime? DateOfBirth { get; set; }
+
+    [StringLength(500, ErrorMessage = "Địa chỉ không được vượt quá 500 ký tự")]
+    public string? Address { get; set; }
 }

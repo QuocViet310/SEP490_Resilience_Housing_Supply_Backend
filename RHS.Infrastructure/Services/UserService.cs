@@ -27,6 +27,9 @@ public class UserService : IUserService
             Email = user.Email,
             FullName = user.FullName,
             PhoneNumber = user.PhoneNumber,
+            CitizenId = user.CitizenId,
+            DateOfBirth = user.DateOfBirth,
+            Address = user.Address,
             Role = user.Role?.RoleName ?? "Applicant",
             IsEmailVerified = user.IsEmailVerified,
             ProfileImageUrl = user.ProfileImageUrl,
@@ -44,9 +47,11 @@ public class UserService : IUserService
             return null;
         }
 
-        // Update user information
+        // Update user information (CitizenId is NOT updatable - it's an identity field)
         user.FullName = updateProfileDto.FullName;
         user.PhoneNumber = updateProfileDto.PhoneNumber;
+        user.DateOfBirth = updateProfileDto.DateOfBirth;
+        user.Address = updateProfileDto.Address;
 
         await _userRepository.UpdateAsync(user);
 
@@ -56,6 +61,9 @@ public class UserService : IUserService
             Email = user.Email,
             FullName = user.FullName,
             PhoneNumber = user.PhoneNumber,
+            CitizenId = user.CitizenId,
+            DateOfBirth = user.DateOfBirth,
+            Address = user.Address,
             Role = user.Role?.RoleName ?? "Applicant",
             IsEmailVerified = user.IsEmailVerified,
             ProfileImageUrl = user.ProfileImageUrl,

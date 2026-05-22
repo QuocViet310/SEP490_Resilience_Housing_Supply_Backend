@@ -66,6 +66,9 @@ public class AuthService : IAuthService
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(registerDto.Password),
             FullName = registerDto.FullName,
             PhoneNumber = registerDto.PhoneNumber,
+            CitizenId = registerDto.CitizenId,
+            DateOfBirth = registerDto.DateOfBirth,
+            Address = registerDto.Address,
             Status = "Active",
             IsEmailVerified = false,
             CreatedAt = DateTime.UtcNow
@@ -101,6 +104,7 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
+                Address = user.Address,
                 Role = role.RoleName,
                 IsEmailVerified = user.IsEmailVerified
             }
@@ -177,6 +181,7 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
+                Address = user.Address,
                 Role = role?.RoleName ?? "Applicant",
                 IsEmailVerified = user.IsEmailVerified,
                 ProfileImageUrl = user.ProfileImageUrl
@@ -304,6 +309,7 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
+                Address = user.Address,
                 Role = userRole?.RoleName ?? "Applicant",
                 IsEmailVerified = user.IsEmailVerified,
                 ProfileImageUrl = user.ProfileImageUrl
@@ -377,6 +383,7 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
+                Address = user.Address,
                 Role = role?.RoleName ?? "Applicant",
                 IsEmailVerified = user.IsEmailVerified,
                 ProfileImageUrl = user.ProfileImageUrl
@@ -438,6 +445,7 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
+                Address = user.Address,
                 Role = role?.RoleName ?? "Applicant",
                 IsEmailVerified = user.IsEmailVerified,
                 ProfileImageUrl = user.ProfileImageUrl
@@ -607,6 +615,7 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
+                Address = user.Address,
                 Role = role?.RoleName ?? "Applicant",
                 IsEmailVerified = user.IsEmailVerified,
                 ProfileImageUrl = user.ProfileImageUrl
@@ -697,6 +706,7 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
+                Address = user.Address,
                 Role = role?.RoleName ?? "Applicant",
                 IsEmailVerified = user.IsEmailVerified,
                 ProfileImageUrl = user.ProfileImageUrl
