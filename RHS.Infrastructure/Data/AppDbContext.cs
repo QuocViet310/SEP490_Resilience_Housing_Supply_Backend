@@ -81,12 +81,25 @@ public class AppDbContext : DbContext
 
     private void SeedRoles(ModelBuilder modelBuilder)
     {
+        // Guest không cần role vì không cần đăng nhập
+        // Chỉ seed 3 roles cho authenticated users
         var roles = new[]
         {
-            new Role { Id = Guid.Parse("11111111-1111-1111-1111-111111111111"), RoleName = "Guest" },
-            new Role { Id = Guid.Parse("22222222-2222-2222-2222-222222222222"), RoleName = "Applicant" },
-            new Role { Id = Guid.Parse("33333333-3333-3333-3333-333333333333"), RoleName = "Housing Authority Officer" },
-            new Role { Id = Guid.Parse("44444444-4444-4444-4444-444444444444"), RoleName = "System Administrator" }
+            new Role 
+            { 
+                Id = Guid.Parse("22222222-2222-2222-2222-222222222222"), 
+                RoleName = "Applicant"
+            },
+            new Role 
+            { 
+                Id = Guid.Parse("33333333-3333-3333-3333-333333333333"), 
+                RoleName = "Housing Authority Officer"
+            },
+            new Role 
+            { 
+                Id = Guid.Parse("44444444-4444-4444-4444-444444444444"), 
+                RoleName = "System Administrator"
+            }
         };
 
         modelBuilder.Entity<Role>().HasData(roles);
