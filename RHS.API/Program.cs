@@ -46,6 +46,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 builder.Services.AddScoped<IOtpRepository, OtpRepository>();
+builder.Services.AddScoped<IHousingProjectRepository, HousingProjectRepository>();
 builder.Services.AddScoped<IRoleRepository, RoleRepository>();
 
 // Dependency Injection - Services
@@ -54,6 +55,7 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IHousingProjectService, HousingProjectService>();
 builder.Services.AddScoped<IFileStorageService, FileStorageService>();
 
 // CORS Configuration
@@ -115,35 +117,57 @@ using (var scope = app.Services.CreateScope())
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     try
     {
-        // Get connection info
-        var connectionString = dbContext.Database.GetConnectionString();
-        var databaseName = dbContext.Database.GetDbConnection().Database;
-        
-        Console.WriteLine($"📊 Connection String: {connectionString}");
-        Console.WriteLine($"📊 Database Name: {databaseName}");
-        
-        // Ensure database and tables are created
-        var created = dbContext.Database.EnsureCreated();
-        if (created)
+        Console.WriteLine("🔄 Applying migrations...");
+        dbContext.Database.Migrate();
+        Console.WriteLine("✅ Migrations applied successfully!");
+
+        // Seed default project statuses if they don't exist
+        if (!dbContext.HousingProjectStatuses.Any())
         {
-            Console.WriteLine("✅ Database and tables created successfully!");
-        }
-        else
-        {
-            Console.WriteLine("ℹ️ Database already exists");
-            // Try to apply migrations
-            dbContext.Database.Migrate();
-            Console.WriteLine("✅ Migrations applied successfully!");
+            var statuses = new[]
+            {
+                new RHS.Domain.Entities.HousingProjectStatus
+                {
+                    Id = Guid.NewGuid(),
+                    StatusName = "Upcoming",
+                    StatusCode = "UPCOMING",
+                    CreatedAt = DateTime.UtcNow
+                },
+                new RHS.Domain.Entities.HousingProjectStatus
+                {
+                    Id = Guid.NewGuid(),
+                    StatusName = "Open",
+                    StatusCode = "OPEN",
+                    CreatedAt = DateTime.UtcNow
+                },
+                new RHS.Domain.Entities.HousingProjectStatus
+                {
+                    Id = Guid.NewGuid(),
+                    StatusName = "Closed",
+                    StatusCode = "CLOSED",
+                    CreatedAt = DateTime.UtcNow
+                },
+                new RHS.Domain.Entities.HousingProjectStatus
+                {
+                    Id = Guid.NewGuid(),
+                    StatusName = "Full",
+                    StatusCode = "FULL",
+                    CreatedAt = DateTime.UtcNow
+                }
+            };
+
+            dbContext.HousingProjectStatuses.AddRange(statuses);
+            dbContext.SaveChanges();
+            Console.WriteLine("✅ Seeded project statuses!");
         }
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"❌ Database setup failed: {ex.Message}");
-        Console.WriteLine($"❌ Inner Exception: {ex.InnerException?.Message}");
+        Console.WriteLine($"❌ Database setup error: {ex.Message}");
     }
 }
 
-// Configure the HTTP request pipeline.
+// Configure HTTP pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -151,12 +175,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
 app.UseCors("AllowAll");
-
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
-
 app.Run();
