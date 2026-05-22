@@ -79,6 +79,105 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
+    /// Upload ảnh đại diện cho user hiện tại
+    /// </summary>
+    [HttpPost("profile/image")]
+    public async Task<IActionResult> UploadProfileImage([FromForm] UploadProfileImageDto uploadDto)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
+        {
+            return Unauthorized(new { success = false, message = "Token không hợp lệ" });
+        }
+
+        try
+        {
+            var updatedProfile = await _userService.UploadProfileImageAsync(userId, uploadDto.Image);
+
+            if (updatedProfile == null)
+            {
+                return NotFound(new { success = false, message = "Người dùng không tồn tại" });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                message = "Upload ảnh đại diện thành công",
+                user = updatedProfile
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Xóa ảnh đại diện của user hiện tại
+    /// </summary>
+    [HttpDelete("profile/image")]
+    public async Task<IActionResult> DeleteProfileImage()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
+        {
+            return Unauthorized(new { success = false, message = "Token không hợp lệ" });
+        }
+
+        var result = await _userService.DeleteProfileImageAsync(userId);
+
+        if (!result)
+        {
+            return NotFound(new { success = false, message = "Không tìm thấy ảnh đại diện để xóa" });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            message = "Xóa ảnh đại diện thành công"
+        });
+    }
+
+    /// <summary>
+    /// Xóa tài khoản của user hiện tại (soft delete)
+    /// </summary>
+    [HttpPost("delete-account")]
+    public async Task<IActionResult> DeleteAccount([FromBody] DeleteAccountDto deleteAccountDto)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
+        {
+            return Unauthorized(new { success = false, message = "Token không hợp lệ" });
+        }
+
+        var result = await _userService.DeleteAccountAsync(userId, deleteAccountDto.Password, deleteAccountDto.Reason);
+
+        if (!result)
+        {
+            return BadRequest(new { success = false, message = "Mật khẩu không chính xác hoặc tài khoản không tồn tại" });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            message = "Xóa tài khoản thành công. Chúng tôi rất tiếc khi bạn rời đi."
+        });
+    }
+
+    /// <summary>
     /// Test endpoint chỉ dành cho Admin
     /// </summary>
     [HttpGet("admin-only")]

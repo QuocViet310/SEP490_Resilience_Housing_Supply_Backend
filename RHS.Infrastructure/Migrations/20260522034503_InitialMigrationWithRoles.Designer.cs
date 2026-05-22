@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using RHS.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using RHS.Infrastructure.Data;
 namespace RHS.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260522034503_InitialMigrationWithRoles")]
+    partial class InitialMigrationWithRoles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -22,109 +25,6 @@ namespace RHS.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("RHS.Domain.Entities.HousingProject", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Address")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<int>("AvailableUnits")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<string>("District")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<Guid>("HousingProjectStatusId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
-
-                    b.Property<double>("MaxArea")
-                        .HasColumnType("float");
-
-                    b.Property<decimal>("MaxPrice")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<double>("MinArea")
-                        .HasColumnType("float");
-
-                    b.Property<decimal>("MinPrice")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("ProjectName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.Property<string>("Province")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("ThumbnailUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("District");
-
-                    b.HasIndex("HousingProjectStatusId");
-
-                    b.HasIndex("Province");
-
-                    b.ToTable("HousingProjects", (string)null);
-                });
-
-            modelBuilder.Entity("RHS.Domain.Entities.HousingProjectStatus", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("StatusCode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("StatusName")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StatusCode")
-                        .IsUnique();
-
-                    b.ToTable("HousingProjectStatuses", (string)null);
-                });
             modelBuilder.Entity("RHS.Domain.Entities.OtpVerification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -215,6 +115,11 @@ namespace RHS.Infrastructure.Migrations
                     b.HasData(
                         new
                         {
+                            Id = new Guid("11111111-1111-1111-1111-111111111111"),
+                            RoleName = "Guest"
+                        },
+                        new
+                        {
                             Id = new Guid("22222222-2222-2222-2222-222222222222"),
                             RoleName = "Applicant"
                         },
@@ -302,16 +207,6 @@ namespace RHS.Infrastructure.Migrations
                     b.ToTable("Users", (string)null);
                 });
 
-            modelBuilder.Entity("RHS.Domain.Entities.HousingProject", b =>
-                {
-                    b.HasOne("RHS.Domain.Entities.HousingProjectStatus", "HousingProjectStatus")
-                        .WithMany("HousingProjects")
-                        .HasForeignKey("HousingProjectStatusId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("HousingProjectStatus");
-                });
             modelBuilder.Entity("RHS.Domain.Entities.OtpVerification", b =>
                 {
                     b.HasOne("RHS.Domain.Entities.User", "User")
@@ -332,11 +227,6 @@ namespace RHS.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("RHS.Domain.Entities.HousingProjectStatus", b =>
-                {
-                    b.Navigation("HousingProjects");
                 });
 
             modelBuilder.Entity("RHS.Domain.Entities.User", b =>

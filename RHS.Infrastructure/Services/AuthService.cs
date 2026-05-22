@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using RHS.Application.DTOs.Auth;
 using RHS.Application.Interfaces;
 using RHS.Domain.Entities;
+using RHS.Domain.Constants;
 using BCrypt.Net;
 
 namespace RHS.Infrastructure.Services;
@@ -11,6 +12,7 @@ public class AuthService : IAuthService
     private readonly IUserRepository _userRepository;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IOtpRepository _otpRepository;
+    private readonly IRoleRepository _roleRepository;
     private readonly ITokenService _tokenService;
     private readonly IGoogleAuthService _googleAuthService;
     private readonly IOtpService _otpService;
@@ -20,6 +22,7 @@ public class AuthService : IAuthService
         IUserRepository userRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IOtpRepository otpRepository,
+        IRoleRepository roleRepository,
         ITokenService tokenService,
         IGoogleAuthService googleAuthService,
         IOtpService otpService,
@@ -28,6 +31,7 @@ public class AuthService : IAuthService
         _userRepository = userRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _otpRepository = otpRepository;
+        _roleRepository = roleRepository;
         _tokenService = tokenService;
         _googleAuthService = googleAuthService;
         _otpService = otpService;
@@ -46,17 +50,27 @@ public class AuthService : IAuthService
             };
         }
 
+        // Get role
+        var role = await _roleRepository.GetByNameAsync(registerDto.Role);
+        if (role == null)
+        {
+            role = await _roleRepository.GetByIdAsync(RoleConstants.ApplicantId);
+        }
+
         // Create new user
         var user = new User
         {
             Id = Guid.NewGuid(),
+            RoleId = role!.Id,
             Email = registerDto.Email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(registerDto.Password),
             FullName = registerDto.FullName,
             PhoneNumber = registerDto.PhoneNumber,
-            Role = registerDto.Role,
+            CitizenId = registerDto.CitizenId,
+            DateOfBirth = registerDto.DateOfBirth,
+            Address = registerDto.Address,
+            Status = "Active",
             IsEmailVerified = false,
-            IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -66,15 +80,14 @@ public class AuthService : IAuthService
         var otpCode = _otpService.GenerateOtp();
         var otpExpirationMinutes = int.Parse(_configuration["OtpSettings:ExpirationMinutes"]!);
 
-        var otp = new OtpCode
+        var otp = new OtpVerification
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
-            Code = otpCode,
-            Purpose = "Registration",
-            ExpiresAt = DateTime.UtcNow.AddMinutes(otpExpirationMinutes),
-            CreatedAt = DateTime.UtcNow,
-            IsUsed = false
+            OtpCode = otpCode,
+            ExpiredAt = DateTime.UtcNow.AddMinutes(otpExpirationMinutes),
+            Verified = false,
+            CreatedAt = DateTime.UtcNow
         };
 
         await _otpRepository.CreateAsync(otp);
@@ -91,7 +104,8 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
-                Role = user.Role,
+                Address = user.Address,
+                Role = role.RoleName,
                 IsEmailVerified = user.IsEmailVerified
             }
         };
@@ -111,7 +125,7 @@ public class AuthService : IAuthService
             };
         }
 
-        if (!user.IsActive)
+        if (user.Status != "Active")
         {
             return new AuthResponseDto
             {
@@ -133,6 +147,9 @@ public class AuthService : IAuthService
         // Update last login
         user.LastLoginAt = DateTime.UtcNow;
         await _userRepository.UpdateAsync(user);
+
+        // Load role
+        var role = await _roleRepository.GetByIdAsync(user.RoleId);
 
         // Generate tokens
         var accessToken = _tokenService.GenerateAccessToken(user);
@@ -164,7 +181,8 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
-                Role = user.Role,
+                Address = user.Address,
+                Role = role?.RoleName ?? "Applicant",
                 IsEmailVerified = user.IsEmailVerified,
                 ProfileImageUrl = user.ProfileImageUrl
             }
@@ -194,11 +212,8 @@ public class AuthService : IAuthService
 
             if (existingUser != null)
             {
-                // CASE 1: Email exists - Link Google account to existing user
-                // This allows users who registered with email/password to also login with Google
-                
-                // Check if account is active
-                if (!existingUser.IsActive)
+                // Link Google account to existing user
+                if (existingUser.Status != "Active")
                 {
                     return new AuthResponseDto
                     {
@@ -207,9 +222,8 @@ public class AuthService : IAuthService
                     };
                 }
 
-                // Link Google account and auto-verify email
                 existingUser.GoogleId = payload.Subject;
-                existingUser.IsEmailVerified = true; // Google has verified this email
+                existingUser.IsEmailVerified = true;
                 existingUser.ProfileImageUrl = payload.Picture ?? existingUser.ProfileImageUrl;
                 existingUser.LastLoginAt = DateTime.UtcNow;
                 await _userRepository.UpdateAsync(existingUser);
@@ -218,16 +232,22 @@ public class AuthService : IAuthService
             }
             else
             {
-                // CASE 2: New user - Create account via Google
+                // Create new user via Google
+                var role = await _roleRepository.GetByNameAsync(googleLoginDto.Role);
+                if (role == null)
+                {
+                    role = await _roleRepository.GetByIdAsync(RoleConstants.ApplicantId);
+                }
+
                 user = new User
                 {
                     Id = Guid.NewGuid(),
+                    RoleId = role!.Id,
                     Email = payload.Email,
                     FullName = payload.Name,
                     GoogleId = payload.Subject,
-                    Role = googleLoginDto.Role,
-                    IsEmailVerified = true, // Google has verified this email
-                    IsActive = true,
+                    Status = "Active",
+                    IsEmailVerified = true,
                     ProfileImageUrl = payload.Picture,
                     CreatedAt = DateTime.UtcNow,
                     LastLoginAt = DateTime.UtcNow
@@ -238,10 +258,8 @@ public class AuthService : IAuthService
         }
         else
         {
-            // CASE 3: User exists with GoogleId - Regular Google login
-            
-            // Check if account is active
-            if (!user.IsActive)
+            // Regular Google login
+            if (user.Status != "Active")
             {
                 return new AuthResponseDto
                 {
@@ -250,7 +268,6 @@ public class AuthService : IAuthService
                 };
             }
 
-            // Update last login and profile image if changed
             user.LastLoginAt = DateTime.UtcNow;
             if (!string.IsNullOrEmpty(payload.Picture))
             {
@@ -258,6 +275,9 @@ public class AuthService : IAuthService
             }
             await _userRepository.UpdateAsync(user);
         }
+
+        // Load role
+        var userRole = await _roleRepository.GetByIdAsync(user.RoleId);
 
         // Generate tokens
         var accessToken = _tokenService.GenerateAccessToken(user);
@@ -289,7 +309,8 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
-                Role = user.Role,
+                Address = user.Address,
+                Role = userRole?.RoleName ?? "Applicant",
                 IsEmailVerified = user.IsEmailVerified,
                 ProfileImageUrl = user.ProfileImageUrl
             }
@@ -309,7 +330,7 @@ public class AuthService : IAuthService
             };
         }
 
-        var otp = await _otpRepository.GetValidOtpAsync(user.Id, verifyOtpDto.OtpCode, "Registration");
+        var otp = await _otpRepository.GetValidOtpAsync(user.Id, verifyOtpDto.OtpCode);
 
         if (otp == null)
         {
@@ -320,15 +341,17 @@ public class AuthService : IAuthService
             };
         }
 
-        // Mark OTP as used
-        otp.IsUsed = true;
-        otp.UsedAt = DateTime.UtcNow;
+        // Mark OTP as verified
+        otp.Verified = true;
         await _otpRepository.UpdateAsync(otp);
 
         // Verify user email
         user.IsEmailVerified = true;
         user.LastLoginAt = DateTime.UtcNow;
         await _userRepository.UpdateAsync(user);
+
+        // Load role
+        var role = await _roleRepository.GetByIdAsync(user.RoleId);
 
         // Generate tokens
         var accessToken = _tokenService.GenerateAccessToken(user);
@@ -360,7 +383,8 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
-                Role = user.Role,
+                Address = user.Address,
+                Role = role?.RoleName ?? "Applicant",
                 IsEmailVerified = user.IsEmailVerified,
                 ProfileImageUrl = user.ProfileImageUrl
             }
@@ -381,6 +405,9 @@ public class AuthService : IAuthService
         }
 
         var user = tokenEntity.User;
+
+        // Load role
+        var role = await _roleRepository.GetByIdAsync(user.RoleId);
 
         // Generate new tokens
         var newAccessToken = _tokenService.GenerateAccessToken(user);
@@ -418,7 +445,8 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
-                Role = user.Role,
+                Address = user.Address,
+                Role = role?.RoleName ?? "Applicant",
                 IsEmailVerified = user.IsEmailVerified,
                 ProfileImageUrl = user.ProfileImageUrl
             }
@@ -451,21 +479,20 @@ public class AuthService : IAuthService
         }
 
         // Invalidate all previous OTPs
-        await _otpRepository.InvalidateAllUserOtpsAsync(user.Id, "Registration");
+        await _otpRepository.InvalidateAllUserOtpsAsync(user.Id);
 
         // Generate and send new OTP
         var otpCode = _otpService.GenerateOtp();
         var otpExpirationMinutes = int.Parse(_configuration["OtpSettings:ExpirationMinutes"]!);
 
-        var otp = new OtpCode
+        var otp = new OtpVerification
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
-            Code = otpCode,
-            Purpose = "Registration",
-            ExpiresAt = DateTime.UtcNow.AddMinutes(otpExpirationMinutes),
-            CreatedAt = DateTime.UtcNow,
-            IsUsed = false
+            OtpCode = otpCode,
+            ExpiredAt = DateTime.UtcNow.AddMinutes(otpExpirationMinutes),
+            Verified = false,
+            CreatedAt = DateTime.UtcNow
         };
 
         await _otpRepository.CreateAsync(otp);
@@ -478,32 +505,31 @@ public class AuthService : IAuthService
 
         if (user == null)
         {
-            // Không tiết lộ thông tin user có tồn tại hay không (security best practice)
+            // Don't reveal if user exists
             return true;
         }
 
-        // Không cho phép reset password cho tài khoản Google-only
+        // Don't allow password reset for Google-only accounts
         if (user.GoogleId != null && user.PasswordHash == null)
         {
             return false;
         }
 
         // Invalidate all previous password reset OTPs
-        await _otpRepository.InvalidateAllUserOtpsAsync(user.Id, "PasswordReset");
+        await _otpRepository.InvalidateAllUserOtpsAsync(user.Id);
 
         // Generate and send new OTP
         var otpCode = _otpService.GenerateOtp();
         var otpExpirationMinutes = int.Parse(_configuration["OtpSettings:ExpirationMinutes"]!);
 
-        var otp = new OtpCode
+        var otp = new OtpVerification
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
-            Code = otpCode,
-            Purpose = "PasswordReset",
-            ExpiresAt = DateTime.UtcNow.AddMinutes(otpExpirationMinutes),
-            CreatedAt = DateTime.UtcNow,
-            IsUsed = false
+            OtpCode = otpCode,
+            ExpiredAt = DateTime.UtcNow.AddMinutes(otpExpirationMinutes),
+            Verified = false,
+            CreatedAt = DateTime.UtcNow
         };
 
         await _otpRepository.CreateAsync(otp);
@@ -523,7 +549,7 @@ public class AuthService : IAuthService
             };
         }
 
-        // Không cho phép reset password cho tài khoản Google-only
+        // Don't allow password reset for Google-only accounts
         if (user.GoogleId != null && user.PasswordHash == null)
         {
             return new AuthResponseDto
@@ -533,7 +559,7 @@ public class AuthService : IAuthService
             };
         }
 
-        var otp = await _otpRepository.GetValidOtpAsync(user.Id, resetPasswordDto.OtpCode, "PasswordReset");
+        var otp = await _otpRepository.GetValidOtpAsync(user.Id, resetPasswordDto.OtpCode);
 
         if (otp == null)
         {
@@ -544,9 +570,8 @@ public class AuthService : IAuthService
             };
         }
 
-        // Mark OTP as used
-        otp.IsUsed = true;
-        otp.UsedAt = DateTime.UtcNow;
+        // Mark OTP as verified
+        otp.Verified = true;
         await _otpRepository.UpdateAsync(otp);
 
         // Update password
@@ -556,6 +581,9 @@ public class AuthService : IAuthService
 
         // Revoke all existing refresh tokens for security
         await _refreshTokenRepository.RevokeAllUserTokensAsync(user.Id);
+
+        // Load role
+        var role = await _roleRepository.GetByIdAsync(user.RoleId);
 
         // Generate new tokens
         var accessToken = _tokenService.GenerateAccessToken(user);
@@ -587,7 +615,8 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
-                Role = user.Role,
+                Address = user.Address,
+                Role = role?.RoleName ?? "Applicant",
                 IsEmailVerified = user.IsEmailVerified,
                 ProfileImageUrl = user.ProfileImageUrl
             }
@@ -607,7 +636,7 @@ public class AuthService : IAuthService
             };
         }
 
-        // Không cho phép đổi password cho tài khoản Google-only
+        // Don't allow password change for Google-only accounts
         if (user.GoogleId != null && user.PasswordHash == null)
         {
             return new AuthResponseDto
@@ -641,8 +670,11 @@ public class AuthService : IAuthService
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(changePasswordDto.NewPassword);
         await _userRepository.UpdateAsync(user);
 
-        // Revoke all existing refresh tokens for security (logout from all devices)
+        // Revoke all existing refresh tokens for security
         await _refreshTokenRepository.RevokeAllUserTokensAsync(user.Id);
+
+        // Load role
+        var role = await _roleRepository.GetByIdAsync(user.RoleId);
 
         // Generate new tokens
         var accessToken = _tokenService.GenerateAccessToken(user);
@@ -674,7 +706,8 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
-                Role = user.Role,
+                Address = user.Address,
+                Role = role?.RoleName ?? "Applicant",
                 IsEmailVerified = user.IsEmailVerified,
                 ProfileImageUrl = user.ProfileImageUrl
             }

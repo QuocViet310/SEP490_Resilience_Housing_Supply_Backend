@@ -14,40 +14,38 @@ public class OtpRepository : IOtpRepository
         _context = context;
     }
 
-    public async Task<OtpCode?> GetValidOtpAsync(Guid userId, string code, string purpose)
+    public async Task<OtpVerification?> GetValidOtpAsync(Guid userId, string code)
     {
-        return await _context.OtpCodes
+        return await _context.OtpVerifications
             .FirstOrDefaultAsync(otp => 
                 otp.UserId == userId && 
-                otp.Code == code && 
-                otp.Purpose == purpose &&
-                !otp.IsUsed && 
-                otp.ExpiresAt > DateTime.UtcNow);
+                otp.OtpCode == code && 
+                !otp.Verified && 
+                otp.ExpiredAt > DateTime.UtcNow);
     }
 
-    public async Task<OtpCode> CreateAsync(OtpCode otpCode)
+    public async Task<OtpVerification> CreateAsync(OtpVerification otpVerification)
     {
-        _context.OtpCodes.Add(otpCode);
+        _context.OtpVerifications.Add(otpVerification);
         await _context.SaveChangesAsync();
-        return otpCode;
+        return otpVerification;
     }
 
-    public async Task UpdateAsync(OtpCode otpCode)
+    public async Task UpdateAsync(OtpVerification otpVerification)
     {
-        _context.OtpCodes.Update(otpCode);
+        _context.OtpVerifications.Update(otpVerification);
         await _context.SaveChangesAsync();
     }
 
-    public async Task InvalidateAllUserOtpsAsync(Guid userId, string purpose)
+    public async Task InvalidateAllUserOtpsAsync(Guid userId)
     {
-        var otps = await _context.OtpCodes
-            .Where(otp => otp.UserId == userId && otp.Purpose == purpose && !otp.IsUsed)
+        var otps = await _context.OtpVerifications
+            .Where(otp => otp.UserId == userId && !otp.Verified)
             .ToListAsync();
 
         foreach (var otp in otps)
         {
-            otp.IsUsed = true;
-            otp.UsedAt = DateTime.UtcNow;
+            otp.Verified = true;
         }
 
         await _context.SaveChangesAsync();

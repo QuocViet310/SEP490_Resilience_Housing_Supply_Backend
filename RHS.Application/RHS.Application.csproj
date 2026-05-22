@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Google.Apis.Auth" Version="1.74.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Http" Version="2.3.10" />
   </ItemGroup>
 
   <ItemGroup>

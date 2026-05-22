@@ -24,12 +24,15 @@ public class TokenService : ITokenService
             Encoding.UTF8.GetBytes(_configuration["JwtSettings:SecretKey"]!));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
+        // Get role name from navigation property or default
+        var roleName = user.Role?.RoleName ?? "Applicant";
+
         var claims = new[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
             new Claim(ClaimTypes.Name, user.FullName),
-            new Claim(ClaimTypes.Role, user.Role),
+            new Claim(ClaimTypes.Role, roleName),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 

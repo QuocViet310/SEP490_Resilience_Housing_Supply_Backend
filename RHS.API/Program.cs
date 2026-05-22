@@ -47,6 +47,7 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 builder.Services.AddScoped<IOtpRepository, OtpRepository>();
 builder.Services.AddScoped<IHousingProjectRepository, HousingProjectRepository>();
+builder.Services.AddScoped<IRoleRepository, RoleRepository>();
 
 // Dependency Injection - Services
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -55,6 +56,7 @@ builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IHousingProjectService, HousingProjectService>();
+builder.Services.AddScoped<IFileStorageService, FileStorageService>();
 
 // CORS Configuration
 builder.Services.AddCors(options =>

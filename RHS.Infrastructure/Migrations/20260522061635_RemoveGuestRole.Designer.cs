@@ -12,8 +12,8 @@ using RHS.Infrastructure.Data;
 namespace RHS.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260515045740_InitialAuthenticationSetup")]
-    partial class InitialAuthenticationSetup
+    [Migration("20260522061635_RemoveGuestRole")]
+    partial class RemoveGuestRole
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -25,42 +25,34 @@ namespace RHS.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("RHS.Domain.Entities.OtpCode", b =>
+            modelBuilder.Entity("RHS.Domain.Entities.OtpVerification", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("Code")
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OtpCode")
                         .IsRequired()
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)");
 
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsUsed")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Purpose")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime?>("UsedAt")
-                        .HasColumnType("datetime2");
-
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("Verified")
+                        .HasColumnType("bit");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "Code", "Purpose");
+                    b.HasIndex("UserId", "OtpCode");
 
-                    b.ToTable("OtpCodes");
+                    b.ToTable("OtpVerifications", (string)null);
                 });
 
             modelBuilder.Entity("RHS.Domain.Entities.RefreshToken", b =>
@@ -99,7 +91,43 @@ namespace RHS.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("RefreshTokens");
+                    b.ToTable("RefreshTokens", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.Role", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RoleName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RoleName")
+                        .IsUnique();
+
+                    b.ToTable("Roles", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("22222222-2222-2222-2222-222222222222"),
+                            RoleName = "Applicant"
+                        },
+                        new
+                        {
+                            Id = new Guid("33333333-3333-3333-3333-333333333333"),
+                            RoleName = "Housing Authority Officer"
+                        },
+                        new
+                        {
+                            Id = new Guid("44444444-4444-4444-4444-444444444444"),
+                            RoleName = "System Administrator"
+                        });
                 });
 
             modelBuilder.Entity("RHS.Domain.Entities.User", b =>
@@ -108,7 +136,17 @@ namespace RHS.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("Address")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CitizenId")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DateOfBirth")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Email")
@@ -122,10 +160,7 @@ namespace RHS.Infrastructure.Migrations
                         .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("GoogleId")
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsEmailVerified")
                         .HasColumnType("bit");
@@ -137,14 +172,17 @@ namespace RHS.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("PhoneNumber")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
+                        .HasMaxLength(15)
+                        .HasColumnType("nvarchar(15)");
 
                     b.Property<string>("ProfileImageUrl")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<string>("Role")
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -154,18 +192,20 @@ namespace RHS.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CitizenId");
+
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.HasIndex("GoogleId");
+                    b.HasIndex("RoleId");
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 
-            modelBuilder.Entity("RHS.Domain.Entities.OtpCode", b =>
+            modelBuilder.Entity("RHS.Domain.Entities.OtpVerification", b =>
                 {
                     b.HasOne("RHS.Domain.Entities.User", "User")
-                        .WithMany("OtpCodes")
+                        .WithMany("OtpVerifications")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -186,7 +226,23 @@ namespace RHS.Infrastructure.Migrations
 
             modelBuilder.Entity("RHS.Domain.Entities.User", b =>
                 {
-                    b.Navigation("OtpCodes");
+                    b.HasOne("RHS.Domain.Entities.Role", "Role")
+                        .WithMany("Users")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Role");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.Role", b =>
+                {
+                    b.Navigation("Users");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.User", b =>
+                {
+                    b.Navigation("OtpVerifications");
 
                     b.Navigation("RefreshTokens");
                 });

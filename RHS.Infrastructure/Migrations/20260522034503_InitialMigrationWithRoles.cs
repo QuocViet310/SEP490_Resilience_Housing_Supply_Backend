@@ -3,55 +3,76 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
+#pragma warning disable CA1814 // Prefer jagged arrays over multidimensional
+
 namespace RHS.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialAuthenticationSetup : Migration
+    public partial class InitialMigrationWithRoles : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
+                name: "Roles",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    RoleName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Roles", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Users",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Email = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
-                    PasswordHash = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    RoleId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     FullName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    PhoneNumber = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
-                    Role = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    IsEmailVerified = table.Column<bool>(type: "bit", nullable: false),
-                    IsActive = table.Column<bool>(type: "bit", nullable: false),
-                    GoogleId = table.Column<string>(type: "nvarchar(450)", nullable: true),
-                    ProfileImageUrl = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    Email = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
+                    PhoneNumber = table.Column<string>(type: "nvarchar(15)", maxLength: 15, nullable: true),
+                    PasswordHash = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    CitizenId = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
+                    DateOfBirth = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    Address = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    IsEmailVerified = table.Column<bool>(type: "bit", nullable: false),
+                    GoogleId = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ProfileImageUrl = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     LastLoginAt = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Users", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Users_Roles_RoleId",
+                        column: x => x.RoleId,
+                        principalTable: "Roles",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
-                name: "OtpCodes",
+                name: "OtpVerifications",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Code = table.Column<string>(type: "nvarchar(10)", maxLength: 10, nullable: false),
-                    Purpose = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    ExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    IsUsed = table.Column<bool>(type: "bit", nullable: false),
-                    UsedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
+                    OtpCode = table.Column<string>(type: "nvarchar(10)", maxLength: 10, nullable: false),
+                    ExpiredAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Verified = table.Column<bool>(type: "bit", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_OtpCodes", x => x.Id);
+                    table.PrimaryKey("PK_OtpVerifications", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_OtpCodes_Users_UserId",
+                        name: "FK_OtpVerifications_Users_UserId",
                         column: x => x.UserId,
                         principalTable: "Users",
                         principalColumn: "Id",
@@ -82,10 +103,21 @@ namespace RHS.Infrastructure.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.InsertData(
+                table: "Roles",
+                columns: new[] { "Id", "RoleName" },
+                values: new object[,]
+                {
+                    { new Guid("11111111-1111-1111-1111-111111111111"), "Guest" },
+                    { new Guid("22222222-2222-2222-2222-222222222222"), "Applicant" },
+                    { new Guid("33333333-3333-3333-3333-333333333333"), "Housing Authority Officer" },
+                    { new Guid("44444444-4444-4444-4444-444444444444"), "System Administrator" }
+                });
+
             migrationBuilder.CreateIndex(
-                name: "IX_OtpCodes_UserId_Code_Purpose",
-                table: "OtpCodes",
-                columns: new[] { "UserId", "Code", "Purpose" });
+                name: "IX_OtpVerifications_UserId_OtpCode",
+                table: "OtpVerifications",
+                columns: new[] { "UserId", "OtpCode" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_RefreshTokens_Token",
@@ -99,28 +131,42 @@ namespace RHS.Infrastructure.Migrations
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Roles_RoleName",
+                table: "Roles",
+                column: "RoleName",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_CitizenId",
+                table: "Users",
+                column: "CitizenId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Users_Email",
                 table: "Users",
                 column: "Email",
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_Users_GoogleId",
+                name: "IX_Users_RoleId",
                 table: "Users",
-                column: "GoogleId");
+                column: "RoleId");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "OtpCodes");
+                name: "OtpVerifications");
 
             migrationBuilder.DropTable(
                 name: "RefreshTokens");
 
             migrationBuilder.DropTable(
                 name: "Users");
+
+            migrationBuilder.DropTable(
+                name: "Roles");
         }
     }
 }
