@@ -58,6 +58,11 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IHousingProjectService, HousingProjectService>();
 builder.Services.AddScoped<IFileStorageService, FileStorageService>();
 
+// Dependency Injection - VNPay Payment
+builder.Services.AddScoped<IVnPayService, VnPayService>();
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
+
 // CORS Configuration
 builder.Services.AddCors(options =>
 {

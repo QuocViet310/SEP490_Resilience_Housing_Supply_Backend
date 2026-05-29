@@ -25,4 +25,5 @@ public class User
     public Role Role { get; set; } = null!;
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
     public ICollection<OtpVerification> OtpVerifications { get; set; } = new List<OtpVerification>();
+    public ICollection<Payment> Payments { get; set; } = new List<Payment>();
 }

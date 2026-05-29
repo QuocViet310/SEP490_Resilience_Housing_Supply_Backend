@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Configurations;
 
@@ -16,6 +16,7 @@ public class AppDbContext : DbContext
     public DbSet<HousingProject> HousingProjects { get; set; }
     public DbSet<HousingProjectStatus> HousingProjectStatuses { get; set; }
     public DbSet<OtpVerification> OtpVerifications { get; set; }
+    public DbSet<Payment> Payments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -77,6 +78,30 @@ public class AppDbContext : DbContext
             
             entity.HasOne(e => e.User)
                 .WithMany(u => u.OtpVerifications)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Payment Configuration
+        modelBuilder.Entity<Payment>(entity =>
+        {
+            entity.ToTable("Payments");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.OrderId).IsUnique();
+            entity.Property(e => e.OrderId).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.OrderInfo).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.VnpResponseCode).HasMaxLength(10);
+            entity.Property(e => e.VnpTransactionNo).HasMaxLength(50);
+            entity.Property(e => e.VnpBankCode).HasMaxLength(20);
+            entity.Property(e => e.VnpBankTranNo).HasMaxLength(50);
+            entity.Property(e => e.VnpCardType).HasMaxLength(20);
+            entity.Property(e => e.VnpPayDate).HasMaxLength(20);
+            entity.Property(e => e.VnpTransactionStatus).HasMaxLength(10);
+
+            entity.HasOne(e => e.User)
+                .WithMany(u => u.Payments)
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
