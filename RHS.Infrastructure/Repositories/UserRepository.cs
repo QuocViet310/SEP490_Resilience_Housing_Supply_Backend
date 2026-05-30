@@ -54,4 +54,69 @@ public class UserRepository : IUserRepository
         return await _context.Users
             .AnyAsync(u => u.Email.ToLower() == email.ToLower());
     }
-}
+
+    public async Task<List<User>> GetByRoleAsync(string roleName)
+    {
+        return await _context.Users
+            .Include(u => u.Role)
+            .Where(u => u.Role.RoleName == roleName)
+            .ToListAsync();
+    }
+
+    public async Task<List<User>> GetStaffListAsync(int pageNumber, int pageSize, string? role = null, string? status = null, string? searchTerm = null)
+    {
+        var query = _context.Users
+            .Include(u => u.Role)
+            .AsQueryable();
+
+        // Filter by role
+        if (!string.IsNullOrEmpty(role))
+        {
+            query = query.Where(u => u.Role.RoleName == role);
+        }
+
+        // Filter by status
+        if (!string.IsNullOrEmpty(status))
+        {
+            query = query.Where(u => u.Status == status);
+        }
+
+        // Search by email or full name
+        if (!string.IsNullOrEmpty(searchTerm))
+        {
+            searchTerm = searchTerm.ToLower();
+            query = query.Where(u => u.Email.ToLower().Contains(searchTerm) || u.FullName.ToLower().Contains(searchTerm));
+        }
+
+        return await query
+            .OrderByDescending(u => u.CreatedAt)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+    }
+
+    public async Task<int> GetStaffCountAsync(string? role = null, string? status = null, string? searchTerm = null)
+    {
+        var query = _context.Users.AsQueryable();
+
+        // Filter by role
+        if (!string.IsNullOrEmpty(role))
+        {
+            query = query.Where(u => u.Role.RoleName == role);
+        }
+
+        // Filter by status
+        if (!string.IsNullOrEmpty(status))
+        {
+            query = query.Where(u => u.Status == status);
+        }
+
+        // Search by email or full name
+        if (!string.IsNullOrEmpty(searchTerm))
+        {
+            searchTerm = searchTerm.ToLower();
+            query = query.Where(u => u.Email.ToLower().Contains(searchTerm) || u.FullName.ToLower().Contains(searchTerm));
+        }
+
+        return await query.CountAsync();
+    }

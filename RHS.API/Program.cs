@@ -57,6 +57,7 @@ builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IHousingProjectService, HousingProjectService>();
 builder.Services.AddScoped<IFileStorageService, FileStorageService>();
+builder.Services.AddScoped<IAdminService, AdminService>();
 
 // Dependency Injection - VNPay Payment
 builder.Services.AddScoped<IVnPayService, VnPayService>();
