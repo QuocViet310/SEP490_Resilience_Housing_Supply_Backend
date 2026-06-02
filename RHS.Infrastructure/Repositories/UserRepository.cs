@@ -120,3 +120,4 @@ public class UserRepository : IUserRepository
 
         return await query.CountAsync();
     }
+}

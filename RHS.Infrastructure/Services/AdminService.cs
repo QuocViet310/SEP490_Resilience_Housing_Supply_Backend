@@ -69,7 +69,7 @@ public class AdminService : IAdminService
             CitizenId = createStaffDto.CitizenId,
             DateOfBirth = createStaffDto.DateOfBirth,
             Address = createStaffDto.Address,
-            PasswordHash = BCrypt.HashPassword(createStaffDto.TemporaryPassword),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(createStaffDto.TemporaryPassword),
             Status = "Active",
             IsEmailVerified = true, // Staff được tạo bởi Admin không cần verify
             CreatedAt = DateTime.UtcNow
@@ -302,7 +302,7 @@ public class AdminService : IAdminService
         if (staff == null)
             throw new InvalidOperationException($"Không tìm thấy cán bộ với ID {staffId}");
 
-        staff.PasswordHash = BCrypt.HashPassword(newPassword);
+        staff.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
         staff.UpdatedAt = DateTime.UtcNow;
 
         await _userRepository.UpdateAsync(staff);

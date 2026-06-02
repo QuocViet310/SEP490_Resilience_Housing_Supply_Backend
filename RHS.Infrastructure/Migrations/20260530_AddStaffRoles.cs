@@ -13,6 +13,7 @@ namespace RHS.Infrastructure.Migrations
             migrationBuilder.InsertData(
                 table: "Roles",
                 columns: new[] { "Id", "RoleName" },
+                columnTypes: new[] { "uniqueidentifier", "nvarchar(100)" },
                 values: new object[,]
                 {
                     { new Guid("55555555-5555-5555-5555-555555555555"), "Ward Manager" },

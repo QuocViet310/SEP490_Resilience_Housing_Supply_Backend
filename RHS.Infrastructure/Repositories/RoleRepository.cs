@@ -30,4 +30,11 @@ public class RoleRepository : IRoleRepository
     {
         return await _context.Roles.ToListAsync();
     }
+
+    public async Task<Role> CreateAsync(Role role)
+    {
+        _context.Roles.Add(role);
+        await _context.SaveChangesAsync();
+        return role;
+    }
 }
