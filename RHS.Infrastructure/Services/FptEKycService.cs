@@ -91,14 +91,54 @@ public sealed class FptEKycService : IEKycService
         return MapToOcrResponse(rawResponse);
     }
 
-    // ── Commit 6: Face Match stub (sẽ hoàn thiện ở commit tiếp theo) ─────
+    // ── Commit 6: Face Match Implementation ─────────────────────────────
 
     /// <inheritdoc/>
-    public Task<FaceMatchResponse> MatchFaceAsync(
+    public async Task<FaceMatchResponse> MatchFaceAsync(
         FaceMatchRequest  request,
         CancellationToken cancellationToken = default)
-        => throw new NotImplementedException(
-            "MatchFaceAsync sẽ được triển khai ở Commit 6.");
+    {
+        // Bước 1: Validate cả hai file ảnh trước khi gọi API
+        await _fileValidator.ValidateAsync(request.FaceImage,   nameof(request.FaceImage));
+        await _fileValidator.ValidateAsync(request.IdCardImage, nameof(request.IdCardImage));
+
+        _logger.LogInformation(
+            "Bắt đầu gọi FPT AI Face Match API: selfie='{FaceName}', CCCD='{IdName}'.",
+            request.FaceImage.FileName, request.IdCardImage.FileName);
+
+        // Bước 2: Xây dựng multipart/form-data với 2 ảnh dưới key "file[]"
+        using var content = await BuildFaceMatchFormDataAsync(request.FaceImage, request.IdCardImage);
+
+        // Bước 3: Gọi FPT AI Face Match endpoint
+        var rawResponse = await PostToFptAiAsync<FptFaceMatchRawResponse>(
+            endpoint:          _options.FaceMatchEndpoint,
+            content:           content,
+            operationName:     "FaceMatch",
+            cancellationToken: cancellationToken);
+
+        // Bước 4: Kiểm tra FPT AI trả về có nhận diện được 2 khuôn mặt không
+        var isBothFace = ParseBoolString(rawResponse.IsBothFace);
+        if (!isBothFace)
+        {
+            _logger.LogWarning(
+                "FPT AI FaceMatch: Không phát hiện đủ 2 khuôn mặt trong ảnh. " +
+                "isBothFace='{IsBothFace}'.", rawResponse.IsBothFace);
+
+            throw new EKycIntegrationException(
+                EKycIntegrationException.CodeApiError,
+                "Một hoặc cả hai ảnh không chứa khuôn mặt hợp lệ. " +
+                "Vui lòng chụp lại ảnh rõ hơn.");
+        }
+
+        // Bước 5: Map raw response → application DTO
+        var result = MapToFaceMatchResponse(rawResponse);
+
+        _logger.LogInformation(
+            "FPT AI Face Match hoàn tất. IsMatch={IsMatch}, Similarity={Similarity:F4}.",
+            result.IsMatch, result.Similarity);
+
+        return result;
+    }
 
     // ── Private helpers ───────────────────────────────────────────────────
 
@@ -225,13 +265,62 @@ public sealed class FptEKycService : IEKycService
         };
     }
 
+    // ── Private helpers (Face Match) ──────────────────────────────────────
+
+    /// <summary>
+    /// Xây dựng multipart/form-data gửi 2 ảnh lên FPT AI Face Match.
+    /// FPT AI yêu cầu cả 2 ảnh đều dùng key "file[]".
+    /// </summary>
+    private static async Task<MultipartFormDataContent> BuildFaceMatchFormDataAsync(
+        IFormFile faceImage,
+        IFormFile idCardImage)
+    {
+        var formData = new MultipartFormDataContent();
+
+        // Ảnh thứ 1: selfie
+        var faceStream = new MemoryStream();
+        await faceImage.CopyToAsync(faceStream);
+        faceStream.Position = 0;
+        var faceContent = new StreamContent(faceStream);
+        faceContent.Headers.ContentType = new MediaTypeHeaderValue(faceImage.ContentType);
+        formData.Add(faceContent, "file[]", faceImage.FileName);
+
+        // Ảnh thứ 2: ảnh chân dung trên CCCD
+        var idStream = new MemoryStream();
+        await idCardImage.CopyToAsync(idStream);
+        idStream.Position = 0;
+        var idContent = new StreamContent(idStream);
+        idContent.Headers.ContentType = new MediaTypeHeaderValue(idCardImage.ContentType);
+        formData.Add(idContent, "file[]", idCardImage.FileName);
+
+        return formData;
+    }
+
+    /// <summary>Map raw FPT AI Face Match response → application DTO.</summary>
+    private static FaceMatchResponse MapToFaceMatchResponse(FptFaceMatchRawResponse raw)
+        => new()
+        {
+            Code       = raw.Code,
+            IsMatch    = ParseBoolString(raw.IsMatch),
+            Similarity = raw.Similarity,
+            IsBothFace = ParseBoolString(raw.IsBothFace),
+            RequestId  = raw.RequestId
+        };
+
+    /// <summary>
+    /// FPT AI trả về "true"/"false" dạng string thay vì boolean.
+    /// Method này parse an toàn, mặc định false nếu giá trị không hợp lệ.
+    /// </summary>
+    private static bool ParseBoolString(string? value)
+        => string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+
     // ── Raw JSON models (private: chi tiết triển khai, không lộ ra ngoài) ─
 
     private sealed record FptOcrRawResponse
     {
-        [JsonPropertyName("errorCode")]    public int               ErrorCode    { get; init; }
-        [JsonPropertyName("errorMessage")] public string            ErrorMessage { get; init; } = string.Empty;
-        [JsonPropertyName("data")]         public List<FptOcrRawData> Data       { get; init; } = [];
+        [JsonPropertyName("errorCode")]    public int                 ErrorCode    { get; init; }
+        [JsonPropertyName("errorMessage")] public string              ErrorMessage { get; init; } = string.Empty;
+        [JsonPropertyName("data")]         public List<FptOcrRawData> Data         { get; init; } = [];
     }
 
     private sealed record FptOcrRawData
@@ -248,5 +337,18 @@ public sealed class FptEKycService : IEKycService
         [JsonPropertyName("issue_loc")]     public string IssueLoc     { get; init; } = string.Empty;
         [JsonPropertyName("type")]          public string Type         { get; init; } = string.Empty;
         [JsonPropertyName("overall_score")] public double OverallScore { get; init; }
+    }
+
+    /// <summary>
+    /// Raw JSON model cho FPT AI Face Match response.
+    /// Lưu ý: "isMatch" và "isBothFace" là string "true"/"false", không phải bool.
+    /// </summary>
+    private sealed record FptFaceMatchRawResponse
+    {
+        [JsonPropertyName("code")]       public string Code       { get; init; } = string.Empty;
+        [JsonPropertyName("isMatch")]    public string IsMatch    { get; init; } = string.Empty;
+        [JsonPropertyName("similarity")] public double Similarity { get; init; }
+        [JsonPropertyName("isBothFace")] public string IsBothFace { get; init; } = string.Empty;
+        [JsonPropertyName("requestId")]  public string RequestId  { get; init; } = string.Empty;
     }
 }
