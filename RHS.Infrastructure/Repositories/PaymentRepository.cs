@@ -37,6 +37,7 @@ public class PaymentRepository : IPaymentRepository
     {
         return await _context.Payments
             .Include(p => p.User)
+            .Include(p => p.HousingProject)
             .FirstOrDefaultAsync(p => p.OrderId == orderId);
     }
 
@@ -45,6 +46,7 @@ public class PaymentRepository : IPaymentRepository
     {
         return await _context.Payments
             .Include(p => p.User)
+            .Include(p => p.HousingProject)
             .FirstOrDefaultAsync(p => p.Id == id);
     }
 
@@ -52,6 +54,7 @@ public class PaymentRepository : IPaymentRepository
     public async Task<IEnumerable<Payment>> GetByUserIdAsync(Guid userId)
     {
         return await _context.Payments
+            .Include(p => p.HousingProject)
             .Where(p => p.UserId == userId)
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync();

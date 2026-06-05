@@ -67,6 +67,9 @@ public class HousingProjectConfiguration : IEntityTypeConfiguration<HousingProje
             .HasForeignKey(x => x.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // Payment relationship - many projects can have many payments
+        // This will be configured on Payment side as foreign key
+
         // Query filter for soft delete
         builder.HasQueryFilter(x => !x.IsDeleted);
 

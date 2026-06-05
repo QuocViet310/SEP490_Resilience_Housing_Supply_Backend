@@ -7,6 +7,9 @@ public class Payment
     /// <summary>Người dùng thực hiện thanh toán</summary>
     public Guid UserId { get; set; }
 
+    /// <summary>Dự án nhà ở liên kết (nếu có)</summary>
+    public Guid? HousingProjectId { get; set; }
+
     /// <summary>Mã đơn hàng nội bộ (duy nhất, dùng cho vnp_TxnRef)</summary>
     public string OrderId { get; set; } = string.Empty;
 
@@ -46,4 +49,6 @@ public class Payment
 
     // ── Navigation ───────────────────────────────────────────────────────
     public User User { get; set; } = null!;
+
+    public HousingProject? HousingProject { get; set; }
 }
