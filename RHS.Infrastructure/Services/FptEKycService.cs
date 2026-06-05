@@ -140,6 +140,40 @@ public sealed class FptEKycService : IEKycService
         return result;
     }
 
+    // ── Commit 3 (Liveness): Liveness Detection Implementation ───────────
+
+    /// <inheritdoc/>
+    public async Task<LivenessDetectionResponse> DetectLivenessAsync(
+        LivenessDetectionRequest request,
+        CancellationToken        cancellationToken = default)
+    {
+        // Bước 1: Validate file ảnh selfie (tái sử dụng EKycFileValidator đã có)
+        await _fileValidator.ValidateAsync(request.FaceImage, nameof(request.FaceImage));
+
+        _logger.LogInformation(
+            "Bắt đầu gọi FPT AI Liveness Detection API cho file '{FileName}' ({Size} bytes).",
+            request.FaceImage.FileName, request.FaceImage.Length);
+
+        // Bước 2: Build multipart/form-data (tái sử dụng BuildImageFormDataAsync đã có)
+        using var content = await BuildImageFormDataAsync(request.FaceImage, "image");
+
+        // Bước 3: Gọi FPT AI Liveness endpoint (tái sử dụng PostToFptAiAsync đã có)
+        var rawResponse = await PostToFptAiAsync<FptLivenessRawResponse>(
+            endpoint:          _options.LivenessEndpoint,
+            content:           content,
+            operationName:     "Liveness",
+            cancellationToken: cancellationToken);
+
+        // Bước 4: Map raw response → application DTO
+        var result = MapToLivenessResponse(rawResponse);
+
+        _logger.LogInformation(
+            "FPT AI Liveness Detection hoàn tất. IsLive={IsLive}, Score={Score:F4}.",
+            result.IsLive, result.LivenessScore);
+
+        return result;
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────
 
     /// <summary>
@@ -351,4 +385,26 @@ public sealed class FptEKycService : IEKycService
         [JsonPropertyName("isBothFace")] public string IsBothFace { get; init; } = string.Empty;
         [JsonPropertyName("requestId")]  public string RequestId  { get; init; } = string.Empty;
     }
+
+    /// <summary>
+    /// Raw JSON model cho FPT AI Liveness Detection response.
+    /// Lưu ý: "liveness" là string "true"/"false" — tương tự pattern của FaceMatch.
+    /// </summary>
+    private sealed record FptLivenessRawResponse
+    {
+        [JsonPropertyName("code")]     public string Code     { get; init; } = string.Empty;
+        [JsonPropertyName("liveness")] public string IsLive   { get; init; } = string.Empty;
+        [JsonPropertyName("score")]    public double Score    { get; init; }
+        [JsonPropertyName("message")] public string Message  { get; init; } = string.Empty;
+    }
+
+    /// <summary>Map raw FPT AI Liveness response → application DTO.</summary>
+    private static LivenessDetectionResponse MapToLivenessResponse(FptLivenessRawResponse raw)
+        => new()
+        {
+            Code          = raw.Code,
+            IsLive        = ParseBoolString(raw.IsLive),
+            LivenessScore = raw.Score,
+            Message       = raw.Message
+        };
 }
