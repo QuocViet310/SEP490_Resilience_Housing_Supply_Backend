@@ -25,3 +25,17 @@ public sealed record FaceMatchRequest
     /// <summary>Ảnh chân dung trích xuất từ CCCD (ảnh in trên thẻ).</summary>
     public required IFormFile IdCardImage { get; init; }
 }
+
+/// <summary>
+/// Request gửi lên endpoint Liveness Detection để kiểm tra ảnh selfie
+/// có phải người thật chụp trực tiếp hay không (chống spoofing).
+/// </summary>
+public sealed record LivenessDetectionRequest
+{
+    /// <summary>
+    /// Ảnh selfie của người dùng (chụp trực tiếp từ camera).
+    /// Phải là JPEG/PNG, dung lượng ≤ 5 MB.
+    /// </summary>
+    public required IFormFile FaceImage { get; init; }
+}
+

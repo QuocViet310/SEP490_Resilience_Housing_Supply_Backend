@@ -92,3 +92,32 @@ public sealed record FaceMatchResponse
     /// <summary>Request ID do FPT AI trả về, dùng để tra cứu log nếu cần.</summary>
     public string RequestId { get; init; } = string.Empty;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Liveness Detection Response
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Kết quả trả về sau khi gọi API Liveness Detection của FPT AI.
+/// Xác định ảnh selfie có phải người thật chụp trực tiếp hay đang bị giả mạo.
+/// </summary>
+public sealed record LivenessDetectionResponse
+{
+    /// <summary>HTTP status code phản hồi từ FPT AI (ví dụ "200").</summary>
+    public string Code { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Ảnh selfie có phải người thật hay không.
+    /// <c>true</c> = hợp lệ (liveness passed), <c>false</c> = phát hiện giả mạo (spoofing).
+    /// </summary>
+    public bool IsLive { get; init; }
+
+    /// <summary>
+    /// Điểm tin cậy liveness (0.0 – 1.0).
+    /// Giá trị càng cao càng chắc chắn là người thật. Ngưỡng khuyến nghị ≥ 0.70.
+    /// </summary>
+    public double LivenessScore { get; init; }
+
+    /// <summary>Thông điệp mô tả kết quả từ FPT AI.</summary>
+    public string Message { get; init; } = string.Empty;
+}
