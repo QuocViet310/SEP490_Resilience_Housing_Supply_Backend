@@ -36,4 +36,7 @@ public class HousingProject
 
     // Navigation Properties
     public HousingProjectStatus? HousingProjectStatus { get; set; }
+    public ICollection<HousingApplication> HousingApplications { get; set; } = new List<HousingApplication>();
+    public ICollection<ProjectImage> ProjectImages { get; set; } = new List<ProjectImage>();
+    public ICollection<HousingQuota> HousingQuotas { get; set; } = new List<HousingQuota>();
 }

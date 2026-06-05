@@ -51,6 +51,22 @@ public class HousingProjectConfiguration : IEntityTypeConfiguration<HousingProje
             .IsRequired()
             .OnDelete(DeleteBehavior.Restrict);
 
+        // New relationships
+        builder.HasMany(x => x.HousingApplications)
+            .WithOne(x => x.HousingProject)
+            .HasForeignKey(x => x.ProjectId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasMany(x => x.ProjectImages)
+            .WithOne(x => x.HousingProject)
+            .HasForeignKey(x => x.ProjectId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(x => x.HousingQuotas)
+            .WithOne(x => x.HousingProject)
+            .HasForeignKey(x => x.ProjectId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         // Query filter for soft delete
         builder.HasQueryFilter(x => !x.IsDeleted);
 

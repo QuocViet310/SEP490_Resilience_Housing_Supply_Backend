@@ -18,6 +18,20 @@ public class AppDbContext : DbContext
     public DbSet<OtpVerification> OtpVerifications { get; set; }
     public DbSet<Payment> Payments { get; set; }
 
+    // New DbSets
+    public DbSet<HousingApplication> HousingApplications { get; set; }
+    public DbSet<ApplicationStatusHistory> ApplicationStatusHistories { get; set; }
+    public DbSet<ApplicationDocument> ApplicationDocuments { get; set; }
+    public DbSet<AIVerificationResult> AIVerificationResults { get; set; }
+    public DbSet<Appointment> Appointments { get; set; }
+    public DbSet<ProjectImage> ProjectImages { get; set; }
+    public DbSet<HousingQuota> HousingQuotas { get; set; }
+    public DbSet<EligibilityAssessment> EligibilityAssessments { get; set; }
+    public DbSet<Notification> Notifications { get; set; }
+    public DbSet<Message> Messages { get; set; }
+    public DbSet<AuditLog> AuditLogs { get; set; }
+    public DbSet<PolicyConfig> PolicyConfigs { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -25,6 +39,18 @@ public class AppDbContext : DbContext
         // Apply configurations
         modelBuilder.ApplyConfiguration(new HousingProjectStatusConfiguration());
         modelBuilder.ApplyConfiguration(new HousingProjectConfiguration());
+        modelBuilder.ApplyConfiguration(new HousingApplicationConfiguration());
+        modelBuilder.ApplyConfiguration(new ApplicationStatusHistoryConfiguration());
+        modelBuilder.ApplyConfiguration(new ApplicationDocumentConfiguration());
+        modelBuilder.ApplyConfiguration(new AIVerificationResultConfiguration());
+        modelBuilder.ApplyConfiguration(new AppointmentConfiguration());
+        modelBuilder.ApplyConfiguration(new ProjectImageConfiguration());
+        modelBuilder.ApplyConfiguration(new HousingQuotaConfiguration());
+        modelBuilder.ApplyConfiguration(new EligibilityAssessmentConfiguration());
+        modelBuilder.ApplyConfiguration(new NotificationConfiguration());
+        modelBuilder.ApplyConfiguration(new MessageConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditLogConfiguration());
+        modelBuilder.ApplyConfiguration(new PolicyConfigConfiguration());
         // Role Configuration
         modelBuilder.Entity<Role>(entity =>
         {
