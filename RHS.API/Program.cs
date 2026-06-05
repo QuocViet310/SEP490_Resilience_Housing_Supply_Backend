@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using RHS.Application.Interfaces;
 using RHS.Infrastructure.Data;
+using RHS.Infrastructure.Extensions;
 using RHS.Infrastructure.Repositories;
 using RHS.Infrastructure.Services;
 using System.Text;
@@ -63,6 +64,9 @@ builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IVnPayService, VnPayService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
+
+// Dependency Injection - FPT AI eKYC
+builder.Services.AddEKycServices(builder.Configuration);
 
 // CORS Configuration
 builder.Services.AddCors(options =>
