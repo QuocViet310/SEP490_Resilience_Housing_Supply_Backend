@@ -87,6 +87,17 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddControllers();
 
+// Cấu hình giới hạn upload file (dành cho PDF tài liệu hồ sơ, tối đa 10MB)
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 10 * 1024 * 1024; // 10MB
+});
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
+});
+
+
 // Swagger Configuration with JWT Support
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
