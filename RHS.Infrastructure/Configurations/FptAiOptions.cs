@@ -16,7 +16,7 @@ public sealed class FptAiOptions
     public string OcrEndpoint { get; init; } = "https://api.fpt.ai/vision/idr/vnm";
 
     /// <summary>Endpoint so khớp khuôn mặt (selfie vs CCCD photo).</summary>
-    public string FaceMatchEndpoint { get; init; } = "https://api.fpt.ai/vision/faceapi/facematch";
+    public string FaceMatchEndpoint { get; init; } = "https://api.fpt.ai/dmp/checkface/v1";
 
     /// <summary>Endpoint kiểm tra liveness — phát hiện ảnh selfie giả mạo (spoofing).</summary>
     public string LivenessEndpoint { get; init; } = "https://api.fpt.ai/dmp/checkface/v1";

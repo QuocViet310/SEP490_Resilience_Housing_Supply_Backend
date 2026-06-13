@@ -29,7 +29,10 @@ public sealed class FptEKycService : IEKycService
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        // FPT AI đôi khi trả về số dưới dạng string (vd: "errorCode": "0")
+        // AllowReadingFromString xử lý cả hai trường hợp an toàn.
+        NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
     };
 
     public FptEKycService(
@@ -116,9 +119,11 @@ public sealed class FptEKycService : IEKycService
             operationName:     "FaceMatch",
             cancellationToken: cancellationToken);
 
-        // Bước 4: Kiểm tra FPT AI trả về có nhận diện được 2 khuôn mặt không
-        var isBothFace = ParseBoolString(rawResponse.IsBothFace);
-        if (!isBothFace)
+        // Bước 4: Kiểm tra isBothFace (chỉ áp dụng nếu endpoint trả về field này)
+        // Endpoint /dmp/checkface/v1 không trả về "isBothFace" → bỏ qua check khi field rỗng.
+        // Endpoint cũ /vision/faceapi/facematch có trả về → vẫn validate bình thường.
+        var hasBothFaceField = !string.IsNullOrEmpty(rawResponse.IsBothFace);
+        if (hasBothFaceField && !ParseBoolString(rawResponse.IsBothFace))
         {
             _logger.LogWarning(
                 "FPT AI FaceMatch: Không phát hiện đủ 2 khuôn mặt trong ảnh. " +
@@ -330,12 +335,17 @@ public sealed class FptEKycService : IEKycService
         return formData;
     }
 
-    /// <summary>Map raw FPT AI Face Match response → application DTO.</summary>
+    /// <summary>Map raw FPT AI Face Match response → application DTO.
+    /// Hỗ trợ cả 2 format: isMatch (string) từ endpoint cũ và match (bool) từ /dmp/checkface/v1.
+    /// </summary>
     private static FaceMatchResponse MapToFaceMatchResponse(FptFaceMatchRawResponse raw)
         => new()
         {
-            Code       = raw.Code,
-            IsMatch    = ParseBoolString(raw.IsMatch),
+            Code    = raw.Code,
+            // Ưu tiên field "match" (bool) nếu có, fallback sang "isMatch" (string)
+            IsMatch    = raw.Match.HasValue
+                ? raw.Match.Value
+                : ParseBoolString(raw.IsMatch),
             Similarity = raw.Similarity,
             IsBothFace = ParseBoolString(raw.IsBothFace),
             RequestId  = raw.RequestId
@@ -374,16 +384,23 @@ public sealed class FptEKycService : IEKycService
     }
 
     /// <summary>
-    /// Raw JSON model cho FPT AI Face Match response.
-    /// Lưu ý: "isMatch" và "isBothFace" là string "true"/"false", không phải bool.
+    /// Raw JSON model cho FPT AI Face Match response (endpoint: /dmp/checkface/v1).
+    /// - Endpoint mới trả về "match" dạng boolean và "similarity" dạng số.
+    /// - Giữ lại các field cũ (isMatch, isBothFace) để tương thích ngược.
     /// </summary>
     private sealed record FptFaceMatchRawResponse
     {
-        [JsonPropertyName("code")]       public string Code       { get; init; } = string.Empty;
-        [JsonPropertyName("isMatch")]    public string IsMatch    { get; init; } = string.Empty;
-        [JsonPropertyName("similarity")] public double Similarity { get; init; }
-        [JsonPropertyName("isBothFace")] public string IsBothFace { get; init; } = string.Empty;
-        [JsonPropertyName("requestId")]  public string RequestId  { get; init; } = string.Empty;
+        [JsonPropertyName("code")]       public string  Code       { get; init; } = string.Empty;
+
+        // Format cũ (/vision/faceapi/facematch): string "true"/"false"
+        [JsonPropertyName("isMatch")]    public string  IsMatch    { get; init; } = string.Empty;
+
+        // Format mới (/dmp/checkface/v1): JSON boolean true/false
+        [JsonPropertyName("match")]      public bool?   Match      { get; init; }
+
+        [JsonPropertyName("similarity")] public double  Similarity { get; init; }
+        [JsonPropertyName("isBothFace")] public string  IsBothFace { get; init; } = string.Empty;
+        [JsonPropertyName("requestId")]  public string  RequestId  { get; init; } = string.Empty;
     }
 
     /// <summary>
