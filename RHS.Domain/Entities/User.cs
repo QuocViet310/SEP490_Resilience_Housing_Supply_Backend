@@ -35,4 +35,5 @@ public class User
     public ICollection<EligibilityAssessment> EligibilityAssessments { get; set; } = new List<EligibilityAssessment>();
     public ICollection<Message> SentMessages { get; set; } = new List<Message>();
     public ICollection<Message> ReceivedMessages { get; set; } = new List<Message>();
+    public ICollection<IssueReport> IssueReports { get; set; } = new List<IssueReport>();
 }

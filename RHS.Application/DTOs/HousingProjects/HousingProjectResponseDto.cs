@@ -17,4 +17,5 @@ public class HousingProjectResponseDto
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public string? Status { get; set; }
+    public List<ProjectImageResponseDto> Images { get; set; } = new List<ProjectImageResponseDto>();
 }

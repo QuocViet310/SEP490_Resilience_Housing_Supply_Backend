@@ -60,6 +60,7 @@ builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IHousingProjectService, HousingProjectService>();
+builder.Services.AddScoped<IHousingProjectStatusService, HousingProjectStatusService>();
 builder.Services.AddScoped<IFileStorageService, FileStorageService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IHousingApplicationService, HousingApplicationService>();

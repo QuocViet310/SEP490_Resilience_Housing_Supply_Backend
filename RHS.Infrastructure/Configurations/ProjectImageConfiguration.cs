@@ -10,15 +10,21 @@ public class ProjectImageConfiguration : IEntityTypeConfiguration<ProjectImage>
     {
         builder.ToTable("ProjectImages");
 
-        builder.HasKey(x => x.ImageId);
+        builder.HasKey(x => x.Id);
 
         builder.Property(x => x.ImageUrl)
             .IsRequired()
-            .HasMaxLength(500);
+            .HasMaxLength(1000);
+
+        builder.Property(x => x.DisplayOrder)
+            .IsRequired();
+
+        builder.Property(x => x.CreatedAt)
+            .IsRequired();
 
         // Relationships
         builder.HasOne(x => x.HousingProject)
-            .WithMany()
+            .WithMany(x => x.ProjectImages)
             .HasForeignKey(x => x.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
 

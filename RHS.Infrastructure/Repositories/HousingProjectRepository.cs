@@ -21,6 +21,7 @@ public class HousingProjectRepository : IHousingProjectRepository
         // Build the query with filtering
         IQueryable<HousingProject> query = _context.HousingProjects
             .Include(x => x.HousingProjectStatus)
+            .Include(x => x.ProjectImages)
             .AsNoTracking();
 
         // Apply search filter (by project name)
@@ -105,7 +106,16 @@ public class HousingProjectRepository : IHousingProjectRepository
             ThumbnailUrl = x.ThumbnailUrl,
             CreatedAt = x.CreatedAt,
             UpdatedAt = x.UpdatedAt,
-            Status = x.HousingProjectStatus?.StatusName
+            Status = x.HousingProjectStatus?.StatusName,
+            Images = x.ProjectImages
+                .OrderBy(p => p.DisplayOrder)
+                .Select(p => new ProjectImageResponseDto
+                {
+                    Id = p.Id,
+                    ImageUrl = p.ImageUrl,
+                    DisplayOrder = p.DisplayOrder
+                })
+                .ToList()
         }).ToList();
 
         return new PagedResultDto<HousingProjectResponseDto>
@@ -129,6 +139,7 @@ public class HousingProjectRepository : IHousingProjectRepository
     {
         return await _context.HousingProjects
             .Include(x => x.HousingProjectStatus)
+            .Include(x => x.ProjectImages)
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id);
     }

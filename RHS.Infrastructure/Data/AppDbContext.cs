@@ -31,6 +31,7 @@ public class AppDbContext : DbContext
     public DbSet<Message> Messages { get; set; }
     public DbSet<AuditLog> AuditLogs { get; set; }
     public DbSet<PolicyConfig> PolicyConfigs { get; set; }
+    public DbSet<IssueReport> IssueReports { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
