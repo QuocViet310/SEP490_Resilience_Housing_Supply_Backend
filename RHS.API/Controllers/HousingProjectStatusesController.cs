@@ -5,7 +5,7 @@ using RHS.Application.Interfaces;
 namespace RHS.API.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/housing-project-statuses")]
 public class HousingProjectStatusesController : ControllerBase
 {
     private readonly IHousingProjectStatusService _service;

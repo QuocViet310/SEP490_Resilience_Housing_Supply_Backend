@@ -53,6 +53,7 @@ public class AppDbContext : DbContext
         modelBuilder.ApplyConfiguration(new AuditLogConfiguration());
         modelBuilder.ApplyConfiguration(new PolicyConfigConfiguration());
         modelBuilder.ApplyConfiguration(new PaymentConfiguration());
+        modelBuilder.ApplyConfiguration(new IssueReportConfiguration());
         // Role Configuration
         modelBuilder.Entity<Role>(entity =>
         {

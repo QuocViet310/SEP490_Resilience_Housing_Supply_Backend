@@ -198,7 +198,8 @@ public class IssueReportService : IIssueReportService
             ScreenshotUrl = report.ScreenshotUrl,
             CreatedAt = report.CreatedAt,
             ResolvedAt = report.ResolvedAt,
-            ReporterName = report.User?.FullName ?? "Unknown"
+            ReporterName = report.User?.FullName ?? "Unknown",
+            ReporterId = report.UserId
         };
     }
 

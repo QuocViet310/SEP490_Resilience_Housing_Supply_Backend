@@ -19,4 +19,6 @@ public class IssueReportDetailResponseDto
     public DateTime? ResolvedAt { get; set; }
 
     public string ReporterName { get; set; } = string.Empty;
+
+    public Guid ReporterId { get; set; }
 }

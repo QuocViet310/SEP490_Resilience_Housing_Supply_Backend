@@ -147,6 +147,12 @@ public class HousingProjectRepository : IHousingProjectRepository
     public async Task UpdateAsync(HousingProject entity)
     {
         entity.UpdatedAt = DateTime.UtcNow;
+
+        var existingImages = await _context.ProjectImages
+            .Where(x => x.ProjectId == entity.Id)
+            .ToListAsync();
+        _context.ProjectImages.RemoveRange(existingImages);
+
         _context.HousingProjects.Update(entity);
         await _context.SaveChangesAsync();
     }

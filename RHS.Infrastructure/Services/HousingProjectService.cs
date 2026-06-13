@@ -56,6 +56,22 @@ public class HousingProjectService : IHousingProjectService
             IsDeleted = false
         };
 
+        if (request.Images != null)
+        {
+            var order = 1;
+            foreach (var imageUrl in request.Images)
+            {
+                housingProject.ProjectImages.Add(new ProjectImage
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = housingProject.Id,
+                    ImageUrl = imageUrl,
+                    DisplayOrder = order++,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
+
         // Save to repository
         try
         {
@@ -110,6 +126,24 @@ public class HousingProjectService : IHousingProjectService
         existingProject.AvailableUnits = request.AvailableUnits;
         existingProject.ThumbnailUrl = request.ThumbnailUrl;
         existingProject.HousingProjectStatusId = request.HousingProjectStatusId;
+
+        // Update images
+        existingProject.ProjectImages.Clear();
+        if (request.Images != null)
+        {
+            var order = 1;
+            foreach (var imageUrl in request.Images)
+            {
+                existingProject.ProjectImages.Add(new ProjectImage
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = existingProject.Id,
+                    ImageUrl = imageUrl,
+                    DisplayOrder = order++,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
 
         // Save to repository
         try

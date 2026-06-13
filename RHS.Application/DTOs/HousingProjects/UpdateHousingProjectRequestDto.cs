@@ -14,4 +14,5 @@ public class UpdateHousingProjectRequestDto
     public int AvailableUnits { get; set; }
     public string? ThumbnailUrl { get; set; }
     public Guid HousingProjectStatusId { get; set; }
+    public List<string>? Images { get; set; }
 }
