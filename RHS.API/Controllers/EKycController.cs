@@ -159,10 +159,10 @@ public class EKycController : ControllerBase
                     : "Khuôn mặt KHÔNG khớp với ảnh CCCD.",
                 data = new
                 {
-                    isMatch    = result.IsMatch,
-                    similarity = result.Similarity,
-                    isBothFace = result.IsBothFace,
-                    requestId  = result.RequestId
+                    isMatch         = result.IsMatch,
+                    similarity      = result.Similarity,
+                    isBothImgIdCard = result.IsBothImgIdCard,   // FPT AI: isBothImgIDCard
+                    fptMessage      = result.FptMessage          // FPT AI: "request successful."
                 }
             });
         }

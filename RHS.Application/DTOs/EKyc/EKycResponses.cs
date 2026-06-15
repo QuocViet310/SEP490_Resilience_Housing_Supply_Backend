@@ -80,17 +80,21 @@ public sealed record FaceMatchResponse
     /// <summary>HTTP status code phản hồi từ FPT AI (ví dụ "200").</summary>
     public string Code { get; init; } = string.Empty;
 
-    /// <summary>Hai ảnh có khớp nhau hay không.</summary>
+    /// <summary>Hai ảnh có khớp nhau hay không (ngưỡng ≥ 80% similarity).</summary>
     public bool IsMatch { get; init; }
 
-    /// <summary>Độ tương đồng khuôn mặt (0.0 – 1.0). Ngưỡng thường dùng ≥ 0.80.</summary>
+    /// <summary>Độ tương đồng khuôn mặt (0.0 – 100.0). Ngưỡng thường dùng ≥ 80.</summary>
     public double Similarity { get; init; }
 
-    /// <summary>Cả hai ảnh đều chứa khuôn mặt hợp lệ hay không.</summary>
-    public bool IsBothFace { get; init; }
+    /// <summary>
+    /// Cả 2 ảnh upload đều là ảnh CCCD hay không.
+    /// <c>true</c> = cả 2 ảnh đều là CCCD, <c>false</c> = ít nhất 1 ảnh không phải CCCD.
+    /// (Tương ứng field <c>isBothImgIDCard</c> trong FPT AI response.)
+    /// </summary>
+    public bool IsBothImgIdCard { get; init; }
 
-    /// <summary>Request ID do FPT AI trả về, dùng để tra cứu log nếu cần.</summary>
-    public string RequestId { get; init; } = string.Empty;
+    /// <summary>Thông điệp từ FPT AI (ví dụ "request successful.").</summary>
+    public string FptMessage { get; init; } = string.Empty;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

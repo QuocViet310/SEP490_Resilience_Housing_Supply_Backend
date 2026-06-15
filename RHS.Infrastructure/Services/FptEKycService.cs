@@ -119,15 +119,14 @@ public sealed class FptEKycService : IEKycService
             operationName:     "FaceMatch",
             cancellationToken: cancellationToken);
 
-        // Bước 4: Kiểm tra isBothFace (chỉ áp dụng nếu endpoint trả về field này)
-        // Endpoint /dmp/checkface/v1 không trả về "isBothFace" → bỏ qua check khi field rỗng.
-        // Endpoint cũ /vision/faceapi/facematch có trả về → vẫn validate bình thường.
-        var hasBothFaceField = !string.IsNullOrEmpty(rawResponse.IsBothFace);
-        if (hasBothFaceField && !ParseBoolString(rawResponse.IsBothFace))
+        // Bước 4: Kiểm tra isBothImgIDCard (chỉ áp dụng nếu endpoint flat trả về field này)
+        // Endpoint /dmp/checkface/v1 không trả về field này ở root → bỏ qua khi rỗng.
+        var hasBothImgField = !string.IsNullOrEmpty(rawResponse.IsBothImgIDCard);
+        if (hasBothImgField && !ParseBoolString(rawResponse.IsBothImgIDCard))
         {
             _logger.LogWarning(
                 "FPT AI FaceMatch: Không phát hiện đủ 2 khuôn mặt trong ảnh. " +
-                "isBothFace='{IsBothFace}'.", rawResponse.IsBothFace);
+                "isBothImgIDCard='{IsBothImgIDCard}'.", rawResponse.IsBothImgIDCard);
 
             throw new EKycIntegrationException(
                 EKycIntegrationException.CodeApiError,
@@ -336,20 +335,39 @@ public sealed class FptEKycService : IEKycService
     }
 
     /// <summary>Map raw FPT AI Face Match response → application DTO.
-    /// Hỗ trợ cả 2 format: isMatch (string) từ endpoint cũ và match (bool) từ /dmp/checkface/v1.
+    /// Ưu tiên data nested từ /dmp/checkface/v1, fallback sang flat format (endpoint cũ).
+    /// FPT AI dùng "isMatch" (boolean) trong nested data, không phải "match".
     /// </summary>
     private static FaceMatchResponse MapToFaceMatchResponse(FptFaceMatchRawResponse raw)
-        => new()
+    {
+        bool   isMatch;
+        double similarity;
+        bool   isBothImgIdCard;
+
+        if (raw.Data is not null)
         {
-            Code    = raw.Code,
-            // Ưu tiên field "match" (bool) nếu có, fallback sang "isMatch" (string)
-            IsMatch    = raw.Match.HasValue
-                ? raw.Match.Value
-                : ParseBoolString(raw.IsMatch),
-            Similarity = raw.Similarity,
-            IsBothFace = ParseBoolString(raw.IsBothFace),
-            RequestId  = raw.RequestId
+            // Endpoint mới /dmp/checkface/v1: dữ liệu trong nested "data" object
+            isMatch        = raw.Data.IsMatch ?? raw.Data.Match ?? false;
+            similarity     = raw.Data.Similarity;
+            isBothImgIdCard = raw.Data.IsBothImgIDCard ?? false;
+        }
+        else
+        {
+            // Endpoint cũ /vision/faceapi/facematch: flat format
+            isMatch        = raw.Match ?? ParseBoolString(raw.IsMatch);
+            similarity     = raw.Similarity;
+            isBothImgIdCard = ParseBoolString(raw.IsBothImgIDCard);
+        }
+
+        return new()
+        {
+            Code           = raw.Code,
+            IsMatch        = isMatch,
+            Similarity     = similarity,
+            IsBothImgIdCard = isBothImgIdCard,
+            FptMessage     = raw.Message
         };
+    }
 
     /// <summary>
     /// FPT AI trả về "true"/"false" dạng string thay vì boolean.
@@ -385,22 +403,39 @@ public sealed class FptEKycService : IEKycService
 
     /// <summary>
     /// Raw JSON model cho FPT AI Face Match response (endpoint: /dmp/checkface/v1).
-    /// - Endpoint mới trả về "match" dạng boolean và "similarity" dạng số.
-    /// - Giữ lại các field cũ (isMatch, isBothFace) để tương thích ngược.
+    /// 
+    /// Endpoint mới trả về cấu trúc NESTED:
+    /// <code>
+    /// { "code": "200", "data": { "match": true, "similarity": 99.87 } }
+    /// </code>
+    /// Giữ lại các field flat (isMatch, match) để tương thích với endpoint cũ.
     /// </summary>
     private sealed record FptFaceMatchRawResponse
     {
-        [JsonPropertyName("code")]       public string  Code       { get; init; } = string.Empty;
+        [JsonPropertyName("code")]    public string Code    { get; init; } = string.Empty;
+        [JsonPropertyName("message")] public string Message { get; init; } = string.Empty;
 
-        // Format cũ (/vision/faceapi/facematch): string "true"/"false"
-        [JsonPropertyName("isMatch")]    public string  IsMatch    { get; init; } = string.Empty;
+        // Nested format: /dmp/checkface/v1 trả về data lồng trong "data" object
+        [JsonPropertyName("data")] public FptFaceMatchData? Data { get; init; }
 
-        // Format mới (/dmp/checkface/v1): JSON boolean true/false
-        [JsonPropertyName("match")]      public bool?   Match      { get; init; }
+        // Flat format cũ (/vision/faceapi/facematch)
+        [JsonPropertyName("isMatch")]        public string IsMatch        { get; init; } = string.Empty;
+        [JsonPropertyName("match")]          public bool?  Match          { get; init; }
+        [JsonPropertyName("similarity")]     public double Similarity     { get; init; }
+        [JsonPropertyName("isBothImgIDCard")] public string IsBothImgIDCard { get; init; } = string.Empty;
+    }
 
-        [JsonPropertyName("similarity")] public double  Similarity { get; init; }
-        [JsonPropertyName("isBothFace")] public string  IsBothFace { get; init; } = string.Empty;
-        [JsonPropertyName("requestId")]  public string  RequestId  { get; init; } = string.Empty;
+    /// <summary>
+    /// Dữ liệu kết quả nằm trong field "data" của FPT AI /dmp/checkface/v1.
+    /// FPT AI docs: isMatch, similarity, isBothImgIDCard.
+    /// </summary>
+    private sealed record FptFaceMatchData
+    {
+        [JsonPropertyName("isMatch")]        public bool?  IsMatch        { get; init; }
+        [JsonPropertyName("match")]          public bool?  Match          { get; init; } // dự phòng alias
+        [JsonPropertyName("similarity")]     public double Similarity     { get; init; }
+        // Theo docs: "isBothImgIDCard" — không phải "isBothFace"
+        [JsonPropertyName("isBothImgIDCard")] public bool? IsBothImgIDCard { get; init; }
     }
 
     /// <summary>
