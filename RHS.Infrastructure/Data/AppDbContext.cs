@@ -32,6 +32,7 @@ public class AppDbContext : DbContext
     public DbSet<AuditLog> AuditLogs { get; set; }
     public DbSet<PolicyConfig> PolicyConfigs { get; set; }
     public DbSet<IssueReport> IssueReports { get; set; }
+    public DbSet<Wishlist> Wishlists { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -54,6 +55,7 @@ public class AppDbContext : DbContext
         modelBuilder.ApplyConfiguration(new PolicyConfigConfiguration());
         modelBuilder.ApplyConfiguration(new PaymentConfiguration());
         modelBuilder.ApplyConfiguration(new IssueReportConfiguration());
+        modelBuilder.ApplyConfiguration(new WishlistConfiguration());
         // Role Configuration
         modelBuilder.Entity<Role>(entity =>
         {
