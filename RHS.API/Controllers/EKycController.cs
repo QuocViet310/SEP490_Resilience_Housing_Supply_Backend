@@ -201,20 +201,22 @@ public class EKycController : ControllerBase
     }
 
     /// <summary>
-    /// Xác minh thực thể sống qua video selfie (Liveness Detection).
-    /// Phát hiện các hành vi giả mạo: dùng ảnh in, màn hình, mặt nạ, video deepfake.
+    /// Xác minh thực thể sống qua video selfie — FPT AI Liveness Detection v3.
+    /// Phát hiện giả mạo: ảnh in, màn hình, mặt nạ, video deepfake.
     /// </summary>
     /// <remarks>
     /// **Content-Type:** multipart/form-data
     ///
-    /// **Form field:** `videoFile` — video selfie quay trực tiếp từ camera (MP4/AVI/MOV)
+    /// **Form fields (theo FPT AI Liveness v3 docs):**
+    /// - `videoFile` *(bắt buộc)* — video selfie quay trực tiếp từ camera (MP4/AVI/MOV, 3–5 giây)
+    /// - `cmndImage` *(tùy chọn)* — ảnh CCCD (JPEG/PNG) để so sánh khuôn mặt với video.
+    ///   Khi có, response sẽ trả thêm kết quả `faceMatch`.
     ///
-    /// **Lưu ý quan trọng:** FPT AI Liveness API yêu cầu VIDEO (clip ngắn 3–5 giây),
-    /// KHÔNG phải ảnh tĩnh JPEG/PNG.
+    /// **Lưu ý:** FPT AI Liveness v3 yêu cầu VIDEO, KHÔNG phải ảnh tĩnh JPEG/PNG.
     ///
     /// **HTTP Responses:**
     /// - `200` — Kiểm tra hoàn tất. Xem `isLive`: `true` = hợp lệ, `false` = giả mạo
-    /// - `400` — File video không hợp lệ (rỗng, sai định dạng, quá dung lượng)
+    /// - `400` — File không hợp lệ (rỗng, sai định dạng, quá dung lượng)
     /// - `401` — Chưa đăng nhập
     /// - `502` — FPT AI API trả về lỗi hoặc không kết nối được
     /// - `500` — Lỗi không xác định từ server
@@ -227,13 +229,18 @@ public class EKycController : ControllerBase
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DetectLiveness(
-        IFormFile videoFile,
+        IFormFile  videoFile,
+        IFormFile? cmndImage          = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var request = new LivenessDetectionRequest { VideoFile = videoFile };
-            var result  = await _eKycService.DetectLivenessAsync(request, cancellationToken);
+            var request = new LivenessDetectionRequest
+            {
+                VideoFile  = videoFile,
+                CccdImage  = cmndImage
+            };
+            var result = await _eKycService.DetectLivenessAsync(request, cancellationToken);
 
             return Ok(new
             {
@@ -250,7 +257,8 @@ public class EKycController : ControllerBase
                     warning          = result.Warning,
                     livenessCode     = result.LivenessCode,
                     livenessMessage  = result.LivenessMessage,
-                    fptMessage       = result.FptMessage
+                    fptMessage       = result.FptMessage,
+                    faceMatch        = result.FaceMatch   // null nếu không gửi cmndImage
                 }
             });
         }
