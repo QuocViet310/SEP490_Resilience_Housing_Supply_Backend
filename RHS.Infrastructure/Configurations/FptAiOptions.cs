@@ -16,15 +16,21 @@ public sealed class FptAiOptions
     public string OcrEndpoint { get; init; } = "https://api.fpt.ai/vision/idr/vnm";
 
     /// <summary>Endpoint so khớp khuôn mặt (selfie vs CCCD photo).</summary>
-    public string FaceMatchEndpoint { get; init; } = "https://api.fpt.ai/dmp/checkface/v1";
+    public string FaceMatchEndpoint { get; init; } = "https://api.fpt.ai/vision/faceapi/facematch";
 
-    /// <summary>Endpoint kiểm tra liveness — gửi VIDEO để phát hiện spoofing/deepfake.</summary>
-    public string LivenessEndpoint { get; init; } = "https://api.fpt.ai/dmp/liveness/v3";
+    /// <summary>Endpoint kiểm tra liveness — phát hiện ảnh selfie giả mạo (spoofing).</summary>
+    public string LivenessEndpoint { get; init; } = "https://api.fpt.ai/dmp/checkface/v1";
 
     /// <summary>Timeout (giây) cho mỗi HTTP request tới FPT AI. Mặc định 30 giây.</summary>
     public int TimeoutSeconds { get; init; } = 30;
 
-    /// <summary>Giới hạn kích thước file tải lên (bytes). Mặc định 5 MB.</summary>
+    /// <summary>Giới hạn kích thước file ảnh tải lên cho OCR và Face Match (bytes). Mặc định 5 MB.</summary>
     public long MaxFileSizeBytes { get; init; } = 5_242_880; // 5 MB
+
+    /// <summary>
+    /// Giới hạn kích thước file video tải lên cho Liveness Detection (bytes). Mặc định 10 MB.
+    /// Lớn hơn ảnh vì video selfie thường có dung lượng cao hơn.
+    /// </summary>
+    public long MaxVideoFileSizeBytes { get; init; } = 10_485_760; // 10 MB
 }
 

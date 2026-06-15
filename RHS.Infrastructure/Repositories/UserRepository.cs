@@ -55,6 +55,19 @@ public class UserRepository : IUserRepository
             .AnyAsync(u => u.Email.ToLower() == email.ToLower());
     }
 
+    public async Task<bool> CitizenIdExistsAsync(string citizenId, Guid? excludeUserId = null)
+    {
+        var query = _context.Users
+            .AsNoTracking()
+            .Where(u => u.CitizenId == citizenId);
+
+        // Loại trừ chính user đang thực hiện (cho phép xác thực lại CCCD của mình)
+        if (excludeUserId.HasValue)
+            query = query.Where(u => u.Id != excludeUserId.Value);
+
+        return await query.AnyAsync();
+    }
+
     public async Task<List<User>> GetByRoleAsync(string roleName)
     {
         return await _context.Users

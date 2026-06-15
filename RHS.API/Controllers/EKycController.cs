@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using RHS.Application.DTOs.EKyc;
 using RHS.Application.Interfaces;
 using RHS.Infrastructure.Exceptions;
+using System.Security.Claims;
 
 namespace RHS.API.Controllers;
 
@@ -11,18 +12,97 @@ namespace RHS.API.Controllers;
 /// - Trích xuất thông tin Căn cước công dân (OCR)
 /// - So khớp khuôn mặt selfie với ảnh trên CCCD (Face Match)
 /// - Kiểm tra liveness để chống giả mạo khuôn mặt (Liveness Detection)
+/// - Kiểm tra CCCD đã tồn tại trong hệ thống chưa
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
 public class EKycController : ControllerBase
 {
-    private readonly IEKycService _eKycService;
+    private readonly IEKycService     _eKycService;
+    private readonly IUserRepository  _userRepository;
 
-    public EKycController(IEKycService eKycService)
+    public EKycController(IEKycService eKycService, IUserRepository userRepository)
     {
-        _eKycService = eKycService;
+        _eKycService    = eKycService;
+        _userRepository = userRepository;
     }
+
+    // ── Helper: lấy userId từ JWT claim ─────────────────────────────────
+    private Guid? GetCurrentUserId()
+    {
+        var claim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+        return Guid.TryParse(claim?.Value, out var id) ? id : null;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  Kiểm tra CCCD trùng
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Kiểm tra xem số CCCD đã được xác thực bởi tài khoản khác trong hệ thống chưa.
+    /// Gọi sau bước OCR để xác nhận CCCD hợp lệ trước khi tiếp tục xác minh danh tính.
+    /// </summary>
+    /// <remarks>
+    /// **HTTP Responses:**
+    /// - `200` — CCCD chưa có ai dùng, có thể tiếp tục xác thực
+    /// - `409` — CCCD đã thuộc về tài khoản khác, không thể xác thực
+    /// - `400` — Số CCCD rỗng hoặc không hợp lệ
+    /// - `401` — Chưa đăng nhập
+    /// - `500` — Lỗi không xác định
+    /// </remarks>
+    [HttpGet("check-citizen-id")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> CheckCitizenId(
+        [FromQuery] string citizenId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(citizenId))
+            return BadRequest(new { success = false, message = "Số CCCD không được để trống." });
+
+        // Lấy userId từ JWT để loại trừ chính user đang kiểm tra
+        var currentUserId = GetCurrentUserId();
+
+        try
+        {
+            var exists = await _userRepository.CitizenIdExistsAsync(
+                citizenId.Trim(),
+                excludeUserId: currentUserId);
+
+            if (exists)
+                return Conflict(new
+                {
+                    success = false,
+                    message = "Số CCCD này đã được xác thực bởi tài khoản khác trong hệ thống. Không thể tiếp tục xác minh danh tính.",
+                    citizenId
+                });
+
+            return Ok(new
+            {
+                success   = true,
+                message   = "Số CCCD hợp lệ, có thể tiếp tục xác minh danh tính.",
+                citizenId,
+                available = true
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                success = false,
+                message = "Đã xảy ra lỗi khi kiểm tra CCCD.",
+                detail  = ex.Message
+            });
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  OCR
+    // ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Trích xuất thông tin từ ảnh Căn cước công dân bằng FPT AI OCR.
