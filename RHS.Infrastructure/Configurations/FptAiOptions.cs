@@ -19,7 +19,7 @@ public sealed class FptAiOptions
     public string FaceMatchEndpoint { get; init; } = "https://api.fpt.ai/dmp/checkface/v1";
 
     /// <summary>Endpoint kiểm tra liveness — gửi VIDEO để phát hiện spoofing/deepfake.</summary>
-    public string LivenessEndpoint { get; init; } = "https://api.fpt.ai/dmp/liveness";
+    public string LivenessEndpoint { get; init; } = "https://api.fpt.ai/dmp/liveness/v3";
 
     /// <summary>Timeout (giây) cho mỗi HTTP request tới FPT AI. Mặc định 30 giây.</summary>
     public int TimeoutSeconds { get; init; } = 30;

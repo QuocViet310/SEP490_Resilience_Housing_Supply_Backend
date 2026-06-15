@@ -201,20 +201,21 @@ public class EKycController : ControllerBase
     }
 
     /// <summary>
-    /// Xác minh thực thể sống qua video selfie (Liveness Detection).
+    /// Xác minh thực thể sống qua video selfie + ảnh khuôn mặt (Liveness Detection v3).
     /// Phát hiện các hành vi giả mạo: dùng ảnh in, màn hình, mặt nạ, video deepfake.
     /// </summary>
     /// <remarks>
     /// **Content-Type:** multipart/form-data
     ///
-    /// **Form field:** `videoFile` — video selfie quay trực tiếp từ camera (MP4/AVI/MOV)
+    /// **Form fields:**
+    /// - `videoFile` — video selfie quay trực tiếp từ camera (MP4/AVI/MOV, 3–5 giây)
+    /// - `cmndImage` — ảnh khuôn mặt selfie của người dùng (JPEG/PNG)
     ///
-    /// **Lưu ý quan trọng:** FPT AI Liveness API yêu cầu VIDEO (clip ngắn 3–5 giây),
-    /// KHÔNG phải ảnh tĩnh JPEG/PNG.
+    /// FPT AI Liveness v3 yêu cầu cả VIDEO + ảnh khuôn mặt (cmnd).
     ///
     /// **HTTP Responses:**
     /// - `200` — Kiểm tra hoàn tất. Xem `isLive`: `true` = hợp lệ, `false` = giả mạo
-    /// - `400` — File video không hợp lệ (rỗng, sai định dạng, quá dung lượng)
+    /// - `400` — File không hợp lệ (rỗng, sai định dạng, quá dung lượng)
     /// - `401` — Chưa đăng nhập
     /// - `502` — FPT AI API trả về lỗi hoặc không kết nối được
     /// - `500` — Lỗi không xác định từ server
@@ -228,11 +229,16 @@ public class EKycController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DetectLiveness(
         IFormFile videoFile,
+        IFormFile cmndImage,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var request = new LivenessDetectionRequest { VideoFile = videoFile };
+            var request = new LivenessDetectionRequest
+            {
+                VideoFile = videoFile,
+                CmndImage = cmndImage
+            };
             var result  = await _eKycService.DetectLivenessAsync(request, cancellationToken);
 
             return Ok(new

@@ -151,15 +151,17 @@ public sealed class FptEKycService : IEKycService
         LivenessDetectionRequest request,
         CancellationToken        cancellationToken = default)
     {
-        // Bước 1: Validate VIDEO (không phải ảnh) — FPT AI Liveness API yêu cầu video clip
+        // Bước 1: Validate VIDEO + ảnh khuôn mặt (cmnd) — FPT AI Liveness API v3 yêu cầu cả hai
         await _fileValidator.ValidateVideoAsync(request.VideoFile, nameof(request.VideoFile));
+        await _fileValidator.ValidateAsync(request.CmndImage, nameof(request.CmndImage));
 
         _logger.LogInformation(
-            "Bắt đầu gọi FPT AI Liveness Detection API cho video '{FileName}' ({Size} bytes).",
-            request.VideoFile.FileName, request.VideoFile.Length);
+            "Bắt đầu gọi FPT AI Liveness Detection API v3: video='{VideoName}' ({VideoSize} bytes), face='{FaceName}' ({FaceSize} bytes).",
+            request.VideoFile.FileName, request.VideoFile.Length,
+            request.CmndImage.FileName, request.CmndImage.Length);
 
-        // Bước 2: Build multipart/form-data với field name "video-0" (theo FPT AI docs)
-        using var content = await BuildImageFormDataAsync(request.VideoFile, "video-0");
+        // Bước 2: Build multipart/form-data với field name "video" và "cmnd" (theo FPT AI docs v3)
+        using var content = await BuildLivenessFormDataAsync(request.VideoFile, request.CmndImage);
 
         // Bước 3: Gọi FPT AI Liveness endpoint
         var rawResponse = await PostToFptAiAsync<FptLivenessRawResponse>(
@@ -274,6 +276,35 @@ public sealed class FptEKycService : IEKycService
 
         var formData = new MultipartFormDataContent();
         formData.Add(streamContent, formFieldName, file.FileName);
+        return formData;
+    }
+
+    /// <summary>
+    /// Xây dựng multipart/form-data gửi video + ảnh khuôn mặt lên FPT AI Liveness v3.
+    /// FPT AI Liveness v3 yêu cầu field name "video" cho video và "cmnd" cho ảnh khuôn mặt.
+    /// </summary>
+    private static async Task<MultipartFormDataContent> BuildLivenessFormDataAsync(
+        IFormFile videoFile,
+        IFormFile cmndImage)
+    {
+        var formData = new MultipartFormDataContent();
+
+        // Video: field name "video"
+        var videoStream = new MemoryStream();
+        await videoFile.CopyToAsync(videoStream);
+        videoStream.Position = 0;
+        var videoContent = new StreamContent(videoStream);
+        videoContent.Headers.ContentType = new MediaTypeHeaderValue(videoFile.ContentType);
+        formData.Add(videoContent, "video", videoFile.FileName);
+
+        // Ảnh khuôn mặt: field name "cmnd"
+        var cmndStream = new MemoryStream();
+        await cmndImage.CopyToAsync(cmndStream);
+        cmndStream.Position = 0;
+        var cmndContent = new StreamContent(cmndStream);
+        cmndContent.Headers.ContentType = new MediaTypeHeaderValue(cmndImage.ContentType);
+        formData.Add(cmndContent, "cmnd", cmndImage.FileName);
+
         return formData;
     }
 
