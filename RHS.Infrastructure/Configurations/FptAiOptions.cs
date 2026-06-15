@@ -18,8 +18,8 @@ public sealed class FptAiOptions
     /// <summary>Endpoint so khớp khuôn mặt (selfie vs CCCD photo).</summary>
     public string FaceMatchEndpoint { get; init; } = "https://api.fpt.ai/dmp/checkface/v1";
 
-    /// <summary>Endpoint kiểm tra liveness — phát hiện ảnh selfie giả mạo (spoofing).</summary>
-    public string LivenessEndpoint { get; init; } = "https://api.fpt.ai/dmp/checkface/v1";
+    /// <summary>Endpoint kiểm tra liveness — gửi VIDEO để phát hiện spoofing/deepfake.</summary>
+    public string LivenessEndpoint { get; init; } = "https://api.fpt.ai/dmp/liveness";
 
     /// <summary>Timeout (giây) cho mỗi HTTP request tới FPT AI. Mặc định 30 giây.</summary>
     public int TimeoutSeconds { get; init; } = 30;

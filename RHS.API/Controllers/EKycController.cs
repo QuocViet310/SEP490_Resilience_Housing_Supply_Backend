@@ -201,17 +201,20 @@ public class EKycController : ControllerBase
     }
 
     /// <summary>
-    /// Kiểm tra ảnh selfie có phải người thật chụp trực tiếp hay không (Liveness Detection).
-    /// Phát hiện các hành vi giả mạo: dùng ảnh in, ảnh trên màn hình điện thoại/máy tính, mặt nạ.
+    /// Xác minh thực thể sống qua video selfie (Liveness Detection).
+    /// Phát hiện các hành vi giả mạo: dùng ảnh in, màn hình, mặt nạ, video deepfake.
     /// </summary>
     /// <remarks>
     /// **Content-Type:** multipart/form-data
     ///
-    /// **Form field:** `faceImage` — ảnh selfie chụp trực tiếp từ camera (JPEG hoặc PNG, tối đa 5 MB)
+    /// **Form field:** `videoFile` — video selfie quay trực tiếp từ camera (MP4/AVI/MOV)
+    ///
+    /// **Lưu ý quan trọng:** FPT AI Liveness API yêu cầu VIDEO (clip ngắn 3–5 giây),
+    /// KHÔNG phải ảnh tĩnh JPEG/PNG.
     ///
     /// **HTTP Responses:**
-    /// - `200` — Kiểm tra hoàn tất. Xem `isLive` trong response: `true` = hợp lệ, `false` = giả mạo
-    /// - `400` — File ảnh không hợp lệ (rỗng, sai định dạng, quá dung lượng)
+    /// - `200` — Kiểm tra hoàn tất. Xem `isLive`: `true` = hợp lệ, `false` = giả mạo
+    /// - `400` — File video không hợp lệ (rỗng, sai định dạng, quá dung lượng)
     /// - `401` — Chưa đăng nhập
     /// - `502` — FPT AI API trả về lỗi hoặc không kết nối được
     /// - `500` — Lỗi không xác định từ server
@@ -224,26 +227,30 @@ public class EKycController : ControllerBase
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DetectLiveness(
-        IFormFile faceImage,
+        IFormFile videoFile,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var request = new LivenessDetectionRequest { FaceImage = faceImage };
+            var request = new LivenessDetectionRequest { VideoFile = videoFile };
             var result  = await _eKycService.DetectLivenessAsync(request, cancellationToken);
 
             return Ok(new
             {
                 success = true,
                 message = result.IsLive
-                    ? "Xác minh thực thể sống thành công. Ảnh selfie hợp lệ."
-                    : "Phát hiện giả mạo. Ảnh selfie không phải người thật chụp trực tiếp.",
+                    ? "Xác minh thực thể sống thành công. Video hợp lệ."
+                    : "Phát hiện giả mạo. Video không hợp lệ.",
                 data = new
                 {
-                    isLive        = result.IsLive,
-                    livenessScore = result.LivenessScore,
-                    code          = result.Code,
-                    message       = result.Message
+                    isLive           = result.IsLive,
+                    spoofProbability = result.SpoofProbability,
+                    needToReview     = result.NeedToReview,
+                    isDeepfake       = result.IsDeepfake,
+                    warning          = result.Warning,
+                    livenessCode     = result.LivenessCode,
+                    livenessMessage  = result.LivenessMessage,
+                    fptMessage       = result.FptMessage
                 }
             });
         }
