@@ -49,6 +49,11 @@ builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 builder.Services.AddScoped<IOtpRepository, OtpRepository>();
 builder.Services.AddScoped<IHousingProjectRepository, HousingProjectRepository>();
 builder.Services.AddScoped<IRoleRepository, RoleRepository>();
+builder.Services.AddScoped<IHousingApplicationRepository, HousingApplicationRepository>();
+builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
+builder.Services.AddScoped<IReviewHistoryRepository, ReviewHistoryRepository>();
+builder.Services.AddScoped<IIssueReportRepository, IssueReportRepository>();
+builder.Services.AddScoped<IWishlistRepository, WishlistRepository>();
 
 // Dependency Injection - Services
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -57,8 +62,14 @@ builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IHousingProjectService, HousingProjectService>();
+builder.Services.AddScoped<IHousingProjectStatusService, HousingProjectStatusService>();
 builder.Services.AddScoped<IFileStorageService, FileStorageService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IHousingApplicationService, HousingApplicationService>();
+builder.Services.AddScoped<IDocumentService, DocumentService>();
+builder.Services.AddScoped<IReviewService, ReviewService>();
+builder.Services.AddScoped<IIssueReportService, IssueReportService>();
+builder.Services.AddScoped<IWishlistService, WishlistService>();
 
 // Dependency Injection - VNPay Payment
 builder.Services.AddScoped<IVnPayService, VnPayService>();
@@ -80,6 +91,17 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddControllers();
+
+// Cấu hình giới hạn upload file (dành cho PDF tài liệu hồ sơ, tối đa 10MB)
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 10 * 1024 * 1024; // 10MB
+});
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
+});
+
 
 // Swagger Configuration with JWT Support
 builder.Services.AddEndpointsApiExplorer();

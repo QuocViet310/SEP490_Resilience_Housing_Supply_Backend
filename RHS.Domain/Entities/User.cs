@@ -26,4 +26,15 @@ public class User
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
     public ICollection<OtpVerification> OtpVerifications { get; set; } = new List<OtpVerification>();
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
+
+    // New Navigation Properties
+    public ICollection<HousingApplication> HousingApplications { get; set; } = new List<HousingApplication>();
+    public ICollection<HousingApplication> AssignedApplications { get; set; } = new List<HousingApplication>();
+    public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
+    public ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
+    public ICollection<EligibilityAssessment> EligibilityAssessments { get; set; } = new List<EligibilityAssessment>();
+    public ICollection<Message> SentMessages { get; set; } = new List<Message>();
+    public ICollection<Message> ReceivedMessages { get; set; } = new List<Message>();
+    public ICollection<IssueReport> IssueReports { get; set; } = new List<IssueReport>();
+    public ICollection<Wishlist> Wishlists { get; set; } = new List<Wishlist>();
 }

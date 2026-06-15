@@ -6,31 +6,51 @@ using RHS.Infrastructure.Exceptions;
 namespace RHS.Infrastructure.Validators;
 
 /// <summary>
-/// Validator chuyên biệt cho file ảnh eKYC trước khi gửi lên FPT AI API.
-/// Kiểm tra 3 điều kiện: file không rỗng, đúng định dạng ảnh, và không vượt dung lượng.
+/// Validator chuyên biệt cho file ảnh/video eKYC trước khi gửi lên FPT AI API.
+/// - Ảnh (OCR, FaceMatch): kiểm tra MIME type, extension, magic bytes.
+/// - Video (Liveness): kiểm tra MIME type và extension (magic bytes không check do phức tạp).
 /// </summary>
 /// <remarks>
 /// Class này được đăng ký là Singleton qua DI và tái sử dụng giữa các request.
 /// </remarks>
 public sealed class EKycFileValidator
 {
-    // ── Danh sách MIME type được chấp nhận ───────────────────────────────
-    private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    // ── Danh sách MIME type ảnh được chấp nhận ───────────────────────────
+    private static readonly HashSet<string> AllowedImageContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "image/jpeg",
         "image/jpg",
         "image/png"
     };
 
-    // ── Danh sách phần mở rộng hợp lệ (backup nếu Content-Type sai) ─────
-    private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    // ── Danh sách phần mở rộng ảnh hợp lệ ───────────────────────────────
+    private static readonly HashSet<string> AllowedImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".jpg",
         ".jpeg",
         ".png"
     };
 
-    // ── Magic bytes để kiểm tra nội dung file thực sự ────────────────────
+    // ── Danh sách MIME type video được chấp nhận (FPT AI Liveness) ───────
+    private static readonly HashSet<string> AllowedVideoContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "video/mp4",
+        "video/avi",
+        "video/x-msvideo",    // avi alternative
+        "video/quicktime",    // .mov
+        "video/x-ms-wmv"      // .wmv
+    };
+
+    // ── Danh sách phần mở rộng video hợp lệ ─────────────────────────────
+    private static readonly HashSet<string> AllowedVideoExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4",
+        ".avi",
+        ".mov",
+        ".wmv"
+    };
+
+    // ── Magic bytes để kiểm tra nội dung file ảnh ────────────────────────
     // JPEG: FF D8 FF
     private static readonly byte[] JpegMagicBytes = [0xFF, 0xD8, 0xFF];
     // PNG: 89 50 4E 47 0D 0A 1A 0A
@@ -46,33 +66,27 @@ public sealed class EKycFileValidator
     }
 
     /// <summary>
-    /// Kiểm tra đầy đủ một <see cref="IFormFile"/>. Ném exception ngay tại điều kiện đầu tiên thất bại.
+    /// Kiểm tra đầy đủ một <see cref="IFormFile"/> ảnh (JPEG/PNG).
+    /// Ném exception ngay tại điều kiện đầu tiên thất bại.
     /// </summary>
-    /// <param name="file">File ảnh cần kiểm tra.</param>
-    /// <param name="fieldName">
-    /// Tên trường (ví dụ: "Image", "FaceImage") để đưa vào thông báo lỗi.
-    /// </param>
-    /// <exception cref="EKycValidationException">
-    /// Ném ra khi file null/rỗng, sai định dạng, hoặc vượt dung lượng.
-    /// </exception>
     public async Task ValidateAsync(IFormFile file, string fieldName)
     {
         ValidateNotEmpty(file, fieldName);
-        ValidateSize(file, fieldName, _maxFileSizeBytes);
-        ValidateContentType(file, fieldName);
+        ValidateSize(file, fieldName);
+        ValidateContentType(file, fieldName, AllowedImageContentTypes, AllowedImageExtensions);
         await ValidateMagicBytesAsync(file, fieldName);
     }
 
     /// <summary>
-    /// Kiểm tra file ảnh selfie cho Liveness Detection (cho phép tối đa 10 MB).
-    /// Sử dụng <see cref="FptAiOptions.MaxLivenessFileSizeBytes"/> thay vì giới hạn 5 MB thông thường.
+    /// Kiểm tra file VIDEO (mp4/avi/mov) cho FPT AI Liveness Detection API.
+    /// Chỉ kiểm tra MIME type và extension (không check magic bytes vì cấu trúc video phức tạp).
     /// </summary>
-    public async Task ValidateLivenessAsync(IFormFile file, string fieldName)
+    public Task ValidateVideoAsync(IFormFile file, string fieldName)
     {
         ValidateNotEmpty(file, fieldName);
-        ValidateSize(file, fieldName, _maxLivenessFileSizeBytes);
-        ValidateContentType(file, fieldName);
-        await ValidateMagicBytesAsync(file, fieldName);
+        ValidateSize(file, fieldName);
+        ValidateContentType(file, fieldName, AllowedVideoContentTypes, AllowedVideoExtensions);
+        return Task.CompletedTask;
     }
 
     // ── Private validation steps ─────────────────────────────────────────
@@ -95,20 +109,24 @@ public sealed class EKycFileValidator
     /// Kiểm tra Content-Type header VÀ phần mở rộng file.
     /// Cần cả hai hợp lệ để tránh tấn công giả mạo MIME type.
     /// </summary>
-    private static void ValidateContentType(IFormFile file, string fieldName)
+    private static void ValidateContentType(
+        IFormFile file,
+        string fieldName,
+        HashSet<string> allowedContentTypes,
+        HashSet<string> allowedExtensions)
     {
         var contentType = file.ContentType;
-        var extension = Path.GetExtension(file.FileName);
+        var extension   = Path.GetExtension(file.FileName);
 
-        bool isContentTypeValid = AllowedContentTypes.Contains(contentType);
-        bool isExtensionValid   = AllowedExtensions.Contains(extension);
+        bool isContentTypeValid = allowedContentTypes.Contains(contentType);
+        bool isExtensionValid   = allowedExtensions.Contains(extension);
 
         if (!isContentTypeValid || !isExtensionValid)
             throw EKycValidationException.InvalidFormat(fieldName, contentType);
     }
 
     /// <summary>
-    /// Đọc và kiểm tra magic bytes (file signature) thực sự trong file.
+    /// Đọc và kiểm tra magic bytes (file signature) thực sự trong file ảnh.
     /// Ngăn chặn trường hợp đổi tên file để vượt kiểm tra Content-Type.
     /// </summary>
     private static async Task ValidateMagicBytesAsync(IFormFile file, string fieldName)

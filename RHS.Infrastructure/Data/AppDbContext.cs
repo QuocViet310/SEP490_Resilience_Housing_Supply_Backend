@@ -18,6 +18,22 @@ public class AppDbContext : DbContext
     public DbSet<OtpVerification> OtpVerifications { get; set; }
     public DbSet<Payment> Payments { get; set; }
 
+    // New DbSets
+    public DbSet<HousingApplication> HousingApplications { get; set; }
+    public DbSet<ApplicationStatusHistory> ApplicationStatusHistories { get; set; }
+    public DbSet<ApplicationDocument> ApplicationDocuments { get; set; }
+    public DbSet<AIVerificationResult> AIVerificationResults { get; set; }
+    public DbSet<Appointment> Appointments { get; set; }
+    public DbSet<ProjectImage> ProjectImages { get; set; }
+    public DbSet<HousingQuota> HousingQuotas { get; set; }
+    public DbSet<EligibilityAssessment> EligibilityAssessments { get; set; }
+    public DbSet<Notification> Notifications { get; set; }
+    public DbSet<Message> Messages { get; set; }
+    public DbSet<AuditLog> AuditLogs { get; set; }
+    public DbSet<PolicyConfig> PolicyConfigs { get; set; }
+    public DbSet<IssueReport> IssueReports { get; set; }
+    public DbSet<Wishlist> Wishlists { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -25,6 +41,21 @@ public class AppDbContext : DbContext
         // Apply configurations
         modelBuilder.ApplyConfiguration(new HousingProjectStatusConfiguration());
         modelBuilder.ApplyConfiguration(new HousingProjectConfiguration());
+        modelBuilder.ApplyConfiguration(new HousingApplicationConfiguration());
+        modelBuilder.ApplyConfiguration(new ApplicationStatusHistoryConfiguration());
+        modelBuilder.ApplyConfiguration(new ApplicationDocumentConfiguration());
+        modelBuilder.ApplyConfiguration(new AIVerificationResultConfiguration());
+        modelBuilder.ApplyConfiguration(new AppointmentConfiguration());
+        modelBuilder.ApplyConfiguration(new ProjectImageConfiguration());
+        modelBuilder.ApplyConfiguration(new HousingQuotaConfiguration());
+        modelBuilder.ApplyConfiguration(new EligibilityAssessmentConfiguration());
+        modelBuilder.ApplyConfiguration(new NotificationConfiguration());
+        modelBuilder.ApplyConfiguration(new MessageConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditLogConfiguration());
+        modelBuilder.ApplyConfiguration(new PolicyConfigConfiguration());
+        modelBuilder.ApplyConfiguration(new PaymentConfiguration());
+        modelBuilder.ApplyConfiguration(new IssueReportConfiguration());
+        modelBuilder.ApplyConfiguration(new WishlistConfiguration());
         // Role Configuration
         modelBuilder.Entity<Role>(entity =>
         {
@@ -78,30 +109,6 @@ public class AppDbContext : DbContext
             
             entity.HasOne(e => e.User)
                 .WithMany(u => u.OtpVerifications)
-                .HasForeignKey(e => e.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        // Payment Configuration
-        modelBuilder.Entity<Payment>(entity =>
-        {
-            entity.ToTable("Payments");
-            entity.HasKey(e => e.Id);
-            entity.HasIndex(e => e.OrderId).IsUnique();
-            entity.Property(e => e.OrderId).IsRequired().HasMaxLength(50);
-            entity.Property(e => e.OrderInfo).IsRequired().HasMaxLength(255);
-            entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
-            entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
-            entity.Property(e => e.VnpResponseCode).HasMaxLength(10);
-            entity.Property(e => e.VnpTransactionNo).HasMaxLength(50);
-            entity.Property(e => e.VnpBankCode).HasMaxLength(20);
-            entity.Property(e => e.VnpBankTranNo).HasMaxLength(50);
-            entity.Property(e => e.VnpCardType).HasMaxLength(20);
-            entity.Property(e => e.VnpPayDate).HasMaxLength(20);
-            entity.Property(e => e.VnpTransactionStatus).HasMaxLength(10);
-
-            entity.HasOne(e => e.User)
-                .WithMany(u => u.Payments)
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });

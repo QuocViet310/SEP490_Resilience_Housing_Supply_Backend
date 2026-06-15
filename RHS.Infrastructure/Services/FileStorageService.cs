@@ -193,4 +193,89 @@ public class FileStorageService : IFileStorageService
             return null;
         }
     }
+
+    // ── PDF Methods ───────────────────────────────────────────────
+
+    public bool IsValidPdfFile(IFormFile file, long maxSizeBytes)
+    {
+        if (file == null || file.Length == 0)
+        {
+            _logger.LogWarning("PDF validation failed: file is null or empty.");
+            return false;
+        }
+
+        // Kiểm tra kích thước
+        if (file.Length > maxSizeBytes)
+        {
+            _logger.LogWarning(
+                "PDF validation failed: file size {Size} exceeds max {Max} bytes.",
+                file.Length, maxSizeBytes);
+            return false;
+        }
+
+        // Kiểm tra extension
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (extension != ".pdf")
+        {
+            _logger.LogWarning("PDF validation failed: extension '{Extension}' is not .pdf.", extension);
+            return false;
+        }
+
+        // Kiểm tra content-type
+        if (!file.ContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "PDF validation failed: content-type '{ContentType}' is not application/pdf.",
+                file.ContentType);
+            return false;
+        }
+
+        return true;
+    }
+
+    public async Task<string> UploadPdfAsync(IFormFile file, string folder)
+    {
+        try
+        {
+            // Đặt tên file duy nhất để tránh trùng lặp
+            var publicId = $"{folder}/{Guid.NewGuid()}";
+
+            using var stream = file.OpenReadStream();
+
+            // Dùng RawUploadParams thay vì ImageUploadParams
+            // để Cloudinary lưu file PDF dưới dạng raw binary
+            var uploadParams = new RawUploadParams
+            {
+                File       = new FileDescription(file.FileName, stream),
+                PublicId   = publicId,
+                Folder     = folder,
+                Overwrite  = false
+            };
+
+            var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+
+            if (uploadResult.StatusCode != System.Net.HttpStatusCode.OK)
+            {
+                _logger.LogError(
+                    "Cloudinary PDF upload failed: {Error}", uploadResult.Error?.Message);
+                throw new InvalidOperationException(
+                    $"Upload PDF thất bại: {uploadResult.Error?.Message}");
+            }
+
+            _logger.LogInformation(
+                "PDF uploaded successfully to Cloudinary: {Url}", uploadResult.SecureUrl);
+
+            return uploadResult.SecureUrl.ToString();
+        }
+        catch (InvalidOperationException)
+        {
+            throw; // re-throw lỗi đã có message cụ thể
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error uploading PDF to Cloudinary.");
+            throw new InvalidOperationException("Không thể upload file PDF.", ex);
+        }
+    }
 }
+

@@ -80,17 +80,21 @@ public sealed record FaceMatchResponse
     /// <summary>HTTP status code phản hồi từ FPT AI (ví dụ "200").</summary>
     public string Code { get; init; } = string.Empty;
 
-    /// <summary>Hai ảnh có khớp nhau hay không.</summary>
+    /// <summary>Hai ảnh có khớp nhau hay không (ngưỡng ≥ 80% similarity).</summary>
     public bool IsMatch { get; init; }
 
-    /// <summary>Độ tương đồng khuôn mặt (0.0 – 1.0). Ngưỡng thường dùng ≥ 0.80.</summary>
+    /// <summary>Độ tương đồng khuôn mặt (0.0 – 100.0). Ngưỡng thường dùng ≥ 80.</summary>
     public double Similarity { get; init; }
 
-    /// <summary>Cả hai ảnh đều chứa khuôn mặt hợp lệ hay không.</summary>
-    public bool IsBothFace { get; init; }
+    /// <summary>
+    /// Cả 2 ảnh upload đều là ảnh CCCD hay không.
+    /// <c>true</c> = cả 2 ảnh đều là CCCD, <c>false</c> = ít nhất 1 ảnh không phải CCCD.
+    /// (Tương ứng field <c>isBothImgIDCard</c> trong FPT AI response.)
+    /// </summary>
+    public bool IsBothImgIdCard { get; init; }
 
-    /// <summary>Request ID do FPT AI trả về, dùng để tra cứu log nếu cần.</summary>
-    public string RequestId { get; init; } = string.Empty;
+    /// <summary>Thông điệp từ FPT AI (ví dụ "request successful.").</summary>
+    public string FptMessage { get; init; } = string.Empty;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,25 +103,44 @@ public sealed record FaceMatchResponse
 
 /// <summary>
 /// Kết quả trả về sau khi gọi API Liveness Detection của FPT AI.
-/// Xác định ảnh selfie có phải người thật chụp trực tiếp hay đang bị giả mạo.
+/// API nhận VIDEO và trả về kết quả xác minh thực thể sống + deepfake detection.
 /// </summary>
 public sealed record LivenessDetectionResponse
 {
-    /// <summary>HTTP status code phản hồi từ FPT AI (ví dụ "200").</summary>
+    /// <summary>HTTP status code gốc từ FPT AI (ví dụ "200", "409").</summary>
     public string Code { get; init; } = string.Empty;
 
+    /// <summary>Thông điệp tổng quan từ FPT AI root level ("request successful").</summary>
+    public string FptMessage { get; init; } = string.Empty;
+
+    // ── Kết quả Liveness (nested "liveness" object) ──────────────────────
+
     /// <summary>
-    /// Ảnh selfie có phải người thật hay không.
-    /// <c>true</c> = hợp lệ (liveness passed), <c>false</c> = phát hiện giả mạo (spoofing).
+    /// Video có phải người thật hay không.
+    /// <c>true</c> = liveness passed, <c>false</c> = phát hiện giả mạo (spoofing).
+    /// Tương ứng field <c>is_live</c> trong FPT AI response.
     /// </summary>
     public bool IsLive { get; init; }
 
     /// <summary>
-    /// Điểm tin cậy liveness (0.0 – 1.0).
-    /// Giá trị càng cao càng chắc chắn là người thật. Ngưỡng khuyến nghị ≥ 0.70.
+    /// Xác suất giả mạo (spoof probability), dạng số (ví dụ 0.3587).
+    /// Giá trị càng cao = càng nhiều khả năng bị giả mạo.
+    /// Tương ứng field <c>spoof_prob</c> trong FPT AI response.
     /// </summary>
-    public double LivenessScore { get; init; }
+    public double SpoofProbability { get; init; }
 
-    /// <summary>Thông điệp mô tả kết quả từ FPT AI.</summary>
-    public string Message { get; init; } = string.Empty;
+    /// <summary>Video cần review thủ công hay không (độ tin cậy thấp).</summary>
+    public bool NeedToReview { get; init; }
+
+    /// <summary>Video có phải deepfake hay không.</summary>
+    public bool IsDeepfake { get; init; }
+
+    /// <summary>Cảnh báo chất lượng video (ví dụ: "Resolution of video is too low...").</summary>
+    public string Warning { get; init; } = string.Empty;
+
+    /// <summary>Status code từ nested liveness object.</summary>
+    public string LivenessCode { get; init; } = string.Empty;
+
+    /// <summary>Message từ nested liveness object ("liveness check successful").</summary>
+    public string LivenessMessage { get; init; } = string.Empty;
 }

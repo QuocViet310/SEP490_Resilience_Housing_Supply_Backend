@@ -22,6 +22,339 @@ namespace RHS.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("RHS.Domain.Entities.AIVerificationResult", b =>
+                {
+                    b.Property<Guid>("VerificationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ExtractedText")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<decimal>("FaceMatchScore")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal>("RiskScore")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<string>("ValidationResult")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("VerifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("VerificationId");
+
+                    b.HasIndex("DocumentId")
+                        .IsUnique();
+
+                    b.HasIndex("VerifiedAt");
+
+                    b.ToTable("AIVerificationResults", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.ApplicationDocument", b =>
+                {
+                    b.Property<Guid>("DocumentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<long>("FileSizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FileUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UploadedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("VerificationStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("PENDING");
+
+                    b.HasKey("DocumentId");
+
+                    b.HasIndex("ApplicationId");
+
+                    b.HasIndex("DocumentType");
+
+                    b.HasIndex("UploadedAt");
+
+                    b.HasIndex("UploadedBy");
+
+                    b.ToTable("ApplicationDocuments", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.ApplicationStatusHistory", b =>
+                {
+                    b.Property<Guid>("HistoryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ChangedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("NewStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("OldStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("HistoryId");
+
+                    b.HasIndex("ApplicationId");
+
+                    b.HasIndex("ChangedAt");
+
+                    b.HasIndex("ChangedBy");
+
+                    b.HasIndex("ApplicationId", "ChangedAt");
+
+                    b.ToTable("ApplicationStatusHistories", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.Appointment", b =>
+                {
+                    b.Property<Guid>("AppointmentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("AppointmentDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("AppointmentId");
+
+                    b.HasIndex("ApplicationId");
+
+                    b.HasIndex("AppointmentDate");
+
+                    b.ToTable("Appointments", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.AuditLog", b =>
+                {
+                    b.Property<Guid>("AuditId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("ActionTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EntityName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("IpAddress")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("AuditId");
+
+                    b.HasIndex("ActionTime");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("EntityName", "EntityId");
+
+                    b.ToTable("AuditLogs", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.EligibilityAssessment", b =>
+                {
+                    b.Property<Guid>("AssessmentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("AssessmentDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Eligible")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("EstimatedScore")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("AssessmentId");
+
+                    b.HasIndex("AssessmentDate");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("EligibilityAssessments", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.HousingApplication", b =>
+                {
+                    b.Property<Guid>("ApplicationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApplicantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApplicationStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("CitizenId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CurrentResidence")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<decimal>("EstimatedMonthlyIncome")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("FinalDecisionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("HousingStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Occupation")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("OfficerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PermanentAddress")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<decimal>("PriorityScore")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("SubmittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("WorkPlace")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("ApplicationId");
+
+                    b.HasIndex("ApplicantId");
+
+                    b.HasIndex("ApplicationStatus");
+
+                    b.HasIndex("CitizenId");
+
+                    b.HasIndex("OfficerId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("SubmittedAt");
+
+                    b.HasIndex("ApplicantId", "ProjectId")
+                        .IsUnique();
+
+                    b.ToTable("HousingApplications", (string)null);
+                });
+
             modelBuilder.Entity("RHS.Domain.Entities.HousingProject", b =>
                 {
                     b.Property<Guid>("Id")
@@ -125,6 +458,168 @@ namespace RHS.Infrastructure.Migrations
 
                     b.ToTable("HousingProjectStatuses", (string)null);
                 });
+
+            modelBuilder.Entity("RHS.Domain.Entities.HousingQuota", b =>
+                {
+                    b.Property<Guid>("QuotaId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AllocatedSlots")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("HousingProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PriorityGroup")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("RemainingSlots")
+                        .HasColumnType("int");
+
+                    b.HasKey("QuotaId");
+
+                    b.HasIndex("HousingProjectId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("HousingQuotas", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.IssueReport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IssueType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ScreenshotUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Open");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("IssueType");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("IssueReports", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.Message", b =>
+                {
+                    b.Property<Guid>("MessageId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("ReceiverId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SenderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("SentAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("MessageId");
+
+                    b.HasIndex("ReceiverId");
+
+                    b.HasIndex("SenderId");
+
+                    b.HasIndex("SentAt");
+
+                    b.HasIndex("SenderId", "ReceiverId");
+
+                    b.ToTable("Messages", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.Notification", b =>
+                {
+                    b.Property<Guid>("NotificationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsRead")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("NotificationType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("NotificationId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "IsRead");
+
+                    b.ToTable("Notifications", (string)null);
+                });
+
             modelBuilder.Entity("RHS.Domain.Entities.OtpVerification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -166,6 +661,9 @@ namespace RHS.Infrastructure.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("HousingProjectId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("OrderId")
                         .IsRequired()
@@ -218,12 +716,75 @@ namespace RHS.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("HousingProjectId");
+
                     b.HasIndex("OrderId")
                         .IsUnique();
 
                     b.HasIndex("UserId");
 
                     b.ToTable("Payments", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.PolicyConfig", b =>
+                {
+                    b.Property<Guid>("PolicyId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("EffectiveDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PolicyName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("PolicyValue")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("PolicyId");
+
+                    b.HasIndex("EffectiveDate");
+
+                    b.HasIndex("PolicyName")
+                        .IsUnique();
+
+                    b.HasIndex("UpdatedBy");
+
+                    b.ToTable("PolicyConfigs", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.ProjectImage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ImageUrl")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("ProjectImages", (string)null);
                 });
 
             modelBuilder.Entity("RHS.Domain.Entities.RefreshToken", b =>
@@ -373,6 +934,141 @@ namespace RHS.Infrastructure.Migrations
                     b.ToTable("Users", (string)null);
                 });
 
+            modelBuilder.Entity("RHS.Domain.Entities.Wishlist", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("HousingProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HousingProjectId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "HousingProjectId")
+                        .IsUnique();
+
+                    b.ToTable("Wishlists", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.AIVerificationResult", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.ApplicationDocument", "Document")
+                        .WithOne("VerificationResult")
+                        .HasForeignKey("RHS.Domain.Entities.AIVerificationResult", "DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Document");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.ApplicationDocument", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.HousingApplication", "HousingApplication")
+                        .WithMany("Documents")
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RHS.Domain.Entities.User", "UploadedByUser")
+                        .WithMany()
+                        .HasForeignKey("UploadedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("HousingApplication");
+
+                    b.Navigation("UploadedByUser");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.ApplicationStatusHistory", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.HousingApplication", "Application")
+                        .WithMany("StatusHistories")
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RHS.Domain.Entities.User", "ChangedByUser")
+                        .WithMany()
+                        .HasForeignKey("ChangedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Application");
+
+                    b.Navigation("ChangedByUser");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.Appointment", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.HousingApplication", "HousingApplication")
+                        .WithMany("Appointments")
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("HousingApplication");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.AuditLog", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.User", "User")
+                        .WithMany("AuditLogs")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.EligibilityAssessment", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.User", "User")
+                        .WithMany("EligibilityAssessments")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.HousingApplication", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.User", "Applicant")
+                        .WithMany("HousingApplications")
+                        .HasForeignKey("ApplicantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RHS.Domain.Entities.User", "Officer")
+                        .WithMany("AssignedApplications")
+                        .HasForeignKey("OfficerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("RHS.Domain.Entities.HousingProject", "HousingProject")
+                        .WithMany("HousingApplications")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Applicant");
+
+                    b.Navigation("HousingProject");
+
+                    b.Navigation("Officer");
+                });
+
             modelBuilder.Entity("RHS.Domain.Entities.HousingProject", b =>
                 {
                     b.HasOne("RHS.Domain.Entities.HousingProjectStatus", "HousingProjectStatus")
@@ -383,6 +1079,63 @@ namespace RHS.Infrastructure.Migrations
 
                     b.Navigation("HousingProjectStatus");
                 });
+
+            modelBuilder.Entity("RHS.Domain.Entities.HousingQuota", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.HousingProject", null)
+                        .WithMany("HousingQuotas")
+                        .HasForeignKey("HousingProjectId");
+
+                    b.HasOne("RHS.Domain.Entities.HousingProject", "HousingProject")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("HousingProject");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.IssueReport", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.User", "User")
+                        .WithMany("IssueReports")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.Message", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.User", "Receiver")
+                        .WithMany("ReceivedMessages")
+                        .HasForeignKey("ReceiverId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RHS.Domain.Entities.User", "Sender")
+                        .WithMany("SentMessages")
+                        .HasForeignKey("SenderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Receiver");
+
+                    b.Navigation("Sender");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.Notification", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.User", "User")
+                        .WithMany("Notifications")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("RHS.Domain.Entities.OtpVerification", b =>
                 {
                     b.HasOne("RHS.Domain.Entities.User", "User")
@@ -396,13 +1149,42 @@ namespace RHS.Infrastructure.Migrations
 
             modelBuilder.Entity("RHS.Domain.Entities.Payment", b =>
                 {
+                    b.HasOne("RHS.Domain.Entities.HousingProject", "HousingProject")
+                        .WithMany()
+                        .HasForeignKey("HousingProjectId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("RHS.Domain.Entities.User", "User")
                         .WithMany("Payments")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.Navigation("HousingProject");
+
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.PolicyConfig", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.User", "UpdatedByUser")
+                        .WithMany()
+                        .HasForeignKey("UpdatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("UpdatedByUser");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.ProjectImage", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.HousingProject", "HousingProject")
+                        .WithMany("ProjectImages")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("HousingProject");
                 });
 
             modelBuilder.Entity("RHS.Domain.Entities.RefreshToken", b =>
@@ -416,11 +1198,6 @@ namespace RHS.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("RHS.Domain.Entities.HousingProjectStatus", b =>
-                {
-                    b.Navigation("HousingProjects");
-                });
-
             modelBuilder.Entity("RHS.Domain.Entities.User", b =>
                 {
                     b.HasOne("RHS.Domain.Entities.Role", "Role")
@@ -432,6 +1209,55 @@ namespace RHS.Infrastructure.Migrations
                     b.Navigation("Role");
                 });
 
+            modelBuilder.Entity("RHS.Domain.Entities.Wishlist", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.HousingProject", "HousingProject")
+                        .WithMany("Wishlists")
+                        .HasForeignKey("HousingProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RHS.Domain.Entities.User", "User")
+                        .WithMany("Wishlists")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("HousingProject");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.ApplicationDocument", b =>
+                {
+                    b.Navigation("VerificationResult");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.HousingApplication", b =>
+                {
+                    b.Navigation("Appointments");
+
+                    b.Navigation("Documents");
+
+                    b.Navigation("StatusHistories");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.HousingProject", b =>
+                {
+                    b.Navigation("HousingApplications");
+
+                    b.Navigation("HousingQuotas");
+
+                    b.Navigation("ProjectImages");
+
+                    b.Navigation("Wishlists");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.HousingProjectStatus", b =>
+                {
+                    b.Navigation("HousingProjects");
+                });
+
             modelBuilder.Entity("RHS.Domain.Entities.Role", b =>
                 {
                     b.Navigation("Users");
@@ -439,11 +1265,29 @@ namespace RHS.Infrastructure.Migrations
 
             modelBuilder.Entity("RHS.Domain.Entities.User", b =>
                 {
+                    b.Navigation("AssignedApplications");
+
+                    b.Navigation("AuditLogs");
+
+                    b.Navigation("EligibilityAssessments");
+
+                    b.Navigation("HousingApplications");
+
+                    b.Navigation("IssueReports");
+
+                    b.Navigation("Notifications");
+
                     b.Navigation("OtpVerifications");
 
                     b.Navigation("Payments");
 
+                    b.Navigation("ReceivedMessages");
+
                     b.Navigation("RefreshTokens");
+
+                    b.Navigation("SentMessages");
+
+                    b.Navigation("Wishlists");
                 });
 #pragma warning restore 612, 618
         }

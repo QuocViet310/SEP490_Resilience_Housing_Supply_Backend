@@ -29,7 +29,10 @@ public sealed class FptEKycService : IEKycService
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        // FPT AI đôi khi trả về số dưới dạng string (vd: "errorCode": "0")
+        // AllowReadingFromString xử lý cả hai trường hợp an toàn.
+        NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
     };
 
     public FptEKycService(
@@ -116,13 +119,14 @@ public sealed class FptEKycService : IEKycService
             operationName:     "FaceMatch",
             cancellationToken: cancellationToken);
 
-        // Bước 4: Kiểm tra FPT AI trả về có nhận diện được 2 khuôn mặt không
-        var isBothFace = ParseBoolString(rawResponse.IsBothFace);
-        if (!isBothFace)
+        // Bước 4: Kiểm tra isBothImgIDCard (chỉ áp dụng nếu endpoint flat trả về field này)
+        // Endpoint /dmp/checkface/v1 không trả về field này ở root → bỏ qua khi rỗng.
+        var hasBothImgField = !string.IsNullOrEmpty(rawResponse.IsBothImgIDCard);
+        if (hasBothImgField && !ParseBoolString(rawResponse.IsBothImgIDCard))
         {
             _logger.LogWarning(
                 "FPT AI FaceMatch: Không phát hiện đủ 2 khuôn mặt trong ảnh. " +
-                "isBothFace='{IsBothFace}'.", rawResponse.IsBothFace);
+                "isBothImgIDCard='{IsBothImgIDCard}'.", rawResponse.IsBothImgIDCard);
 
             throw new EKycIntegrationException(
                 EKycIntegrationException.CodeApiError,
@@ -147,17 +151,19 @@ public sealed class FptEKycService : IEKycService
         LivenessDetectionRequest request,
         CancellationToken        cancellationToken = default)
     {
-        // Bước 1: Validate file ảnh selfie — giới hạn 10 MB (dùng ValidateLivenessAsync)
-        await _fileValidator.ValidateLivenessAsync(request.FaceImage, nameof(request.FaceImage));
+        // Bước 1: Validate VIDEO + ảnh khuôn mặt (cmnd) — FPT AI Liveness API v3 yêu cầu cả hai
+        await _fileValidator.ValidateVideoAsync(request.VideoFile, nameof(request.VideoFile));
+        await _fileValidator.ValidateAsync(request.CmndImage, nameof(request.CmndImage));
 
         _logger.LogInformation(
-            "Bắt đầu gọi FPT AI Liveness Detection API cho file '{FileName}' ({Size} bytes).",
-            request.FaceImage.FileName, request.FaceImage.Length);
+            "Bắt đầu gọi FPT AI Liveness Detection API v3: video='{VideoName}' ({VideoSize} bytes), face='{FaceName}' ({FaceSize} bytes).",
+            request.VideoFile.FileName, request.VideoFile.Length,
+            request.CmndImage.FileName, request.CmndImage.Length);
 
-        // Bước 2: Build multipart/form-data (tái sử dụng BuildImageFormDataAsync đã có)
-        using var content = await BuildImageFormDataAsync(request.FaceImage, "image");
+        // Bước 2: Build multipart/form-data với field name "video" và "cmnd" (theo FPT AI docs v3)
+        using var content = await BuildLivenessFormDataAsync(request.VideoFile, request.CmndImage);
 
-        // Bước 3: Gọi FPT AI Liveness endpoint (tái sử dụng PostToFptAiAsync đã có)
+        // Bước 3: Gọi FPT AI Liveness endpoint
         var rawResponse = await PostToFptAiAsync<FptLivenessRawResponse>(
             endpoint:          _options.LivenessEndpoint,
             content:           content,
@@ -168,8 +174,8 @@ public sealed class FptEKycService : IEKycService
         var result = MapToLivenessResponse(rawResponse);
 
         _logger.LogInformation(
-            "FPT AI Liveness Detection hoàn tất. IsLive={IsLive}, Score={Score:F4}.",
-            result.IsLive, result.LivenessScore);
+            "FPT AI Liveness Detection hoàn tất. IsLive={IsLive}, SpoofProb={SpoofProb}, Code={Code}.",
+            result.IsLive, result.SpoofProbability, result.Code);
 
         return result;
     }
@@ -273,6 +279,35 @@ public sealed class FptEKycService : IEKycService
         return formData;
     }
 
+    /// <summary>
+    /// Xây dựng multipart/form-data gửi video + ảnh khuôn mặt lên FPT AI Liveness v3.
+    /// FPT AI Liveness v3 yêu cầu field name "video" cho video và "cmnd" cho ảnh khuôn mặt.
+    /// </summary>
+    private static async Task<MultipartFormDataContent> BuildLivenessFormDataAsync(
+        IFormFile videoFile,
+        IFormFile cmndImage)
+    {
+        var formData = new MultipartFormDataContent();
+
+        // Video: field name "video"
+        var videoStream = new MemoryStream();
+        await videoFile.CopyToAsync(videoStream);
+        videoStream.Position = 0;
+        var videoContent = new StreamContent(videoStream);
+        videoContent.Headers.ContentType = new MediaTypeHeaderValue(videoFile.ContentType);
+        formData.Add(videoContent, "video", videoFile.FileName);
+
+        // Ảnh khuôn mặt: field name "cmnd"
+        var cmndStream = new MemoryStream();
+        await cmndImage.CopyToAsync(cmndStream);
+        cmndStream.Position = 0;
+        var cmndContent = new StreamContent(cmndStream);
+        cmndContent.Headers.ContentType = new MediaTypeHeaderValue(cmndImage.ContentType);
+        formData.Add(cmndContent, "cmnd", cmndImage.FileName);
+
+        return formData;
+    }
+
     /// <summary>Map raw FPT AI OCR response → application DTO.</summary>
     private static OcrIdCardResponse MapToOcrResponse(FptOcrRawResponse raw)
     {
@@ -330,16 +365,40 @@ public sealed class FptEKycService : IEKycService
         return formData;
     }
 
-    /// <summary>Map raw FPT AI Face Match response → application DTO.</summary>
+    /// <summary>Map raw FPT AI Face Match response → application DTO.
+    /// Ưu tiên data nested từ /dmp/checkface/v1, fallback sang flat format (endpoint cũ).
+    /// FPT AI dùng "isMatch" (boolean) trong nested data, không phải "match".
+    /// </summary>
     private static FaceMatchResponse MapToFaceMatchResponse(FptFaceMatchRawResponse raw)
-        => new()
+    {
+        bool   isMatch;
+        double similarity;
+        bool   isBothImgIdCard;
+
+        if (raw.Data is not null)
         {
-            Code       = raw.Code,
-            IsMatch    = ParseBoolString(raw.IsMatch),
-            Similarity = raw.Similarity,
-            IsBothFace = ParseBoolString(raw.IsBothFace),
-            RequestId  = raw.RequestId
+            // Endpoint mới /dmp/checkface/v1: dữ liệu trong nested "data" object
+            isMatch        = raw.Data.IsMatch ?? raw.Data.Match ?? false;
+            similarity     = raw.Data.Similarity;
+            isBothImgIdCard = raw.Data.IsBothImgIDCard ?? false;
+        }
+        else
+        {
+            // Endpoint cũ /vision/faceapi/facematch: flat format
+            isMatch        = raw.Match ?? ParseBoolString(raw.IsMatch);
+            similarity     = raw.Similarity;
+            isBothImgIdCard = ParseBoolString(raw.IsBothImgIDCard);
+        }
+
+        return new()
+        {
+            Code           = raw.Code,
+            IsMatch        = isMatch,
+            Similarity     = similarity,
+            IsBothImgIdCard = isBothImgIdCard,
+            FptMessage     = raw.Message
         };
+    }
 
     /// <summary>
     /// FPT AI trả về "true"/"false" dạng string thay vì boolean.
@@ -374,37 +433,98 @@ public sealed class FptEKycService : IEKycService
     }
 
     /// <summary>
-    /// Raw JSON model cho FPT AI Face Match response.
-    /// Lưu ý: "isMatch" và "isBothFace" là string "true"/"false", không phải bool.
+    /// Raw JSON model cho FPT AI Face Match response (endpoint: /dmp/checkface/v1).
+    /// 
+    /// Endpoint mới trả về cấu trúc NESTED:
+    /// <code>
+    /// { "code": "200", "data": { "match": true, "similarity": 99.87 } }
+    /// </code>
+    /// Giữ lại các field flat (isMatch, match) để tương thích với endpoint cũ.
     /// </summary>
     private sealed record FptFaceMatchRawResponse
     {
-        [JsonPropertyName("code")]       public string Code       { get; init; } = string.Empty;
-        [JsonPropertyName("isMatch")]    public string IsMatch    { get; init; } = string.Empty;
-        [JsonPropertyName("similarity")] public double Similarity { get; init; }
-        [JsonPropertyName("isBothFace")] public string IsBothFace { get; init; } = string.Empty;
-        [JsonPropertyName("requestId")]  public string RequestId  { get; init; } = string.Empty;
+        [JsonPropertyName("code")]    public string Code    { get; init; } = string.Empty;
+        [JsonPropertyName("message")] public string Message { get; init; } = string.Empty;
+
+        // Nested format: /dmp/checkface/v1 trả về data lồng trong "data" object
+        [JsonPropertyName("data")] public FptFaceMatchData? Data { get; init; }
+
+        // Flat format cũ (/vision/faceapi/facematch)
+        [JsonPropertyName("isMatch")]        public string IsMatch        { get; init; } = string.Empty;
+        [JsonPropertyName("match")]          public bool?  Match          { get; init; }
+        [JsonPropertyName("similarity")]     public double Similarity     { get; init; }
+        [JsonPropertyName("isBothImgIDCard")] public string IsBothImgIDCard { get; init; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Dữ liệu kết quả nằm trong field "data" của FPT AI /dmp/checkface/v1.
+    /// FPT AI docs: isMatch, similarity, isBothImgIDCard.
+    /// </summary>
+    private sealed record FptFaceMatchData
+    {
+        [JsonPropertyName("isMatch")]        public bool?  IsMatch        { get; init; }
+        [JsonPropertyName("match")]          public bool?  Match          { get; init; } // dự phòng alias
+        [JsonPropertyName("similarity")]     public double Similarity     { get; init; }
+        // Theo docs: "isBothImgIDCard" — không phải "isBothFace"
+        [JsonPropertyName("isBothImgIDCard")] public bool? IsBothImgIDCard { get; init; }
     }
 
     /// <summary>
     /// Raw JSON model cho FPT AI Liveness Detection response.
-    /// Lưu ý: "liveness" là string "true"/"false" — tương tự pattern của FaceMatch.
+    /// 
+    /// Cấu trúc nested theo docs:
+    /// <code>
+    /// {
+    ///   "code": "200", "message": "request successful",
+    ///   "liveness": { "is_live": "true", "spoof_prob": "0.35", "need_to_review": "false",
+    ///                  "is_deepfake": "N/A", "deepfake_prob": "N/A", "warning": "" },
+    ///   "face_match": { ... }  // optional
+    /// }
+    /// </code>
     /// </summary>
     private sealed record FptLivenessRawResponse
     {
-        [JsonPropertyName("code")]     public string Code     { get; init; } = string.Empty;
-        [JsonPropertyName("liveness")] public string IsLive   { get; init; } = string.Empty;
-        [JsonPropertyName("score")]    public double Score    { get; init; }
-        [JsonPropertyName("message")] public string Message  { get; init; } = string.Empty;
+        [JsonPropertyName("code")]     public string          Code      { get; init; } = string.Empty;
+        [JsonPropertyName("message")] public string          Message   { get; init; } = string.Empty;
+        [JsonPropertyName("liveness")] public FptLivenessData? Liveness { get; init; }
+    }
+
+    /// <summary>
+    /// Nested object "liveness" trong FPT AI Liveness response.
+    /// Tất cả các field dạng string (kể cả bool và float) vì FPT AI có thể trả về "N/A".
+    /// </summary>
+    private sealed record FptLivenessData
+    {
+        [JsonPropertyName("code")]           public string Code          { get; init; } = string.Empty;
+        [JsonPropertyName("message")]        public string Message       { get; init; } = string.Empty;
+        [JsonPropertyName("is_live")]        public string IsLive        { get; init; } = string.Empty; // "true"/"false"
+        [JsonPropertyName("spoof_prob")]     public string SpoofProb     { get; init; } = string.Empty; // "0.3587" or "N/A"
+        [JsonPropertyName("need_to_review")] public string NeedToReview  { get; init; } = string.Empty;
+        [JsonPropertyName("is_deepfake")]    public string IsDeepfake    { get; init; } = string.Empty; // "true"/"false"/"N/A"
+        [JsonPropertyName("deepfake_prob")]  public string DeepfakeProbability { get; init; } = string.Empty;
+        [JsonPropertyName("warning")]        public string Warning       { get; init; } = string.Empty;
     }
 
     /// <summary>Map raw FPT AI Liveness response → application DTO.</summary>
     private static LivenessDetectionResponse MapToLivenessResponse(FptLivenessRawResponse raw)
-        => new()
+    {
+        var l = raw.Liveness; // nested liveness object
+        return new()
         {
-            Code          = raw.Code,
-            IsLive        = ParseBoolString(raw.IsLive),
-            LivenessScore = raw.Score,
-            Message       = raw.Message
+            Code            = raw.Code,
+            FptMessage      = raw.Message,
+            IsLive          = ParseBoolString(l?.IsLive),
+            SpoofProbability = TryParseDouble(l?.SpoofProb),
+            NeedToReview    = ParseBoolString(l?.NeedToReview),
+            IsDeepfake      = ParseBoolString(l?.IsDeepfake),
+            Warning         = l?.Warning ?? string.Empty,
+            LivenessCode    = l?.Code    ?? string.Empty,
+            LivenessMessage = l?.Message ?? string.Empty
         };
+    }
+
+    /// <summary>Parse string → double an toàn. Trả về 0 nếu không parse được (ví dụ "N/A").</summary>
+    private static double TryParseDouble(string? value)
+        => double.TryParse(value, System.Globalization.NumberStyles.Float,
+               System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0;
 }

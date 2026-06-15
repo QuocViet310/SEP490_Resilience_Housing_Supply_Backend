@@ -239,10 +239,10 @@ public class EKycController : ControllerBase
                     : "Khuôn mặt KHÔNG khớp với ảnh CCCD.",
                 data = new
                 {
-                    isMatch    = result.IsMatch,
-                    similarity = result.Similarity,
-                    isBothFace = result.IsBothFace,
-                    requestId  = result.RequestId
+                    isMatch         = result.IsMatch,
+                    similarity      = result.Similarity,
+                    isBothImgIdCard = result.IsBothImgIdCard,   // FPT AI: isBothImgIDCard
+                    fptMessage      = result.FptMessage          // FPT AI: "request successful."
                 }
             });
         }
@@ -281,17 +281,21 @@ public class EKycController : ControllerBase
     }
 
     /// <summary>
-    /// Kiểm tra ảnh selfie có phải người thật chụp trực tiếp hay không (Liveness Detection).
-    /// Phát hiện các hành vi giả mạo: dùng ảnh in, ảnh trên màn hình điện thoại/máy tính, mặt nạ.
+    /// Xác minh thực thể sống qua video selfie + ảnh khuôn mặt (Liveness Detection v3).
+    /// Phát hiện các hành vi giả mạo: dùng ảnh in, màn hình, mặt nạ, video deepfake.
     /// </summary>
     /// <remarks>
     /// **Content-Type:** multipart/form-data
     ///
-    /// **Form field:** `faceImage` — ảnh selfie chụp trực tiếp từ camera (JPEG hoặc PNG, tối đa 5 MB)
+    /// **Form fields:**
+    /// - `videoFile` — video selfie quay trực tiếp từ camera (MP4/AVI/MOV, 3–5 giây)
+    /// - `cmndImage` — ảnh khuôn mặt selfie của người dùng (JPEG/PNG)
+    ///
+    /// FPT AI Liveness v3 yêu cầu cả VIDEO + ảnh khuôn mặt (cmnd).
     ///
     /// **HTTP Responses:**
-    /// - `200` — Kiểm tra hoàn tất. Xem `isLive` trong response: `true` = hợp lệ, `false` = giả mạo
-    /// - `400` — File ảnh không hợp lệ (rỗng, sai định dạng, quá dung lượng)
+    /// - `200` — Kiểm tra hoàn tất. Xem `isLive`: `true` = hợp lệ, `false` = giả mạo
+    /// - `400` — File không hợp lệ (rỗng, sai định dạng, quá dung lượng)
     /// - `401` — Chưa đăng nhập
     /// - `502` — FPT AI API trả về lỗi hoặc không kết nối được
     /// - `500` — Lỗi không xác định từ server
@@ -304,26 +308,35 @@ public class EKycController : ControllerBase
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DetectLiveness(
-        IFormFile faceImage,
+        IFormFile videoFile,
+        IFormFile cmndImage,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var request = new LivenessDetectionRequest { FaceImage = faceImage };
+            var request = new LivenessDetectionRequest
+            {
+                VideoFile = videoFile,
+                CmndImage = cmndImage
+            };
             var result  = await _eKycService.DetectLivenessAsync(request, cancellationToken);
 
             return Ok(new
             {
                 success = true,
                 message = result.IsLive
-                    ? "Xác minh thực thể sống thành công. Ảnh selfie hợp lệ."
-                    : "Phát hiện giả mạo. Ảnh selfie không phải người thật chụp trực tiếp.",
+                    ? "Xác minh thực thể sống thành công. Video hợp lệ."
+                    : "Phát hiện giả mạo. Video không hợp lệ.",
                 data = new
                 {
-                    isLive        = result.IsLive,
-                    livenessScore = result.LivenessScore,
-                    code          = result.Code,
-                    message       = result.Message
+                    isLive           = result.IsLive,
+                    spoofProbability = result.SpoofProbability,
+                    needToReview     = result.NeedToReview,
+                    isDeepfake       = result.IsDeepfake,
+                    warning          = result.Warning,
+                    livenessCode     = result.LivenessCode,
+                    livenessMessage  = result.LivenessMessage,
+                    fptMessage       = result.FptMessage
                 }
             });
         }

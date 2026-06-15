@@ -56,6 +56,22 @@ public class HousingProjectService : IHousingProjectService
             IsDeleted = false
         };
 
+        if (request.Images != null)
+        {
+            var order = 1;
+            foreach (var imageUrl in request.Images)
+            {
+                housingProject.ProjectImages.Add(new ProjectImage
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = housingProject.Id,
+                    ImageUrl = imageUrl,
+                    DisplayOrder = order++,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
+
         // Save to repository
         try
         {
@@ -63,7 +79,7 @@ public class HousingProjectService : IHousingProjectService
         }
         catch (DbUpdateException ex)
         {
-            if (ex.InnerException?.Message.Contains("FK_") == true || 
+            if (ex.InnerException?.Message.Contains("FK_") == true ||
                 ex.InnerException?.Message.Contains("FOREIGN KEY") == true)
             {
                 throw new InvalidOperationException(
@@ -111,6 +127,24 @@ public class HousingProjectService : IHousingProjectService
         existingProject.ThumbnailUrl = request.ThumbnailUrl;
         existingProject.HousingProjectStatusId = request.HousingProjectStatusId;
 
+        // Update images
+        existingProject.ProjectImages.Clear();
+        if (request.Images != null)
+        {
+            var order = 1;
+            foreach (var imageUrl in request.Images)
+            {
+                existingProject.ProjectImages.Add(new ProjectImage
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = existingProject.Id,
+                    ImageUrl = imageUrl,
+                    DisplayOrder = order++,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
+
         // Save to repository
         try
         {
@@ -118,7 +152,7 @@ public class HousingProjectService : IHousingProjectService
         }
         catch (DbUpdateException ex)
         {
-            if (ex.InnerException?.Message.Contains("FK_") == true || 
+            if (ex.InnerException?.Message.Contains("FK_") == true ||
                 ex.InnerException?.Message.Contains("FOREIGN KEY") == true)
             {
                 throw new InvalidOperationException(
@@ -239,7 +273,16 @@ public class HousingProjectService : IHousingProjectService
             ThumbnailUrl = project.ThumbnailUrl,
             CreatedAt = project.CreatedAt,
             UpdatedAt = project.UpdatedAt,
-            Status = project.HousingProjectStatus?.StatusName
+            Status = project.HousingProjectStatus?.StatusName,
+            Images = project.ProjectImages
+                .OrderBy(x => x.DisplayOrder)
+                .Select(x => new ProjectImageResponseDto
+                {
+                    Id = x.Id,
+                    ImageUrl = x.ImageUrl,
+                    DisplayOrder = x.DisplayOrder
+                })
+                .ToList()
         };
     }
 }
