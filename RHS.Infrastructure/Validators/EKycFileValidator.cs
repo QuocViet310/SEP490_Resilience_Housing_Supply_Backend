@@ -57,12 +57,12 @@ public sealed class EKycFileValidator
     private static readonly byte[] PngMagicBytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
     private readonly long _maxFileSizeBytes;
-    private readonly long _maxLivenessFileSizeBytes;
+    private readonly long _maxVideoFileSizeBytes;
 
     public EKycFileValidator(IOptions<FptAiOptions> options)
     {
-        _maxFileSizeBytes         = options.Value.MaxFileSizeBytes;
-        _maxLivenessFileSizeBytes = options.Value.MaxLivenessFileSizeBytes;
+        _maxFileSizeBytes       = options.Value.MaxFileSizeBytes;
+        _maxVideoFileSizeBytes  = options.Value.MaxVideoFileSizeBytes;
     }
 
     /// <summary>
@@ -72,19 +72,20 @@ public sealed class EKycFileValidator
     public async Task ValidateAsync(IFormFile file, string fieldName)
     {
         ValidateNotEmpty(file, fieldName);
-        ValidateSize(file, fieldName);
+        ValidateSize(file, fieldName, _maxFileSizeBytes);
         ValidateContentType(file, fieldName, AllowedImageContentTypes, AllowedImageExtensions);
         await ValidateMagicBytesAsync(file, fieldName);
     }
 
     /// <summary>
     /// Kiểm tra file VIDEO (mp4/avi/mov) cho FPT AI Liveness Detection API.
+    /// Giới hạn 10 MB (lớn hơn ảnh thông thường).
     /// Chỉ kiểm tra MIME type và extension (không check magic bytes vì cấu trúc video phức tạp).
     /// </summary>
     public Task ValidateVideoAsync(IFormFile file, string fieldName)
     {
         ValidateNotEmpty(file, fieldName);
-        ValidateSize(file, fieldName);
+        ValidateSize(file, fieldName, _maxVideoFileSizeBytes);
         ValidateContentType(file, fieldName, AllowedVideoContentTypes, AllowedVideoExtensions);
         return Task.CompletedTask;
     }
