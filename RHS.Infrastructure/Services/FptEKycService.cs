@@ -147,8 +147,8 @@ public sealed class FptEKycService : IEKycService
         LivenessDetectionRequest request,
         CancellationToken        cancellationToken = default)
     {
-        // Bước 1: Validate file ảnh selfie (tái sử dụng EKycFileValidator đã có)
-        await _fileValidator.ValidateAsync(request.FaceImage, nameof(request.FaceImage));
+        // Bước 1: Validate file ảnh selfie — giới hạn 10 MB (dùng ValidateLivenessAsync)
+        await _fileValidator.ValidateLivenessAsync(request.FaceImage, nameof(request.FaceImage));
 
         _logger.LogInformation(
             "Bắt đầu gọi FPT AI Liveness Detection API cho file '{FileName}' ({Size} bytes).",

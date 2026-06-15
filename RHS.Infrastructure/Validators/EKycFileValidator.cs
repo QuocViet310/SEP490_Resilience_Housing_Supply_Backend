@@ -37,10 +37,12 @@ public sealed class EKycFileValidator
     private static readonly byte[] PngMagicBytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
     private readonly long _maxFileSizeBytes;
+    private readonly long _maxLivenessFileSizeBytes;
 
     public EKycFileValidator(IOptions<FptAiOptions> options)
     {
-        _maxFileSizeBytes = options.Value.MaxFileSizeBytes;
+        _maxFileSizeBytes         = options.Value.MaxFileSizeBytes;
+        _maxLivenessFileSizeBytes = options.Value.MaxLivenessFileSizeBytes;
     }
 
     /// <summary>
@@ -56,7 +58,19 @@ public sealed class EKycFileValidator
     public async Task ValidateAsync(IFormFile file, string fieldName)
     {
         ValidateNotEmpty(file, fieldName);
-        ValidateSize(file, fieldName);
+        ValidateSize(file, fieldName, _maxFileSizeBytes);
+        ValidateContentType(file, fieldName);
+        await ValidateMagicBytesAsync(file, fieldName);
+    }
+
+    /// <summary>
+    /// Kiểm tra file ảnh selfie cho Liveness Detection (cho phép tối đa 10 MB).
+    /// Sử dụng <see cref="FptAiOptions.MaxLivenessFileSizeBytes"/> thay vì giới hạn 5 MB thông thường.
+    /// </summary>
+    public async Task ValidateLivenessAsync(IFormFile file, string fieldName)
+    {
+        ValidateNotEmpty(file, fieldName);
+        ValidateSize(file, fieldName, _maxLivenessFileSizeBytes);
         ValidateContentType(file, fieldName);
         await ValidateMagicBytesAsync(file, fieldName);
     }
@@ -70,11 +84,11 @@ public sealed class EKycFileValidator
             throw EKycValidationException.EmptyFile(fieldName);
     }
 
-    /// <summary>Kiểm tra dung lượng file không vượt quá giới hạn.</summary>
-    private void ValidateSize(IFormFile file, string fieldName)
+    /// <summary>Kiểm tra dung lượng file không vượt quá giới hạn cho trước.</summary>
+    private static void ValidateSize(IFormFile file, string fieldName, long maxSizeBytes)
     {
-        if (file.Length > _maxFileSizeBytes)
-            throw EKycValidationException.FileTooLarge(fieldName, file.Length, _maxFileSizeBytes);
+        if (file.Length > maxSizeBytes)
+            throw EKycValidationException.FileTooLarge(fieldName, file.Length, maxSizeBytes);
     }
 
     /// <summary>
