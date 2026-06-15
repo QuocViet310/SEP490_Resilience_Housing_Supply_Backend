@@ -28,23 +28,15 @@ public sealed record FaceMatchRequest
 
 /// <summary>
 /// Request gửi lên endpoint Liveness Detection để xác minh người thật qua video.
-/// FPT AI Liveness v3 API yêu cầu VIDEO (không phải ảnh tĩnh) để chống spoofing/deepfake.
+/// FPT AI Liveness API yêu cầu VIDEO (không phải ảnh tĩnh) để chống spoofing/deepfake.
 /// </summary>
 public sealed record LivenessDetectionRequest
 {
     /// <summary>
     /// Video selfie của người dùng (quay trực tiếp từ camera).
     /// Định dạng hỗ trợ: MP4, AVI, MOV. Thời lượng khuyến nghị: 3–5 giây.
-    /// Field name gửi lên FPT AI: <c>video</c>.
+    /// Field name gửi lên FPT AI: <c>video-0</c>.
     /// </summary>
     public required IFormFile VideoFile { get; init; }
-
-    /// <summary>
-    /// (Tùy chọn) Ảnh CCCD để so sánh khuôn mặt với khuôn mặt thẳng trong video.
-    /// Nếu cung cấp, FPT AI sẽ trả về thêm kết quả <c>face_match</c> trong response.
-    /// Field name gửi lên FPT AI: <c>cmnd</c>.
-    /// Phải là JPEG/PNG.
-    /// </summary>
-    public IFormFile? CccdImage { get; init; }
 }
 

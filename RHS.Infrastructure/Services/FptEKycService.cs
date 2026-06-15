@@ -151,23 +151,17 @@ public sealed class FptEKycService : IEKycService
         LivenessDetectionRequest request,
         CancellationToken        cancellationToken = default)
     {
-        // Bước 1: Validate VIDEO — FPT AI Liveness v3 API yêu cầu video clip
+        // Bước 1: Validate VIDEO (không phải ảnh) — FPT AI Liveness API yêu cầu video clip
         await _fileValidator.ValidateVideoAsync(request.VideoFile, nameof(request.VideoFile));
 
-        // Bước 1b: Validate nh CCCD nếu có (optional)
-        if (request.CccdImage is not null)
-            await _fileValidator.ValidateAsync(request.CccdImage, nameof(request.CccdImage));
-
         _logger.LogInformation(
-            "Bắt đầu gọi FPT AI Liveness Detection v3 API cho video '{FileName}' ({Size} bytes). Có CCCD: {HasCccd}.",
-            request.VideoFile.FileName, request.VideoFile.Length, request.CccdImage is not null);
+            "Bắt đầu gọi FPT AI Liveness Detection API cho video '{FileName}' ({Size} bytes).",
+            request.VideoFile.FileName, request.VideoFile.Length);
 
-        // Bước 2: Build multipart/form-data theo đúng FPT AI docs:
-        //   - field "video"  (bắt buộc) — video selfie
-        //   - field "cmnd"   (tùy chọn) — ảnh CCCD để so sánh khuôn mặt
-        using var content = await BuildLivenessFormDataAsync(request);
+        // Bước 2: Build multipart/form-data với field name "video-0" (theo FPT AI docs)
+        using var content = await BuildImageFormDataAsync(request.VideoFile, "video-0");
 
-        // Bước 3: Gọi FPT AI Liveness v3 endpoint
+        // Bước 3: Gọi FPT AI Liveness endpoint
         var rawResponse = await PostToFptAiAsync<FptLivenessRawResponse>(
             endpoint:          _options.LivenessEndpoint,
             content:           content,
@@ -178,8 +172,8 @@ public sealed class FptEKycService : IEKycService
         var result = MapToLivenessResponse(rawResponse);
 
         _logger.LogInformation(
-            "FPT AI Liveness Detection v3 hoàn tất. IsLive={IsLive}, SpoofProb={SpoofProb}, Code={Code}, HasFaceMatch={HasFaceMatch}.",
-            result.IsLive, result.SpoofProbability, result.Code, result.FaceMatch is not null);
+            "FPT AI Liveness Detection hoàn tất. IsLive={IsLive}, SpoofProb={SpoofProb}, Code={Code}.",
+            result.IsLive, result.SpoofProbability, result.Code);
 
         return result;
     }
@@ -280,37 +274,6 @@ public sealed class FptEKycService : IEKycService
 
         var formData = new MultipartFormDataContent();
         formData.Add(streamContent, formFieldName, file.FileName);
-        return formData;
-    }
-
-    /// <summary>
-    /// Build multipart/form-data cho FPT AI Liveness v3 API:
-    /// field <c>video</c> (bắt buộc) + field <c>cmnd</c> (tùy chọn).
-    /// </summary>
-    private static async Task<MultipartFormDataContent> BuildLivenessFormDataAsync(
-        LivenessDetectionRequest request)
-    {
-        var formData = new MultipartFormDataContent();
-
-        // Field bắt buộc: video
-        var videoStream = new MemoryStream();
-        await request.VideoFile.CopyToAsync(videoStream);
-        videoStream.Position = 0;
-        var videoContent = new StreamContent(videoStream);
-        videoContent.Headers.ContentType = new MediaTypeHeaderValue(request.VideoFile.ContentType);
-        formData.Add(videoContent, "video", request.VideoFile.FileName);
-
-        // Field tùy chọn: cmnd (ảnh CCCD để so sánh khuôn mặt)
-        if (request.CccdImage is not null)
-        {
-            var cmndStream = new MemoryStream();
-            await request.CccdImage.CopyToAsync(cmndStream);
-            cmndStream.Position = 0;
-            var cmndContent = new StreamContent(cmndStream);
-            cmndContent.Headers.ContentType = new MediaTypeHeaderValue(request.CccdImage.ContentType);
-            formData.Add(cmndContent, "cmnd", request.CccdImage.FileName);
-        }
-
         return formData;
     }
 
@@ -490,10 +453,9 @@ public sealed class FptEKycService : IEKycService
     /// </summary>
     private sealed record FptLivenessRawResponse
     {
-        [JsonPropertyName("code")]       public string             Code      { get; init; } = string.Empty;
-        [JsonPropertyName("message")]    public string             Message   { get; init; } = string.Empty;
-        [JsonPropertyName("liveness")]   public FptLivenessData?   Liveness  { get; init; }
-        [JsonPropertyName("face_match")] public FptLivenessFaceMatchData? FaceMatch { get; init; }
+        [JsonPropertyName("code")]     public string          Code      { get; init; } = string.Empty;
+        [JsonPropertyName("message")] public string          Message   { get; init; } = string.Empty;
+        [JsonPropertyName("liveness")] public FptLivenessData? Liveness { get; init; }
     }
 
     /// <summary>
@@ -504,49 +466,29 @@ public sealed class FptEKycService : IEKycService
     {
         [JsonPropertyName("code")]           public string Code          { get; init; } = string.Empty;
         [JsonPropertyName("message")]        public string Message       { get; init; } = string.Empty;
-        [JsonPropertyName("is_live")]        public string IsLive        { get; init; } = string.Empty;
-        [JsonPropertyName("spoof_prob")]     public string SpoofProb     { get; init; } = string.Empty;
+        [JsonPropertyName("is_live")]        public string IsLive        { get; init; } = string.Empty; // "true"/"false"
+        [JsonPropertyName("spoof_prob")]     public string SpoofProb     { get; init; } = string.Empty; // "0.3587" or "N/A"
         [JsonPropertyName("need_to_review")] public string NeedToReview  { get; init; } = string.Empty;
-        [JsonPropertyName("is_deepfake")]    public string IsDeepfake    { get; init; } = string.Empty;
+        [JsonPropertyName("is_deepfake")]    public string IsDeepfake    { get; init; } = string.Empty; // "true"/"false"/"N/A"
         [JsonPropertyName("deepfake_prob")]  public string DeepfakeProbability { get; init; } = string.Empty;
         [JsonPropertyName("warning")]        public string Warning       { get; init; } = string.Empty;
-    }
-
-    /// <summary>
-    /// Nested object "face_match" trong FPT AI Liveness v3 response.
-    /// Chỉ có khi request gửi kèm field <c>cmnd</c> (ảnh CCCD).
-    /// </summary>
-    private sealed record FptLivenessFaceMatchData
-    {
-        [JsonPropertyName("code")]       public string Code       { get; init; } = string.Empty;
-        [JsonPropertyName("message")]    public string Message    { get; init; } = string.Empty;
-        [JsonPropertyName("isMatch")]    public string IsMatch    { get; init; } = string.Empty; // "true"/"false"
-        [JsonPropertyName("similarity")] public string Similarity { get; init; } = string.Empty; // "99.97"
-        [JsonPropertyName("warning")]    public string Warning    { get; init; } = string.Empty;
     }
 
     /// <summary>Map raw FPT AI Liveness response → application DTO.</summary>
     private static LivenessDetectionResponse MapToLivenessResponse(FptLivenessRawResponse raw)
     {
-        var l  = raw.Liveness;  // nested liveness object
-        var fm = raw.FaceMatch; // nested face_match object (null nếu không gửi cmnd)
+        var l = raw.Liveness; // nested liveness object
         return new()
         {
-            Code             = raw.Code,
-            FptMessage       = raw.Message,
-            IsLive           = ParseBoolString(l?.IsLive),
+            Code            = raw.Code,
+            FptMessage      = raw.Message,
+            IsLive          = ParseBoolString(l?.IsLive),
             SpoofProbability = TryParseDouble(l?.SpoofProb),
-            NeedToReview     = ParseBoolString(l?.NeedToReview),
-            IsDeepfake       = ParseBoolString(l?.IsDeepfake),
-            Warning          = l?.Warning ?? string.Empty,
-            LivenessCode     = l?.Code    ?? string.Empty,
-            LivenessMessage  = l?.Message ?? string.Empty,
-            FaceMatch        = fm is null ? null : new LivenessFaceMatchResult
-            {
-                IsMatch    = ParseBoolString(fm.IsMatch),
-                Similarity = TryParseDouble(fm.Similarity),
-                Warning    = fm.Warning
-            }
+            NeedToReview    = ParseBoolString(l?.NeedToReview),
+            IsDeepfake      = ParseBoolString(l?.IsDeepfake),
+            Warning         = l?.Warning ?? string.Empty,
+            LivenessCode    = l?.Code    ?? string.Empty,
+            LivenessMessage = l?.Message ?? string.Empty
         };
     }
 

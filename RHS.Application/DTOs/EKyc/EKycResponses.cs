@@ -143,28 +143,4 @@ public sealed record LivenessDetectionResponse
 
     /// <summary>Message từ nested liveness object ("liveness check successful").</summary>
     public string LivenessMessage { get; init; } = string.Empty;
-
-    // ── Kết quả Face Match (nested "face_match" object — chỉ có khi gửi kèm cmnd) ──
-
-    /// <summary>
-    /// Kết quả so sánh khuôn mặt giữa video và ảnh CCCD (nếu đã cung cấp <c>cmnd</c>).
-    /// Trả về <c>null</c> nếu không gửi kèm ảnh CCCD.
-    /// </summary>
-    public LivenessFaceMatchResult? FaceMatch { get; init; }
-}
-
-/// <summary>
-/// Kết quả face match trả về trong response Liveness Detection
-/// khi người dùng cung cấp thêm ảnh CCCD (form field <c>cmnd</c>).
-/// </summary>
-public sealed record LivenessFaceMatchResult
-{
-    /// <summary>Khuôn mặt trong video có khớp với ảnh CCCD không.</summary>
-    public bool IsMatch { get; init; }
-
-    /// <summary>Điểm tương đồng khuôn mặt (0–100).</summary>
-    public double Similarity { get; init; }
-
-    /// <summary>Cảnh báo từ bước face match (ví dụ: "N/A").</summary>
-    public string Warning { get; init; } = string.Empty;
 }
