@@ -53,7 +53,6 @@ builder.Services.AddScoped<IHousingApplicationRepository, HousingApplicationRepo
 builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
 builder.Services.AddScoped<IReviewHistoryRepository, ReviewHistoryRepository>();
 builder.Services.AddScoped<IIssueReportRepository, IssueReportRepository>();
-builder.Services.AddScoped<IWishlistRepository, WishlistRepository>();
 
 // Dependency Injection - Services
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -69,7 +68,6 @@ builder.Services.AddScoped<IHousingApplicationService, HousingApplicationService
 builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IIssueReportService, IssueReportService>();
-builder.Services.AddScoped<IWishlistService, WishlistService>();
 
 // Dependency Injection - VNPay Payment
 builder.Services.AddScoped<IVnPayService, VnPayService>();
