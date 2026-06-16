@@ -56,11 +56,17 @@ public class UserService : IUserService
             return null;
         }
 
-        // Update user information (CitizenId is NOT updatable - it's an identity field)
+        // Update user information
         user.FullName = updateProfileDto.FullName;
         user.PhoneNumber = updateProfileDto.PhoneNumber;
         user.DateOfBirth = updateProfileDto.DateOfBirth;
         user.Address = updateProfileDto.Address;
+
+        // CitizenId can only be set once (via eKyc), not overwritten afterwards
+        if (string.IsNullOrEmpty(user.CitizenId) && !string.IsNullOrEmpty(updateProfileDto.CitizenId))
+        {
+            user.CitizenId = updateProfileDto.CitizenId;
+        }
 
         await _userRepository.UpdateAsync(user);
 

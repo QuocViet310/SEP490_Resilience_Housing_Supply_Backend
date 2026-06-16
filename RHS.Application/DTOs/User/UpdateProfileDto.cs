@@ -16,4 +16,7 @@ public class UpdateProfileDto
 
     [StringLength(500, ErrorMessage = "Địa chỉ không được vượt quá 500 ký tự")]
     public string? Address { get; set; }
+
+    [StringLength(20, ErrorMessage = "Số CCCD không được vượt quá 20 ký tự")]
+    public string? CitizenId { get; set; }
 }
