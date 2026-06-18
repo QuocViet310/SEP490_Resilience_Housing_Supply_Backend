@@ -8,10 +8,14 @@ namespace RHS.Infrastructure.Services;
 public class HousingProjectService : IHousingProjectService
 {
     private readonly IHousingProjectRepository _repository;
+    private readonly IFileStorageService _fileStorageService;
 
-    public HousingProjectService(IHousingProjectRepository repository)
+    public HousingProjectService(
+        IHousingProjectRepository repository,
+        IFileStorageService fileStorageService)
     {
         _repository = repository;
+        _fileStorageService = fileStorageService;
     }
 
     public async Task<PagedResultDto<HousingProjectResponseDto>> GetHousingProjectsAsync(
@@ -37,6 +41,13 @@ public class HousingProjectService : IHousingProjectService
         // Validate request
         ValidateHousingProjectRequest(request);
 
+        // Upload Thumbnail if provided
+        var thumbnailUrl = request.ThumbnailUrl;
+        if (request.ThumbnailFile != null)
+        {
+            thumbnailUrl = await _fileStorageService.UploadImageAsync(request.ThumbnailFile, "housing-projects");
+        }
+
         // Create entity
         var housingProject = new HousingProject
         {
@@ -51,25 +62,37 @@ public class HousingProjectService : IHousingProjectService
             MinArea = request.MinArea,
             MaxArea = request.MaxArea,
             AvailableUnits = request.AvailableUnits,
-            ThumbnailUrl = request.ThumbnailUrl,
+            ThumbnailUrl = thumbnailUrl,
             HousingProjectStatusId = request.HousingProjectStatusId,
             IsDeleted = false
         };
 
-        if (request.Images != null)
+        // Upload/Process multiple images
+        var imageUrls = new List<string>();
+        if (request.ImageFiles != null && request.ImageFiles.Count > 0)
         {
-            var order = 1;
-            foreach (var imageUrl in request.Images)
+            foreach (var file in request.ImageFiles)
             {
-                housingProject.ProjectImages.Add(new ProjectImage
-                {
-                    Id = Guid.NewGuid(),
-                    ProjectId = housingProject.Id,
-                    ImageUrl = imageUrl,
-                    DisplayOrder = order++,
-                    CreatedAt = DateTime.UtcNow
-                });
+                var uploadedUrl = await _fileStorageService.UploadImageAsync(file, "housing-projects");
+                imageUrls.Add(uploadedUrl);
             }
+        }
+        else if (request.Images != null)
+        {
+            imageUrls.AddRange(request.Images);
+        }
+
+        var order = 1;
+        foreach (var url in imageUrls)
+        {
+            housingProject.ProjectImages.Add(new ProjectImage
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = housingProject.Id,
+                ImageUrl = url,
+                DisplayOrder = order++,
+                CreatedAt = DateTime.UtcNow
+            });
         }
 
         // Save to repository
@@ -113,6 +136,13 @@ public class HousingProjectService : IHousingProjectService
             throw new InvalidOperationException($"Housing project with ID {id} not found.");
         }
 
+        // Upload Thumbnail if provided
+        var thumbnailUrl = request.ThumbnailUrl;
+        if (request.ThumbnailFile != null)
+        {
+            thumbnailUrl = await _fileStorageService.UploadImageAsync(request.ThumbnailFile, "housing-projects");
+        }
+
         // Update entity
         existingProject.ProjectName = request.ProjectName;
         existingProject.Description = request.Description;
@@ -124,25 +154,36 @@ public class HousingProjectService : IHousingProjectService
         existingProject.MinArea = request.MinArea;
         existingProject.MaxArea = request.MaxArea;
         existingProject.AvailableUnits = request.AvailableUnits;
-        existingProject.ThumbnailUrl = request.ThumbnailUrl;
+        existingProject.ThumbnailUrl = thumbnailUrl;
         existingProject.HousingProjectStatusId = request.HousingProjectStatusId;
 
         // Update images
         existingProject.ProjectImages.Clear();
-        if (request.Images != null)
+        var imageUrls = new List<string>();
+        if (request.ImageFiles != null && request.ImageFiles.Count > 0)
         {
-            var order = 1;
-            foreach (var imageUrl in request.Images)
+            foreach (var file in request.ImageFiles)
             {
-                existingProject.ProjectImages.Add(new ProjectImage
-                {
-                    Id = Guid.NewGuid(),
-                    ProjectId = existingProject.Id,
-                    ImageUrl = imageUrl,
-                    DisplayOrder = order++,
-                    CreatedAt = DateTime.UtcNow
-                });
+                var uploadedUrl = await _fileStorageService.UploadImageAsync(file, "housing-projects");
+                imageUrls.Add(uploadedUrl);
             }
+        }
+        else if (request.Images != null)
+        {
+            imageUrls.AddRange(request.Images);
+        }
+
+        var order = 1;
+        foreach (var url in imageUrls)
+        {
+            existingProject.ProjectImages.Add(new ProjectImage
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = existingProject.Id,
+                ImageUrl = url,
+                DisplayOrder = order++,
+                CreatedAt = DateTime.UtcNow
+            });
         }
 
         // Save to repository

@@ -112,13 +112,14 @@ public class HousingProjectsController : ControllerBase
     /// <param name="request">Create housing project request</param>
     /// <returns>Created housing project</returns>
     [HttpPost]
+    [Consumes("multipart/form-data")]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<HousingProjectResponseDto>> CreateHousingProject(
-        [FromBody] CreateHousingProjectRequestDto request)
+        [FromForm] CreateHousingProjectRequestDto request)
     {
         try
         {
@@ -150,6 +151,7 @@ public class HousingProjectsController : ControllerBase
     /// <param name="request">Update housing project request</param>
     /// <returns>Updated housing project</returns>
     [HttpPut("{id}")]
+    [Consumes("multipart/form-data")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -158,7 +160,7 @@ public class HousingProjectsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<HousingProjectResponseDto>> UpdateHousingProject(
         Guid id,
-        [FromBody] UpdateHousingProjectRequestDto request)
+        [FromForm] UpdateHousingProjectRequestDto request)
     {
         try
         {

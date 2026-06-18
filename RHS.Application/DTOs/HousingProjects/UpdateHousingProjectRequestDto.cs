@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+
 namespace RHS.Application.DTOs.HousingProjects;
 
 public class UpdateHousingProjectRequestDto
@@ -15,4 +17,7 @@ public class UpdateHousingProjectRequestDto
     public string? ThumbnailUrl { get; set; }
     public Guid HousingProjectStatusId { get; set; }
     public List<string>? Images { get; set; }
+
+    public IFormFile? ThumbnailFile { get; set; }
+    public List<IFormFile>? ImageFiles { get; set; }
 }
