@@ -165,12 +165,13 @@ public class ReviewService : IReviewService
         // Validate action value
         var (action, targetStatus) = ResolveVoAction(request.Action);
 
-        // Note bắt buộc khi Reject
-        if (action == ReviewActionConstants.Reject &&
-            string.IsNullOrWhiteSpace(request.Note))
+        // Note bắt buộc khi Reject hoặc Request More Documents
+        if (action is ReviewActionConstants.Reject
+                   or ReviewActionConstants.RequestMoreDocuments
+            && string.IsNullOrWhiteSpace(request.Note))
         {
             throw new ArgumentException(
-                "Lý do từ chối (Note) là bắt buộc khi thực hiện hành động REJECT.");
+                "Ghi chú (Note) là bắt buộc khi thực hiện REJECT hoặc REQUEST_MORE_DOCUMENTS.");
         }
 
         var application = await GetApplicationOrThrowAsync(applicationId);
@@ -340,11 +341,12 @@ public class ReviewService : IReviewService
     {
         return actionInput.ToUpperInvariant() switch
         {
-            "APPROVE" => (ReviewActionConstants.Approve, ApplicationStatusConstants.Approved),
-            "REJECT"  => (ReviewActionConstants.Reject,  ApplicationStatusConstants.Rejected),
+            "APPROVE"                => (ReviewActionConstants.Approve,              ApplicationStatusConstants.Approved),
+            "REJECT"                 => (ReviewActionConstants.Reject,               ApplicationStatusConstants.Rejected),
+            "REQUEST_MORE_DOCUMENTS" => (ReviewActionConstants.RequestMoreDocuments, ApplicationStatusConstants.NeedMoreDocuments),
             _ => throw new ArgumentException(
                 $"Hành động '{actionInput}' không hợp lệ cho Verification Officer. " +
-                "Giá trị hợp lệ: APPROVE, REJECT.")
+                "Giá trị hợp lệ: APPROVE, REJECT, REQUEST_MORE_DOCUMENTS.")
         };
     }
 
