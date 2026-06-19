@@ -15,7 +15,7 @@ public static class ApplicationStatusConstants
     /// <summary>Đang thẩm định bởi Verification Officer</summary>
     public const string UnderReview = "UNDER_REVIEW";
 
-    /// <summary>Yêu cầu bổ sung giấy tờ (do Ward Manager yêu cầu)</summary>
+    /// <summary>Yêu cầu bổ sung giấy tờ (VO hoặc Ward Manager yêu cầu)</summary>
     public const string NeedMoreDocuments = "NEED_MORE_DOCUMENTS";
 
     /// <summary>Đã được phê duyệt</summary>
@@ -49,8 +49,8 @@ public static class ApplicationStatusConstants
         {
             // VO có thể chuyển từ SUBMITTED → UNDER_REVIEW (nhận hồ sơ)
             [Submitted] = new[] { UnderReview },
-            // VO có thể chuyển từ UNDER_REVIEW → APPROVED hoặc REJECTED
-            [UnderReview] = new[] { Approved, Rejected },
+            // VO có thể chuyển từ UNDER_REVIEW → APPROVED, REJECTED, hoặc NEED_MORE_DOCUMENTS
+            [UnderReview] = new[] { Approved, Rejected, NeedMoreDocuments },
             // VO có thể chuyển từ NEED_MORE_DOCUMENTS → UNDER_REVIEW (sau khi người dân bổ sung)
             [NeedMoreDocuments] = new[] { UnderReview }
         };
