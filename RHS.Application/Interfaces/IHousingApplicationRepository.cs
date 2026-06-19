@@ -42,4 +42,17 @@ public interface IHousingApplicationRepository
     /// Quy định: mỗi người chỉ được 1 hồ sơ/dự án.
     /// </summary>
     Task<bool> ExistsByApplicantAndProjectAsync(Guid applicantId, Guid projectId);
+
+    /// <summary>
+    /// Kiểm tra một số CCCD đã tồn tại trong hồ sơ KHÁC của cùng dự án hay chưa.
+    /// Được gọi khi Applicant Submit để đảm bảo mỗi CCCD chỉ có một hồ sơ trong một dự án,
+    /// bất kể người dùng sử dụng tài khoản nào.
+    /// </summary>
+    /// <param name="citizenId">Số CCCD cần kiểm tra.</param>
+    /// <param name="projectId">Dự án cần kiểm tra.</param>
+    /// <param name="excludeApplicationId">
+    /// ID hồ sơ hiện tại — sẽ bị loại trừ khỏi tìm kiếm để tránh tự block chính mình.
+    /// </param>
+    /// <returns><c>true</c> nếu CCCD đã tồn tại trong hồ sơ khác của dự án đó.</returns>
+    Task<bool> CitizenIdExistsInProjectAsync(string citizenId, Guid projectId, Guid excludeApplicationId);
 }

@@ -180,12 +180,14 @@ public class HousingApplicationsController : ControllerBase
 
     /// <summary>
     /// [Applicant] Nộp hồ sơ chính thức.
-    /// Yêu cầu: hồ sơ phải ở trạng thái DRAFT và có ít nhất 1 tài liệu.
+    /// Yêu cầu: hồ sơ phải ở trạng thái DRAFT, có ít nhất 1 tài liệu,
+    /// và CCCD chưa tồn tại trong hồ sơ khác của cùng dự án.
     /// </summary>
     [HttpPost("{id:guid}/submit")]
     [Authorize(Roles = RoleConstants.Applicant)]
     [ProducesResponseType(typeof(ReviewResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> SubmitApplication(Guid id)
@@ -202,6 +204,13 @@ public class HousingApplicationsController : ControllerBase
         catch (ApplicationNotFoundException ex)
         {
             return NotFound(new { errorCode = ex.ErrorCode, message = ex.Message });
+        }
+        catch (DuplicateCitizenIdInProjectException ex)
+        {
+            _logger.LogWarning(
+                "Submit blocked for application {Id}: CitizenId '{CitizenId}' already exists in project.",
+                id, ex.CitizenId);
+            return Conflict(new { errorCode = ex.ErrorCode, message = ex.Message });
         }
         catch (ApplicationNotReadyToSubmitException ex)
         {
