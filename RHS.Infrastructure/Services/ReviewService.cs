@@ -72,6 +72,24 @@ public class ReviewService : IReviewService
                 "Vui lòng upload ít nhất 1 loại giấy tờ chứng minh trước khi nộp.");
         }
 
+        // Nghiệp vụ: CCCD phải là duy nhất trong cùng một dự án
+        // Kiểm tra xem CitizenId của hồ sơ này đã tồn tại trong hồ sơ KHÁC của dự án chưa
+        var citizenIdDuplicated = await _applicationRepo.CitizenIdExistsInProjectAsync(
+            citizenId:            application.CitizenId,
+            projectId:            application.ProjectId,
+            excludeApplicationId: applicationId);
+
+        if (citizenIdDuplicated)
+        {
+            _logger.LogWarning(
+                "Submit blocked: CitizenId '{CitizenId}' already exists in project {ProjectId}. ApplicationId={AppId}.",
+                application.CitizenId, application.ProjectId, applicationId);
+
+            throw new DuplicateCitizenIdInProjectException(
+                application.CitizenId,
+                application.ProjectId);
+        }
+
         var oldStatus = application.ApplicationStatus;
         var now = DateTime.UtcNow;
 

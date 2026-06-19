@@ -83,6 +83,19 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             .AnyAsync(x => x.ApplicantId == applicantId && x.ProjectId == projectId);
     }
 
+    public async Task<bool> CitizenIdExistsInProjectAsync(
+        string citizenId,
+        Guid   projectId,
+        Guid   excludeApplicationId)
+    {
+        return await _context.HousingApplications
+            .AsNoTracking()
+            .AnyAsync(x =>
+                x.CitizenId    == citizenId         &&
+                x.ProjectId    == projectId          &&
+                x.ApplicationId != excludeApplicationId);
+    }
+
     // ─────────────────────────────────────────────────────────────
     // Private helpers
     // ─────────────────────────────────────────────────────────────

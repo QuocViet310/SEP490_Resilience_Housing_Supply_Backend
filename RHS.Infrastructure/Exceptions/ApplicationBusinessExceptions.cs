@@ -59,3 +59,27 @@ public sealed class ApplicationNotReadyToSubmitException : HousingApplicationExc
         Reason = reason;
     }
 }
+
+/// <summary>
+/// Ném ra khi Applicant cố nộp hồ sơ (SUBMIT) nhưng số CCCD trong hồ sơ
+/// đã tồn tại trong một hồ sơ khác của cùng dự án.
+/// Quy định: mỗi CCCD chỉ được phép xuất hiện trong một hồ sơ của một dự án,
+/// bất kể người dùng sử dụng tài khoản nào.
+/// Controller nên trả về HTTP 409 (Conflict).
+/// </summary>
+public sealed class DuplicateCitizenIdInProjectException : HousingApplicationException
+{
+    public const string CodeDuplicateCitizenId = "APP_CITIZEN_ID_DUPLICATE";
+
+    public string CitizenId { get; }
+    public Guid   ProjectId { get; }
+
+    public DuplicateCitizenIdInProjectException(string citizenId, Guid projectId)
+        : base(CodeDuplicateCitizenId,
+            $"Số CCCD '{citizenId}' đã được sử dụng trong một hồ sơ khác của dự án này. " +
+            $"Mỗi CCCD chỉ được phép nộp một hồ sơ cho mỗi dự án.")
+    {
+        CitizenId = citizenId;
+        ProjectId = projectId;
+    }
+}
