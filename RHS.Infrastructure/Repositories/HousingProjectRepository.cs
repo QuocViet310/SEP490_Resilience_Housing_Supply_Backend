@@ -21,6 +21,7 @@ public class HousingProjectRepository : IHousingProjectRepository
         // Build the query with filtering
         IQueryable<HousingProject> query = _context.HousingProjects
             .Include(x => x.HousingProjectStatus)
+            .Include(x => x.ProjectImages)
             .AsNoTracking();
 
         // Apply search filter (by project name)
@@ -103,12 +104,18 @@ public class HousingProjectRepository : IHousingProjectRepository
             MaxArea = x.MaxArea,
             AvailableUnits = x.AvailableUnits,
             ThumbnailUrl = x.ThumbnailUrl,
-            Status = x.HousingProjectStatus != null ? new HousingProjectStatusDto
-            {
-                Id = x.HousingProjectStatus.Id,
-                StatusName = x.HousingProjectStatus.StatusName,
-                StatusCode = x.HousingProjectStatus.StatusCode
-            } : null
+            CreatedAt = x.CreatedAt,
+            UpdatedAt = x.UpdatedAt,
+            Status = x.HousingProjectStatus?.StatusName,
+            Images = x.ProjectImages
+                .OrderBy(p => p.DisplayOrder)
+                .Select(p => new ProjectImageResponseDto
+                {
+                    Id = p.Id,
+                    ImageUrl = p.ImageUrl,
+                    DisplayOrder = p.DisplayOrder
+                })
+                .ToList()
         }).ToList();
 
         return new PagedResultDto<HousingProjectResponseDto>
@@ -118,5 +125,58 @@ public class HousingProjectRepository : IHousingProjectRepository
             TotalCount = totalCount,
             Items = items
         };
+    }
+
+    public async Task<HousingProject> CreateAsync(HousingProject entity)
+    {
+        entity.CreatedAt = DateTime.UtcNow;
+        _context.HousingProjects.Add(entity);
+        await _context.SaveChangesAsync();
+        return entity;
+    }
+
+    public async Task<HousingProject?> GetByIdAsync(Guid id)
+    {
+        return await _context.HousingProjects
+            .Include(x => x.HousingProjectStatus)
+            .Include(x => x.ProjectImages)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == id);
+    }
+
+    public async Task UpdateAsync(HousingProject entity)
+    {
+        entity.UpdatedAt = DateTime.UtcNow;
+
+        var existingImages = await _context.ProjectImages
+            .Where(x => x.ProjectId == entity.Id)
+            .ToListAsync();
+        _context.ProjectImages.RemoveRange(existingImages);
+
+        _context.HousingProjects.Update(entity);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task SoftDeleteAsync(HousingProject entity)
+    {
+        entity.IsDeleted = true;
+        entity.UpdatedAt = DateTime.UtcNow;
+        _context.HousingProjects.Update(entity);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<bool> ExistsAsync(Guid id)
+    {
+        return await _context.HousingProjects
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == id);
+    }
+
+    public async Task<bool> StatusExistsAsync(Guid statusId)
+    {
+        return await _context.HousingProjectStatuses
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == statusId);
     }
 }

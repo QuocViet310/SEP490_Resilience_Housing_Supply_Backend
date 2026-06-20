@@ -14,5 +14,8 @@ public class HousingProjectResponseDto
     public double MaxArea { get; set; }
     public int AvailableUnits { get; set; }
     public string? ThumbnailUrl { get; set; }
-    public HousingProjectStatusDto? Status { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public string? Status { get; set; }
+    public List<ProjectImageResponseDto> Images { get; set; } = new List<ProjectImageResponseDto>();
 }
