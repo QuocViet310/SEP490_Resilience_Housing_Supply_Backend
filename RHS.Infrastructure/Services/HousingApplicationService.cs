@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using RHS.Application.DTOs.HousingApplications;
+using RHS.Application.DTOs.HousingApplications.Dashboard;
 using RHS.Application.DTOs.HousingProjects;
 using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
@@ -204,5 +205,25 @@ public class HousingApplicationService : IHousingApplicationService
                     ChangedByFullName = h.ChangedByUser?.FullName ?? string.Empty
                 }).ToList()
         };
+    }
+
+    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetVerificationOfficerDashboardAsync(
+        HousingApplicationDashboardQueryDto query)
+    {
+        NormalizeDashboardQuery(query);
+        return await _applicationRepo.GetVerificationOfficerDashboardAsync(query);
+    }
+
+    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetWardManagerDashboardAsync(
+        HousingApplicationDashboardQueryDto query)
+    {
+        NormalizeDashboardQuery(query);
+        return await _applicationRepo.GetWardManagerDashboardAsync(query);
+    }
+
+    private static void NormalizeDashboardQuery(HousingApplicationDashboardQueryDto query)
+    {
+        if (query.PageIndex < 1) query.PageIndex = 1;
+        query.PageSize = Math.Clamp(query.PageSize, 1, 50);
     }
 }

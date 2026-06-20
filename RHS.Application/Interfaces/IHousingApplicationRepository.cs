@@ -1,4 +1,5 @@
 using RHS.Application.DTOs.HousingApplications;
+using RHS.Application.DTOs.HousingApplications.Dashboard;
 using RHS.Application.DTOs.HousingProjects;
 using RHS.Domain.Entities;
 
@@ -55,4 +56,10 @@ public interface IHousingApplicationRepository
     /// </param>
     /// <returns><c>true</c> nếu CCCD đã tồn tại trong hồ sơ khác của dự án đó.</returns>
     Task<bool> CitizenIdExistsInProjectAsync(string citizenId, Guid projectId, Guid excludeApplicationId);
+
+    Task<PagedResult<HousingApplicationDashboardItemDto>> GetVerificationOfficerDashboardAsync(
+        HousingApplicationDashboardQueryDto query);
+
+    Task<PagedResult<HousingApplicationDashboardItemDto>> GetWardManagerDashboardAsync(
+        HousingApplicationDashboardQueryDto query);
 }

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using RHS.Application.DTOs.HousingApplications;
+using RHS.Application.DTOs.HousingApplications.Dashboard;
 using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
 using RHS.Infrastructure.Exceptions;
@@ -139,6 +140,58 @@ public class HousingApplicationsController : ControllerBase
         {
             _logger.LogError(ex, "Error retrieving all housing applications.");
             return StatusCode(500, new { message = "Đã xảy ra lỗi khi lấy danh sách hồ sơ." });
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // DASHBOARD ENDPOINTS
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// [VerificationOfficer] Lấy danh sách hồ sơ cho Dashboard của Verification Officer.
+    /// </summary>
+    [HttpGet("dashboard/vo")]
+    [Authorize(Roles = RoleConstants.VerificationOfficer)]
+    [ProducesResponseType(typeof(PagedResult<HousingApplicationDashboardItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetVerificationOfficerDashboard(
+        [FromQuery] HousingApplicationDashboardQueryDto query)
+    {
+        try
+        {
+            var result = await _applicationService.GetVerificationOfficerDashboardAsync(query);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving Verification Officer dashboard.");
+            return StatusCode(500, new { message = "Đã xảy ra lỗi khi tải dữ liệu dashboard." });
+        }
+    }
+
+    /// <summary>
+    /// [WardManager] Lấy danh sách hồ sơ cho Dashboard của Ward Manager.
+    /// </summary>
+    [HttpGet("dashboard/wm")]
+    [Authorize(Roles = RoleConstants.WardManager)]
+    [ProducesResponseType(typeof(PagedResult<HousingApplicationDashboardItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetWardManagerDashboard(
+        [FromQuery] HousingApplicationDashboardQueryDto query)
+    {
+        try
+        {
+            var result = await _applicationService.GetWardManagerDashboardAsync(query);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving Ward Manager dashboard.");
+            return StatusCode(500, new { message = "Đã xảy ra lỗi khi tải dữ liệu dashboard." });
         }
     }
 

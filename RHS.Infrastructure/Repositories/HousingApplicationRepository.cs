@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using RHS.Application.DTOs.HousingApplications;
+using RHS.Application.DTOs.HousingApplications.Dashboard;
 using RHS.Application.DTOs.HousingProjects;
 using RHS.Application.Interfaces;
+using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Data;
 
@@ -189,6 +191,138 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             PageSize   = pageSize,
             TotalCount = totalCount,
             Items      = items
+        };
+    }
+
+    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetVerificationOfficerDashboardAsync(
+        HousingApplicationDashboardQueryDto query)
+    {
+        var allowedStatuses = new[]
+        {
+            ApplicationStatusConstants.Submitted,
+            ApplicationStatusConstants.UnderReview,
+            ApplicationStatusConstants.NeedMoreDocuments
+        };
+
+        var baseQuery = _context.HousingApplications
+            .AsNoTracking()
+            .Include(x => x.Applicant)
+            .Include(x => x.HousingProject)
+            .Where(x => allowedStatuses.Contains(x.ApplicationStatus));
+
+        if (query.ProjectId.HasValue)
+        {
+            baseQuery = baseQuery.Where(x => x.ProjectId == query.ProjectId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Status))
+        {
+            var statusUpper = query.Status.Trim().ToUpper();
+            if (allowedStatuses.Contains(statusUpper))
+            {
+                baseQuery = baseQuery.Where(x => x.ApplicationStatus == statusUpper);
+            }
+            else
+            {
+                baseQuery = baseQuery.Where(x => false);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim().ToLower();
+            baseQuery = baseQuery.Where(x =>
+                x.FullName.ToLower().Contains(term) ||
+                x.Applicant.Email.ToLower().Contains(term) ||
+                x.HousingProject.ProjectName.ToLower().Contains(term));
+        }
+
+        var totalCount = await baseQuery.CountAsync();
+
+        var sortedQuery = baseQuery.OrderByDescending(x => x.SubmittedAt);
+
+        var pageIndex = Math.Max(query.PageIndex, 1);
+        var pageSize = Math.Clamp(query.PageSize, 1, 50);
+        var skip = (pageIndex - 1) * pageSize;
+
+        var items = await sortedQuery
+            .Skip(skip)
+            .Take(pageSize)
+            .Select(x => new HousingApplicationDashboardItemDto
+            {
+                ApplicationId = x.ApplicationId,
+                ApplicantName = x.FullName,
+                ApplicantEmail = x.Applicant.Email,
+                ProjectName = x.HousingProject.ProjectName,
+                ApplicationStatus = x.ApplicationStatus,
+                PriorityScore = x.PriorityScore,
+                EstimatedMonthlyIncome = x.EstimatedMonthlyIncome,
+                SubmittedAt = x.SubmittedAt
+            })
+            .ToListAsync();
+
+        return new PagedResult<HousingApplicationDashboardItemDto>
+        {
+            PageIndex = pageIndex,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+            Items = items
+        };
+    }
+
+    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetWardManagerDashboardAsync(
+        HousingApplicationDashboardQueryDto query)
+    {
+        var baseQuery = _context.HousingApplications
+            .AsNoTracking()
+            .Include(x => x.Applicant)
+            .Include(x => x.HousingProject)
+            .Where(x => x.ApplicationStatus == ApplicationStatusConstants.UnderReview);
+
+        if (query.ProjectId.HasValue)
+        {
+            baseQuery = baseQuery.Where(x => x.ProjectId == query.ProjectId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim().ToLower();
+            baseQuery = baseQuery.Where(x =>
+                x.FullName.ToLower().Contains(term) ||
+                x.Applicant.Email.ToLower().Contains(term) ||
+                x.HousingProject.ProjectName.ToLower().Contains(term));
+        }
+
+        var totalCount = await baseQuery.CountAsync();
+
+        var sortedQuery = baseQuery.OrderByDescending(x => x.SubmittedAt);
+
+        var pageIndex = Math.Max(query.PageIndex, 1);
+        var pageSize = Math.Clamp(query.PageSize, 1, 50);
+        var skip = (pageIndex - 1) * pageSize;
+
+        var items = await sortedQuery
+            .Skip(skip)
+            .Take(pageSize)
+            .Select(x => new HousingApplicationDashboardItemDto
+            {
+                ApplicationId = x.ApplicationId,
+                ApplicantName = x.FullName,
+                ApplicantEmail = x.Applicant.Email,
+                ProjectName = x.HousingProject.ProjectName,
+                ApplicationStatus = x.ApplicationStatus,
+                PriorityScore = x.PriorityScore,
+                EstimatedMonthlyIncome = x.EstimatedMonthlyIncome,
+                SubmittedAt = x.SubmittedAt
+            })
+            .ToListAsync();
+
+        return new PagedResult<HousingApplicationDashboardItemDto>
+        {
+            PageIndex = pageIndex,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+            Items = items
         };
     }
 }

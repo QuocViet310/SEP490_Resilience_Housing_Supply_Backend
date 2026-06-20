@@ -1,4 +1,5 @@
 using RHS.Application.DTOs.HousingApplications;
+using RHS.Application.DTOs.HousingApplications.Dashboard;
 using RHS.Application.DTOs.HousingProjects;
 
 namespace RHS.Application.Interfaces;
@@ -37,4 +38,10 @@ public interface IHousingApplicationService
     /// </summary>
     Task<PagedResultDto<ApplicationSummaryResponseDto>> GetAllApplicationsAsync(
         ApplicationFilterRequestDto filter);
+
+    Task<PagedResult<HousingApplicationDashboardItemDto>> GetVerificationOfficerDashboardAsync(
+        HousingApplicationDashboardQueryDto query);
+
+    Task<PagedResult<HousingApplicationDashboardItemDto>> GetWardManagerDashboardAsync(
+        HousingApplicationDashboardQueryDto query);
 }
