@@ -12,7 +12,15 @@ public class HousingProject
 
     public string District { get; set; } = string.Empty;
 
-    public string Address { get; set; } = string.Empty;
+    public string Street { get; set; } = string.Empty;
+
+    public string Ward { get; set; } = string.Empty;
+
+    public DateTime? LotteryDate { get; set; }
+
+    public string? LotteryLocation { get; set; }
+
+    public decimal DepositAmount { get; set; }
 
     public decimal MinPrice { get; set; }
 

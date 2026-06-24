@@ -11,6 +11,8 @@ public class User
     public string? CitizenId { get; set; }
     public DateTime? DateOfBirth { get; set; }
     public string? Address { get; set; }
+    public string? ResidentWard { get; set; }
+    public string? ManagedWard { get; set; }
     public string Status { get; set; } = "Active"; // Active, Inactive, Suspended
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

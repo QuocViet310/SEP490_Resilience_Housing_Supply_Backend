@@ -24,6 +24,10 @@ public class HousingApplicationConfiguration : IEntityTypeConfiguration<HousingA
         builder.Property(x => x.EstimatedMonthlyIncome)
             .HasPrecision(18, 2);
 
+        builder.Property(x => x.SlotCode)
+            .IsRequired(false)
+            .HasMaxLength(50);
+
         // ── Thời gian ─────────────────────────────────────────────
         builder.Property(x => x.CreatedAt)
             .IsRequired();
