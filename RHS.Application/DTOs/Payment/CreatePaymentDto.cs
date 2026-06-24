@@ -22,4 +22,9 @@ public class CreatePaymentDto
     /// Loại đơn hàng. Mặc định: "other"
     /// </summary>
     public string OrderType { get; set; } = "other";
+
+    /// <summary>
+    /// Dự án nhà ở liên kết (nếu có)
+    /// </summary>
+    public Guid? HousingProjectId { get; set; }
 }

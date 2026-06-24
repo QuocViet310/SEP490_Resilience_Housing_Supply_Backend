@@ -16,7 +16,8 @@ public class HousingProjectRepository : IHousingProjectRepository
     }
 
     public async Task<PagedResultDto<HousingProjectResponseDto>> GetHousingProjectsAsync(
-        HousingProjectFilterRequestDto request)
+        HousingProjectFilterRequestDto request,
+        string? residentWard = null)
     {
         // Build the query with filtering
         IQueryable<HousingProject> query = _context.HousingProjects
@@ -76,8 +77,16 @@ public class HousingProjectRepository : IHousingProjectRepository
         // Get total count before pagination
         var totalCount = await query.CountAsync();
 
-        // Apply sorting (newest first)
-        query = query.OrderByDescending(x => x.CreatedAt);
+        // Apply sorting (prioritize matching resident ward first, then newest first)
+        if (!string.IsNullOrEmpty(residentWard))
+        {
+            query = query.OrderByDescending(x => x.Ward == residentWard)
+                         .ThenByDescending(x => x.CreatedAt);
+        }
+        else
+        {
+            query = query.OrderByDescending(x => x.CreatedAt);
+        }
 
         // Apply pagination
         var pageIndex = Math.Max(request.PageIndex, 1);

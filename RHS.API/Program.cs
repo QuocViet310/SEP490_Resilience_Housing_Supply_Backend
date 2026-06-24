@@ -79,6 +79,9 @@ builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 // Dependency Injection - FPT AI eKYC
 builder.Services.AddEKycServices(builder.Configuration);
 
+// Background Worker
+builder.Services.AddHostedService<RHS.API.BackgroundServices.PaymentTimeoutWorker>();
+
 // CORS Configuration
 builder.Services.AddCors(options =>
 {

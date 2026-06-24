@@ -24,6 +24,12 @@ public static class ApplicationStatusConstants
     /// <summary>Đã bị từ chối</summary>
     public const string Rejected = "REJECTED";
 
+    /// <summary>Đã bị hủy</summary>
+    public const string Canceled = "CANCELED";
+
+    /// <summary>Đã hết hạn thanh toán</summary>
+    public const string Expired = "EXPIRED";
+
     /// <summary>Danh sách tất cả trạng thái hợp lệ</summary>
     public static readonly IReadOnlyList<string> AllStatuses = new[]
     {
@@ -32,7 +38,9 @@ public static class ApplicationStatusConstants
         UnderReview,
         NeedMoreDocuments,
         Approved,
-        Rejected
+        Rejected,
+        Canceled,
+        Expired
     };
 
     /// <summary>

@@ -1,3 +1,5 @@
+﻿using Microsoft.EntityFrameworkCore;
+using RHS.Infrastructure.Data;
 using Microsoft.Extensions.Logging;
 using RHS.Application.DTOs.HousingApplications;
 using RHS.Application.Interfaces;
@@ -24,17 +26,23 @@ public class ReviewService : IReviewService
     private readonly IHousingApplicationRepository _applicationRepo;
     private readonly IReviewHistoryRepository _historyRepo;
     private readonly IDocumentRepository _documentRepo;
+    private readonly IHousingProjectRepository _projectRepo;
+    private readonly AppDbContext _context;
     private readonly ILogger<ReviewService> _logger;
 
     public ReviewService(
         IHousingApplicationRepository applicationRepo,
         IReviewHistoryRepository historyRepo,
         IDocumentRepository documentRepo,
+        IHousingProjectRepository projectRepo,
+        AppDbContext context,
         ILogger<ReviewService> logger)
     {
         _applicationRepo = applicationRepo;
         _historyRepo     = historyRepo;
         _documentRepo    = documentRepo;
+        _projectRepo     = projectRepo;
+        _context         = context;
         _logger          = logger;
     }
 
@@ -207,28 +215,55 @@ public class ReviewService : IReviewService
         var oldStatus = application.ApplicationStatus;
         var now = DateTime.UtcNow;
 
-        application.ApplicationStatus = targetStatus;
-        application.UpdatedAt = now;
-
-        // Nếu là quyết định cuối thì ghi FinalDecisionDate
-        if (targetStatus is ApplicationStatusConstants.Approved
-                         or ApplicationStatusConstants.Rejected)
+        using var dbTransaction = await _context.Database.BeginTransactionAsync();
+        try
         {
-            application.FinalDecisionDate = now;
+            if (targetStatus == ApplicationStatusConstants.Approved)
+            {
+                var project = await _context.HousingProjects.FirstOrDefaultAsync(p => p.Id == application.ProjectId);
+                if (project == null)
+                {
+                    throw new InvalidOperationException("Khong tim thay du an tuong ung voi ho so.");
+                }
+                if (project.AvailableUnits <= 0)
+                {
+                    throw new InvalidOperationException("Du an da het can ho trong de giu cho.");
+                }
+                project.AvailableUnits -= 1;
+                project.UpdatedAt = now;
+                _context.HousingProjects.Update(project);
+            }
+
+            application.ApplicationStatus = targetStatus;
+            application.UpdatedAt = now;
+
+            // Neu la quyet dinh cuoi thi ghi FinalDecisionDate
+            if (targetStatus is ApplicationStatusConstants.Approved
+                             or ApplicationStatusConstants.Rejected)
+            {
+                application.FinalDecisionDate = now;
+            }
+
+            await _applicationRepo.UpdateAsync(application);
+
+            await AppendHistoryAsync(
+                applicationId: applicationId,
+                changedBy: officerId,
+                action: action,
+                oldStatus: oldStatus,
+                newStatus: targetStatus,
+                note: request.Note?.Trim());
+
+            await dbTransaction.CommitAsync();
+        }
+        catch
+        {
+            await dbTransaction.RollbackAsync();
+            throw;
         }
 
-        await _applicationRepo.UpdateAsync(application);
-
-        await AppendHistoryAsync(
-            applicationId: applicationId,
-            changedBy: officerId,
-            action: action,
-            oldStatus: oldStatus,
-            newStatus: targetStatus,
-            note: request.Note?.Trim());
-
         _logger.LogInformation(
-            "VO {OfficerId} reviewed application {AppId}. Status: {Old} → {New}.",
+            "VO {OfficerId} reviewed application {AppId}. Status: {Old} " + (char)0x2192 + " {New}.",
             officerId, applicationId, oldStatus, targetStatus);
 
         return BuildReviewResponse(applicationId, oldStatus, targetStatus, action, now);
@@ -267,27 +302,54 @@ public class ReviewService : IReviewService
         var oldStatus = application.ApplicationStatus;
         var now = DateTime.UtcNow;
 
-        application.ApplicationStatus = targetStatus;
-        application.UpdatedAt = now;
-
-        if (targetStatus is ApplicationStatusConstants.Approved
-                         or ApplicationStatusConstants.Rejected)
+        using var dbTransaction = await _context.Database.BeginTransactionAsync();
+        try
         {
-            application.FinalDecisionDate = now;
+            if (targetStatus == ApplicationStatusConstants.Approved)
+            {
+                var project = await _context.HousingProjects.FirstOrDefaultAsync(p => p.Id == application.ProjectId);
+                if (project == null)
+                {
+                    throw new InvalidOperationException("Khong tim thay du an tuong ung voi ho so.");
+                }
+                if (project.AvailableUnits <= 0)
+                {
+                    throw new InvalidOperationException("Du an da het can ho trong de giu cho.");
+                }
+                project.AvailableUnits -= 1;
+                project.UpdatedAt = now;
+                _context.HousingProjects.Update(project);
+            }
+
+            application.ApplicationStatus = targetStatus;
+            application.UpdatedAt = now;
+
+            if (targetStatus is ApplicationStatusConstants.Approved
+                             or ApplicationStatusConstants.Rejected)
+            {
+                application.FinalDecisionDate = now;
+            }
+
+            await _applicationRepo.UpdateAsync(application);
+
+            await AppendHistoryAsync(
+                applicationId: applicationId,
+                changedBy: managerId,
+                action: action,
+                oldStatus: oldStatus,
+                newStatus: targetStatus,
+                note: request.Note?.Trim());
+
+            await dbTransaction.CommitAsync();
+        }
+        catch
+        {
+            await dbTransaction.RollbackAsync();
+            throw;
         }
 
-        await _applicationRepo.UpdateAsync(application);
-
-        await AppendHistoryAsync(
-            applicationId: applicationId,
-            changedBy: managerId,
-            action: action,
-            oldStatus: oldStatus,
-            newStatus: targetStatus,
-            note: request.Note?.Trim());
-
         _logger.LogInformation(
-            "WM {ManagerId} reviewed application {AppId}. Status: {Old} → {New}.",
+            "WM {ManagerId} reviewed application {AppId}. Status: {Old} " + (char)0x2192 + " {New}.",
             managerId, applicationId, oldStatus, targetStatus);
 
         return BuildReviewResponse(applicationId, oldStatus, targetStatus, action, now);

@@ -19,7 +19,8 @@ public class HousingProjectService : IHousingProjectService
     }
 
     public async Task<PagedResultDto<HousingProjectResponseDto>> GetHousingProjectsAsync(
-        HousingProjectFilterRequestDto request)
+        HousingProjectFilterRequestDto request,
+        string? residentWard = null)
     {
         // Validate request
         if (request.PageIndex < 1)
@@ -32,7 +33,7 @@ public class HousingProjectService : IHousingProjectService
             request.PageSize = 100;
 
         // Call repository to get paginated results
-        return await _repository.GetHousingProjectsAsync(request);
+        return await _repository.GetHousingProjectsAsync(request, residentWard);
     }
 
     public async Task<HousingProjectResponseDto> CreateHousingProjectAsync(
