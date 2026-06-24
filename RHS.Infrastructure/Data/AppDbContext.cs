@@ -33,6 +33,7 @@ public class AppDbContext : DbContext
     public DbSet<PolicyConfig> PolicyConfigs { get; set; }
     public DbSet<IssueReport> IssueReports { get; set; }
     public DbSet<Wishlist> Wishlists { get; set; }
+    public DbSet<PrincipleAgreement> PrincipleAgreements { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -56,6 +57,7 @@ public class AppDbContext : DbContext
         modelBuilder.ApplyConfiguration(new PaymentConfiguration());
         modelBuilder.ApplyConfiguration(new IssueReportConfiguration());
         modelBuilder.ApplyConfiguration(new WishlistConfiguration());
+        modelBuilder.ApplyConfiguration(new PrincipleAgreementConfiguration());
         // Role Configuration
         modelBuilder.Entity<Role>(entity =>
         {
@@ -78,6 +80,8 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CitizenId).HasMaxLength(20);
             entity.Property(e => e.Status).IsRequired().HasMaxLength(50);
             entity.Property(e => e.ProfileImageUrl).HasMaxLength(500);
+            entity.Property(e => e.ResidentWard).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.ManagedWard).HasMaxLength(100).IsRequired(false);
 
             entity.HasOne(e => e.Role)
                 .WithMany(r => r.Users)

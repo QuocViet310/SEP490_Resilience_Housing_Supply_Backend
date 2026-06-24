@@ -8,7 +8,11 @@ public class UpdateHousingProjectRequestDto
     public string Description { get; set; } = string.Empty;
     public string Province { get; set; } = string.Empty;
     public string District { get; set; } = string.Empty;
-    public string Address { get; set; } = string.Empty;
+    public string Street { get; set; } = string.Empty;
+    public string Ward { get; set; } = string.Empty;
+    public DateTime? LotteryDate { get; set; }
+    public string? LotteryLocation { get; set; }
+    public decimal DepositAmount { get; set; }
     public decimal MinPrice { get; set; }
     public decimal MaxPrice { get; set; }
     public double MinArea { get; set; }

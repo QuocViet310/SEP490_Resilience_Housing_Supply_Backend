@@ -28,9 +28,23 @@ public class HousingProjectConfiguration : IEntityTypeConfiguration<HousingProje
             .IsRequired()
             .HasMaxLength(100);
 
-        builder.Property(x => x.Address)
+        builder.Property(x => x.Street)
             .IsRequired()
-            .HasMaxLength(500);
+            .HasMaxLength(255);
+
+        builder.Property(x => x.Ward)
+            .IsRequired()
+            .HasMaxLength(100);
+
+        builder.Property(x => x.LotteryDate)
+            .IsRequired(false);
+
+        builder.Property(x => x.LotteryLocation)
+            .IsRequired(false)
+            .HasMaxLength(255);
+
+        builder.Property(x => x.DepositAmount)
+            .HasPrecision(18, 2);
 
         builder.Property(x => x.MinPrice)
             .HasPrecision(18, 2);

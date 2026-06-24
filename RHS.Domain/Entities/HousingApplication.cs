@@ -27,9 +27,13 @@ public class HousingApplication
 
     public DateTime? FinalDecisionDate { get; set; }
 
+    public string? SlotCode { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? UpdatedAt { get; set; }
+
+    public PrincipleAgreement? PrincipleAgreement { get; set; }
 
     // ─────────────────────────────────────────────────────────────
     // Thông tin Form đăng ký (Application Form Fields)

@@ -56,7 +56,11 @@ public class HousingProjectService : IHousingProjectService
             Description = request.Description,
             Province = request.Province,
             District = request.District,
-            Address = request.Address,
+            Street = request.Street,
+            Ward = request.Ward,
+            LotteryDate = request.LotteryDate,
+            LotteryLocation = request.LotteryLocation,
+            DepositAmount = request.DepositAmount,
             MinPrice = request.MinPrice,
             MaxPrice = request.MaxPrice,
             MinArea = request.MinArea,
@@ -148,7 +152,11 @@ public class HousingProjectService : IHousingProjectService
         existingProject.Description = request.Description;
         existingProject.Province = request.Province;
         existingProject.District = request.District;
-        existingProject.Address = request.Address;
+        existingProject.Street = request.Street;
+        existingProject.Ward = request.Ward;
+        existingProject.LotteryDate = request.LotteryDate;
+        existingProject.LotteryLocation = request.LotteryLocation;
+        existingProject.DepositAmount = request.DepositAmount;
         existingProject.MinPrice = request.MinPrice;
         existingProject.MaxPrice = request.MaxPrice;
         existingProject.MinArea = request.MinArea;
@@ -259,10 +267,16 @@ public class HousingProjectService : IHousingProjectService
             throw new ArgumentException("District is required.");
         }
 
-        // Address is required
-        if (string.IsNullOrWhiteSpace(request.Address))
+        // Street is required
+        if (string.IsNullOrWhiteSpace(request.Street))
         {
-            throw new ArgumentException("Address is required.");
+            throw new ArgumentException("Street is required.");
+        }
+
+        // Ward is required
+        if (string.IsNullOrWhiteSpace(request.Ward))
+        {
+            throw new ArgumentException("Ward is required.");
         }
 
         // MinPrice >= 0
@@ -305,7 +319,11 @@ public class HousingProjectService : IHousingProjectService
             Description = project.Description,
             Province = project.Province,
             District = project.District,
-            Address = project.Address,
+            Street = project.Street,
+            Ward = project.Ward,
+            LotteryDate = project.LotteryDate,
+            LotteryLocation = project.LotteryLocation,
+            DepositAmount = project.DepositAmount,
             MinPrice = project.MinPrice,
             MaxPrice = project.MaxPrice,
             MinArea = project.MinArea,
