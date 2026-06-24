@@ -36,13 +36,14 @@ public class PaymentService : IPaymentService
         // ── 2. Lưu bản ghi Payment với trạng thái Pending ────────────────
         var payment = new Payment
         {
-            Id        = Guid.NewGuid(),
-            UserId    = userId,
-            OrderId   = orderId,
-            OrderInfo = dto.OrderInfo,
-            Amount    = dto.Amount,
-            Status    = "Pending",
-            CreatedAt = DateTime.UtcNow
+            Id               = Guid.NewGuid(),
+            UserId           = userId,
+            HousingProjectId = dto.HousingProjectId,
+            OrderId          = orderId,
+            OrderInfo        = dto.OrderInfo,
+            Amount           = dto.Amount,
+            Status           = "Pending",
+            CreatedAt        = DateTime.UtcNow
         };
 
         await _paymentRepository.CreateAsync(payment);

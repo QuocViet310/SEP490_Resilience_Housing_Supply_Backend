@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using RHS.Application.DTOs.HousingProjects;
 using RHS.Application.Interfaces;
+using System.Security.Claims;
 
 namespace RHS.API.Controllers;
 
@@ -10,13 +11,16 @@ namespace RHS.API.Controllers;
 public class HousingProjectsController : ControllerBase
 {
     private readonly IHousingProjectService _service;
+    private readonly IUserRepository _userRepository;
     private readonly ILogger<HousingProjectsController> _logger;
 
     public HousingProjectsController(
         IHousingProjectService service,
+        IUserRepository userRepository,
         ILogger<HousingProjectsController> logger)
     {
         _service = service;
+        _userRepository = userRepository;
         _logger = logger;
     }
 
@@ -66,7 +70,18 @@ public class HousingProjectsController : ControllerBase
                 StatusId = statusId
             };
 
-            var result = await _service.GetHousingProjectsAsync(request);
+            string? residentWard = null;
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+            if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var userId))
+            {
+                var user = await _userRepository.GetByIdAsync(userId);
+                if (user != null)
+                {
+                    residentWard = user.ResidentWard;
+                }
+            }
+
+            var result = await _service.GetHousingProjectsAsync(request, residentWard);
             return Ok(result);
         }
         catch (Exception ex)

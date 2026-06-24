@@ -6,7 +6,8 @@ namespace RHS.Application.Interfaces;
 public interface IHousingProjectRepository
 {
     Task<PagedResultDto<HousingProjectResponseDto>> GetHousingProjectsAsync(
-        HousingProjectFilterRequestDto request);
+        HousingProjectFilterRequestDto request,
+        string? residentWard = null);
 
     Task<HousingProject> CreateAsync(HousingProject entity);
 

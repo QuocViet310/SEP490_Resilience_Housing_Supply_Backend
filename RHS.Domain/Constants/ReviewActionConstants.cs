@@ -23,4 +23,7 @@ public static class ReviewActionConstants
 
     /// <summary>Người dân lưu bản nháp</summary>
     public const string SaveDraft = "SAVE_DRAFT";
+
+    /// <summary>Hệ thống tự động hủy do hết hạn thanh toán</summary>
+    public const string PaymentTimeout = "PAYMENT_TIMEOUT";
 }
