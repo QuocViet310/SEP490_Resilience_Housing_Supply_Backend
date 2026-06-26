@@ -24,5 +24,14 @@ public interface IFileStorageService
     /// Kiểm tra: extension .pdf, content-type application/pdf, kích thước ≤ maxSizeMb.
     /// </summary>
     bool IsValidPdfFile(IFormFile file, long maxSizeBytes);
+
+    /// <summary>
+    /// Upload file PDF từ byte array (sinh từ QuestPDF) lên Cloudinary.
+    /// </summary>
+    /// <param name="pdfBytes">Nội dung file PDF dạng byte array</param>
+    /// <param name="fileName">Tên file (ví dụ: "HopDong_NOXH-BT1-001.pdf")</param>
+    /// <param name="folder">Thư mục trên Cloudinary (ví dụ: "principle-agreements")</param>
+    /// <returns>Secure URL của file đã upload</returns>
+    Task<string> UploadPdfFromBytesAsync(byte[] pdfBytes, string fileName, string folder);
 }
 
