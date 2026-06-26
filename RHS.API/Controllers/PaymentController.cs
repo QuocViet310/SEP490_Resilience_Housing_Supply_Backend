@@ -18,10 +18,15 @@ public class PaymentController : ControllerBase
     }
 
     /// <summary>
-    /// [Bước 1 luồng] Tạo URL thanh toán VNPay Sandbox.
-    /// Client redirect người dùng đến URL trả về để thực hiện thanh toán.
+    /// [Bước 1 luồng] Tạo URL thanh toán đặt cọc cho hồ sơ đã APPROVED.
+    /// Số tiền tự động lấy từ DepositAmount của dự án.
     /// </summary>
     /// <remarks>
+    /// **Body chỉ cần ApplicationId:**
+    /// ```json
+    /// { "applicationId": "guid-of-approved-application" }
+    /// ```
+    /// 
     /// **Test card Sandbox NCB:**
     /// - Số thẻ: 9704198526191432198
     /// - Ngày hết hạn: 07/15
@@ -42,6 +47,15 @@ public class PaymentController : ControllerBase
         try
         {
             var result = await _paymentService.CreatePaymentAsync(userId, dto, HttpContext);
+
+            if (!result.Success)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = result.Message
+                });
+            }
 
             return Ok(new
             {
@@ -68,7 +82,8 @@ public class PaymentController : ControllerBase
 
     /// <summary>
     /// [Bước 2 luồng] Callback VNPay gọi về sau khi người dùng thanh toán.
-    /// Endpoint này xác minh chữ ký và cập nhật trạng thái giao dịch trong DB.
+    /// Xác minh chữ ký, cập nhật trạng thái, và nếu thành công sẽ tự động
+    /// sinh SlotCode + PDF hợp đồng nguyên tắc.
     /// ⚠️ AllowAnonymous vì VNPay gọi trực tiếp (không có JWT).
     /// </summary>
     [HttpGet("payment-callback")]
@@ -92,10 +107,13 @@ public class PaymentController : ControllerBase
             // Đọc kết quả để trả về phản hồi tường minh
             var responseCode = queryParams["vnp_ResponseCode"].ToString();
             var orderId      = queryParams["vnp_TxnRef"].ToString();
-            var amount       = long.Parse(queryParams["vnp_Amount"].ToString()) / 100; // chia 100 lấy lại VND
+            var amount       = long.Parse(queryParams["vnp_Amount"].ToString()) / 100;
 
             if (responseCode == "00")
             {
+                // Lấy deposit result (SlotCode, PdfUrl) nếu có
+                var depositResult = await _paymentService.GetDepositResultAsync(orderId);
+
                 return Ok(new
                 {
                     success = true,
@@ -104,9 +122,12 @@ public class PaymentController : ControllerBase
                     {
                         orderId,
                         amount,
-                        bankCode      = queryParams["vnp_BankCode"].ToString(),
-                        transactionNo = queryParams["vnp_TransactionNo"].ToString(),
-                        payDate       = queryParams["vnp_PayDate"].ToString()
+                        bankCode        = queryParams["vnp_BankCode"].ToString(),
+                        transactionNo   = queryParams["vnp_TransactionNo"].ToString(),
+                        payDate         = queryParams["vnp_PayDate"].ToString(),
+                        slotCode        = depositResult?.SlotCode,
+                        pdfUrl          = depositResult?.PdfUrl,
+                        applicationId   = depositResult?.ApplicationId
                     }
                 });
             }
@@ -136,6 +157,33 @@ public class PaymentController : ControllerBase
                 error   = ex.Message
             });
         }
+    }
+
+    /// <summary>
+    /// Tra cứu kết quả thanh toán đặt cọc: SlotCode, PDF hợp đồng, thông tin giao dịch.
+    /// Dùng cho FE hiển thị trang "Thanh toán thành công".
+    /// </summary>
+    [HttpGet("deposit-result/{orderId}")]
+    [Authorize]
+    public async Task<IActionResult> GetDepositResult(string orderId)
+    {
+        if (string.IsNullOrWhiteSpace(orderId))
+            return BadRequest(new { success = false, message = "Mã đơn hàng không hợp lệ" });
+
+        var result = await _paymentService.GetDepositResultAsync(orderId);
+
+        if (result == null)
+            return NotFound(new
+            {
+                success = false,
+                message = "Không tìm thấy kết quả thanh toán đặt cọc hoặc giao dịch chưa thành công"
+            });
+
+        return Ok(new
+        {
+            success = true,
+            data    = result
+        });
     }
 
     /// <summary>
