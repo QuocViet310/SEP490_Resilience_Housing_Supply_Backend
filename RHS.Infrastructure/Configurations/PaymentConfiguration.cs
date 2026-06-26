@@ -15,6 +15,7 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.HasIndex(x => x.OrderId).IsUnique();
         builder.HasIndex(x => x.UserId);
         builder.HasIndex(x => x.HousingProjectId);
+        builder.HasIndex(x => x.ApplicationId);
 
         builder.Property(x => x.OrderId)
             .IsRequired()
@@ -61,6 +62,11 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.HasOne(x => x.HousingProject)
             .WithMany()
             .HasForeignKey(x => x.HousingProjectId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.HousingApplication)
+            .WithMany()
+            .HasForeignKey(x => x.ApplicationId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

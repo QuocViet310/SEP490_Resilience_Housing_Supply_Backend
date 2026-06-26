@@ -2,29 +2,23 @@ using System.ComponentModel.DataAnnotations;
 
 namespace RHS.Application.DTOs.Payment;
 
+/// <summary>
+/// DTO tạo yêu cầu thanh toán đặt cọc cho hồ sơ đã được duyệt (APPROVED).
+/// Số tiền (Amount) sẽ tự động lấy từ DepositAmount của dự án.
+/// </summary>
 public class CreatePaymentDto
 {
     /// <summary>
-    /// Số tiền thanh toán (VND). Ví dụ: 100000 = 100,000 VND
+    /// ID hồ sơ đăng ký đã được phê duyệt (APPROVED).
+    /// Hệ thống sẽ lấy Amount từ HousingProject.DepositAmount.
     /// </summary>
-    [Required(ErrorMessage = "Số tiền là bắt buộc")]
-    [Range(1000, 100_000_000, ErrorMessage = "Số tiền phải từ 1,000 đến 100,000,000 VND")]
-    public decimal Amount { get; set; }
+    [Required(ErrorMessage = "ApplicationId là bắt buộc")]
+    public Guid ApplicationId { get; set; }
 
     /// <summary>
-    /// Mô tả nội dung thanh toán. Ví dụ: "Thanh toan le phi ho so nha o"
+    /// Mô tả nội dung thanh toán (tùy chọn).
+    /// Nếu để trống, hệ thống sẽ tự tạo: "Dat coc ho so {OrderId} - Du an {ProjectName}"
     /// </summary>
-    [Required(ErrorMessage = "Nội dung thanh toán là bắt buộc")]
     [MaxLength(255, ErrorMessage = "Nội dung không được vượt quá 255 ký tự")]
-    public string OrderInfo { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Loại đơn hàng. Mặc định: "other"
-    /// </summary>
-    public string OrderType { get; set; } = "other";
-
-    /// <summary>
-    /// Dự án nhà ở liên kết (nếu có)
-    /// </summary>
-    public Guid? HousingProjectId { get; set; }
+    public string? OrderInfo { get; set; }
 }

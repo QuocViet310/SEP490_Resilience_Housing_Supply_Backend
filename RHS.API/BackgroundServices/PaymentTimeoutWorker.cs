@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -52,6 +52,7 @@ public class PaymentTimeoutWorker : BackgroundService
         var cutoffTime = DateTime.UtcNow.AddHours(-24); // 24-hour payment deadline
 
         // Get all APPROVED applications that were approved before cutoffTime
+        // Skip DEPOSIT_PAID (already paid successfully)
         var expiredApplications = await context.HousingApplications
             .Where(x => x.ApplicationStatus == ApplicationStatusConstants.Approved 
                      && x.FinalDecisionDate.HasValue 
@@ -67,12 +68,10 @@ public class PaymentTimeoutWorker : BackgroundService
 
         foreach (var app in expiredApplications)
         {
-            // Check if there is any successful payment for this project and user after approval
+            // Check if there is any successful payment linked directly to this application
             var isPaid = await context.Payments.AnyAsync(p =>
-                p.UserId == app.ApplicantId &&
-                p.HousingProjectId == app.ProjectId &&
-                p.Status == "Success" &&
-                p.PaidAt >= app.FinalDecisionDate,
+                p.ApplicationId == app.ApplicationId &&
+                p.Status == "Success",
                 stoppingToken);
 
             if (!isPaid)

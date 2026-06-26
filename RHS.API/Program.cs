@@ -76,6 +76,10 @@ builder.Services.AddScoped<IVnPayService, VnPayService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 
+// Dependency Injection - PDF Contract & PrincipleAgreement
+builder.Services.AddScoped<IPdfContractService, PdfContractService>();
+builder.Services.AddScoped<IPrincipleAgreementRepository, PrincipleAgreementRepository>();
+
 // Dependency Injection - FPT AI eKYC
 builder.Services.AddEKycServices(builder.Configuration);
 
@@ -143,6 +147,9 @@ builder.Services.AddSwaggerGen(options =>
         }
     });
 });
+
+// QuestPDF Community License (miễn phí cho doanh thu < $1M/năm)
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
 var app = builder.Build();
 

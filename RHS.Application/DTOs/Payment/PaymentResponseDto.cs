@@ -31,6 +31,9 @@ public class PaymentInfoDto
     /// <summary>Pending | Success | Failed | Cancelled</summary>
     public string Status { get; set; } = string.Empty;
 
+    /// <summary>ID hồ sơ đăng ký liên kết (nếu là thanh toán đặt cọc)</summary>
+    public Guid? ApplicationId { get; set; }
+
     public string? VnpResponseCode { get; set; }
     public string? VnpTransactionNo { get; set; }
     public string? VnpBankCode { get; set; }
@@ -38,4 +41,11 @@ public class PaymentInfoDto
 
     public DateTime CreatedAt { get; set; }
     public DateTime? PaidAt { get; set; }
+
+    // ── Thông tin post-payment (chỉ có khi Status = Success cho deposit) ──
+    /// <summary>Mã suất bốc thăm (sinh sau khi thanh toán thành công)</summary>
+    public string? SlotCode { get; set; }
+
+    /// <summary>URL file PDF hợp đồng nguyên tắc</summary>
+    public string? PdfUrl { get; set; }
 }

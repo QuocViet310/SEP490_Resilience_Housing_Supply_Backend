@@ -277,5 +277,46 @@ public class FileStorageService : IFileStorageService
             throw new InvalidOperationException("Không thể upload file PDF.", ex);
         }
     }
+    public async Task<string> UploadPdfFromBytesAsync(byte[] pdfBytes, string fileName, string folder)
+    {
+        try
+        {
+            var publicId = $"{folder}/{Guid.NewGuid()}";
+
+            using var stream = new MemoryStream(pdfBytes);
+
+            var uploadParams = new RawUploadParams
+            {
+                File      = new FileDescription(fileName, stream),
+                PublicId  = publicId,
+                Folder    = folder,
+                Overwrite = false
+            };
+
+            var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+
+            if (uploadResult.StatusCode != System.Net.HttpStatusCode.OK)
+            {
+                _logger.LogError(
+                    "Cloudinary PDF bytes upload failed: {Error}", uploadResult.Error?.Message);
+                throw new InvalidOperationException(
+                    $"Upload PDF thất bại: {uploadResult.Error?.Message}");
+            }
+
+            _logger.LogInformation(
+                "PDF bytes uploaded successfully to Cloudinary: {Url}", uploadResult.SecureUrl);
+
+            return uploadResult.SecureUrl.ToString();
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error uploading PDF bytes to Cloudinary.");
+            throw new InvalidOperationException("Không thể upload file PDF.", ex);
+        }
+    }
 }
 

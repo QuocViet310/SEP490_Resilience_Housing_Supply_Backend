@@ -26,4 +26,7 @@ public static class ReviewActionConstants
 
     /// <summary>Hệ thống tự động hủy do hết hạn thanh toán</summary>
     public const string PaymentTimeout = "PAYMENT_TIMEOUT";
+
+    /// <summary>Thanh toán đặt cọc thành công → sinh hợp đồng + SlotCode</summary>
+    public const string DepositPayment = "DEPOSIT_PAYMENT";
 }
