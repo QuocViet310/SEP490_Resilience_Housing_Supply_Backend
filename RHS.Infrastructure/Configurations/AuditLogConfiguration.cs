@@ -24,11 +24,18 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
             .IsRequired()
             .HasMaxLength(50);
 
-        // Relationships
+        builder.Property(x => x.OldValues)
+            .HasColumnType("nvarchar(max)");
+
+        builder.Property(x => x.NewValues)
+            .HasColumnType("nvarchar(max)");
+
+        // Relationships — UserId is nullable (background worker / anonymous)
         builder.HasOne(x => x.User)
             .WithMany(u => u.AuditLogs)
             .HasForeignKey(x => x.UserId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.SetNull);
 
         // Indexes
         builder.HasIndex(x => x.UserId);

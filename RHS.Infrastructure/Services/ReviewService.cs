@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using RHS.Infrastructure.Data;
 using Microsoft.Extensions.Logging;
 using RHS.Application.DTOs.HousingApplications;
@@ -27,6 +27,7 @@ public class ReviewService : IReviewService
     private readonly IReviewHistoryRepository _historyRepo;
     private readonly IDocumentRepository _documentRepo;
     private readonly IHousingProjectRepository _projectRepo;
+    private readonly INotificationService _notificationService;
     private readonly AppDbContext _context;
     private readonly ILogger<ReviewService> _logger;
 
@@ -35,15 +36,17 @@ public class ReviewService : IReviewService
         IReviewHistoryRepository historyRepo,
         IDocumentRepository documentRepo,
         IHousingProjectRepository projectRepo,
+        INotificationService notificationService,
         AppDbContext context,
         ILogger<ReviewService> logger)
     {
-        _applicationRepo = applicationRepo;
-        _historyRepo     = historyRepo;
-        _documentRepo    = documentRepo;
-        _projectRepo     = projectRepo;
-        _context         = context;
-        _logger          = logger;
+        _applicationRepo    = applicationRepo;
+        _historyRepo        = historyRepo;
+        _documentRepo       = documentRepo;
+        _projectRepo        = projectRepo;
+        _notificationService = notificationService;
+        _context            = context;
+        _logger             = logger;
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -120,6 +123,13 @@ public class ReviewService : IReviewService
         _logger.LogInformation(
             "Application {AppId} submitted. Status: {Old} → {New}.",
             applicationId, oldStatus, ApplicationStatusConstants.Submitted);
+
+        // Gửi thông báo cho Applicant
+        await _notificationService.SendAsync(
+            applicantId,
+            "Hồ sơ đã được nộp thành công",
+            $"Hồ sơ của bạn đã được nộp và đang chờ xét duyệt.",
+            NotificationTypeConstants.ApplicationSubmitted);
 
         return BuildReviewResponse(applicationId, oldStatus,
             ApplicationStatusConstants.Submitted, ReviewActionConstants.Submit, now);
@@ -266,6 +276,9 @@ public class ReviewService : IReviewService
             "VO {OfficerId} reviewed application {AppId}. Status: {Old} " + (char)0x2192 + " {New}.",
             officerId, applicationId, oldStatus, targetStatus);
 
+        // Gửi thông báo cho Applicant sau khi transaction commit thành công
+        await SendReviewNotificationAsync(application.ApplicantId, targetStatus, request.Note);
+
         return BuildReviewResponse(applicationId, oldStatus, targetStatus, action, now);
     }
 
@@ -351,6 +364,9 @@ public class ReviewService : IReviewService
         _logger.LogInformation(
             "WM {ManagerId} reviewed application {AppId}. Status: {Old} " + (char)0x2192 + " {New}.",
             managerId, applicationId, oldStatus, targetStatus);
+
+        // Gửi thông báo cho Applicant sau khi transaction commit thành công
+        await SendReviewNotificationAsync(application.ApplicantId, targetStatus, request.Note);
 
         return BuildReviewResponse(applicationId, oldStatus, targetStatus, action, now);
     }
@@ -506,5 +522,38 @@ public class ReviewService : IReviewService
             ReviewedAt    = reviewedAt,
             Message       = $"{actionLabel} thành công. Trạng thái: {oldStatus} → {newStatus}."
         };
+    }
+
+    /// <summary>
+    /// Gửi thông báo in-app cho Applicant dựa trên trạng thái mới.
+    /// Được gọi SAU khi transaction commit thành công.
+    /// </summary>
+    private async Task SendReviewNotificationAsync(
+        Guid applicantId, string targetStatus, string? note)
+    {
+        var (title, content, notifType) = targetStatus switch
+        {
+            ApplicationStatusConstants.Approved => (
+                "Hồ sơ đã được phê duyệt",
+                "Hồ sơ của bạn đã được phê duyệt. Vui lòng thanh toán đặt cọc trong vòng 24 giờ để giữ suất.",
+                NotificationTypeConstants.ApplicationApproved),
+
+            ApplicationStatusConstants.Rejected => (
+                "Hồ sơ bị từ chối",
+                $"Hồ sơ của bạn đã bị từ chối.{(string.IsNullOrWhiteSpace(note) ? "" : $" Lý do: {note}")}",
+                NotificationTypeConstants.ApplicationRejected),
+
+            ApplicationStatusConstants.NeedMoreDocuments => (
+                "Yêu cầu bổ sung giấy tờ",
+                $"Hồ sơ của bạn cần bổ sung giấy tờ.{(string.IsNullOrWhiteSpace(note) ? "" : $" Chi tiết: {note}")}",
+                NotificationTypeConstants.ApplicationNeedMoreDocs),
+
+            _ => (null!, null!, null!)
+        };
+
+        if (title != null)
+        {
+            await _notificationService.SendAsync(applicantId, title, content, notifType);
+        }
     }
 }

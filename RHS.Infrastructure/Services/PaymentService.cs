@@ -25,6 +25,7 @@ public class PaymentService : IPaymentService
     private readonly IPdfContractService _pdfContractService;
     private readonly IPrincipleAgreementRepository _agreementRepo;
     private readonly IReviewHistoryRepository _historyRepo;
+    private readonly INotificationService _notificationService;
     private readonly AppDbContext _context;
     private readonly ILogger<PaymentService> _logger;
 
@@ -36,18 +37,20 @@ public class PaymentService : IPaymentService
         IPdfContractService pdfContractService,
         IPrincipleAgreementRepository agreementRepo,
         IReviewHistoryRepository historyRepo,
+        INotificationService notificationService,
         AppDbContext context,
         ILogger<PaymentService> logger)
     {
-        _vnPayService       = vnPayService;
-        _paymentRepository  = paymentRepository;
-        _applicationRepo    = applicationRepo;
-        _projectRepo        = projectRepo;
-        _pdfContractService = pdfContractService;
-        _agreementRepo      = agreementRepo;
-        _historyRepo        = historyRepo;
-        _context            = context;
-        _logger             = logger;
+        _vnPayService        = vnPayService;
+        _paymentRepository   = paymentRepository;
+        _applicationRepo     = applicationRepo;
+        _projectRepo         = projectRepo;
+        _pdfContractService  = pdfContractService;
+        _agreementRepo       = agreementRepo;
+        _historyRepo         = historyRepo;
+        _notificationService = notificationService;
+        _context             = context;
+        _logger              = logger;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -395,6 +398,13 @@ public class PaymentService : IPaymentService
             _logger.LogInformation(
                 "Post-payment completed: AppId={AppId}, SlotCode={SlotCode}, Status={Old}→{New}.",
                 application.ApplicationId, slotCode, oldStatus, ApplicationStatusConstants.DepositPaid);
+
+            // ── 7. Gửi thông báo cho Applicant (sau commit) ─────────────
+            await _notificationService.SendAsync(
+                application.ApplicantId,
+                "Thanh toán đặt cọc thành công",
+                $"Mã suất bốc thăm: {slotCode}. Hợp đồng nguyên tắc đã được tạo.",
+                NotificationTypeConstants.DepositPaid);
         }
         catch (Exception ex)
         {
