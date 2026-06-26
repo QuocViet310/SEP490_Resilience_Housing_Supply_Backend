@@ -1,0 +1,9 @@
+# Chuẩn hóa dấu xuống dòng (Line Endings) cho toàn dự án
+* text=auto
+
+# Ép kiểu dấu xuống dòng CRLF cho các định dạng file phổ biến trên Windows
+*.cs text eol=crlf
+*.json text eol=crlf
+*.md text eol=crlf
+*.csproj text eol=crlf
+*.sln text eol=crlf

@@ -52,6 +52,7 @@ public class ApplicationDocumentResponseDto
     public string FileUrl { get; set; } = string.Empty;
     public long FileSizeBytes { get; set; }
     public string VerificationStatus { get; set; } = string.Empty;
+    public string? AiRejectedReason { get; set; }
     public DateTime UploadedAt { get; set; }
     public Guid UploadedBy { get; set; }
 }

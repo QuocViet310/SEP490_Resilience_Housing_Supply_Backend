@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using RHS.Application.DTOs.HousingApplications;
 using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
+using RHS.Infrastructure.Data;
 using RHS.Infrastructure.Exceptions;
 using System.Security.Claims;
 
@@ -155,6 +157,67 @@ public class DocumentsController : ControllerBase
             _logger.LogError(ex, "Error deleting document {DocId} from application {AppId}.",
                 documentId, applicationId);
             return StatusCode(500, new { message = "Đã xảy ra lỗi khi xóa tài liệu." });
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // AI Verification Endpoints
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lấy kết quả xác minh AI của tài liệu đính kèm.
+    /// </summary>
+    [HttpGet("{documentId:guid}/verification")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetVerificationResult(Guid documentId, [FromServices] AppDbContext dbContext)
+    {
+        var result = await dbContext.AIVerificationResults
+            .FirstOrDefaultAsync(r => r.DocumentId == documentId);
+
+        if (result == null)
+            return NotFound(new { message = "Chưa có kết quả xác minh AI cho tài liệu này." });
+
+        return Ok(new
+        {
+            result.VerificationId,
+            result.DocumentId,
+            result.ValidationResult,
+            result.ExtractedFullName,
+            result.ExtractedCitizenId,
+            result.ExtractedAddress,
+            result.ExtractedDateOfBirth,
+            result.ErrorDetails,
+            result.VerifiedAt
+        });
+    }
+
+    /// <summary>
+    /// Trigger xác minh AI thủ công cho tài liệu.
+    /// </summary>
+    [HttpPost("{documentId:guid}/verify")]
+    [Authorize(Roles = $"{RoleConstants.VerificationOfficer},{RoleConstants.SystemAdministrator},{RoleConstants.HousingAuthorityOfficer}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> TriggerVerification(
+        Guid documentId, 
+        [FromServices] IDocumentVerificationService verificationService)
+    {
+        try
+        {
+            var result = await verificationService.VerifyDocumentAsync(documentId);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi trigger thủ công AI Verification cho tài liệu {DocId}", documentId);
+            return StatusCode(500, new { message = "Lỗi hệ thống khi xác minh tài liệu.", details = ex.Message });
         }
     }
 

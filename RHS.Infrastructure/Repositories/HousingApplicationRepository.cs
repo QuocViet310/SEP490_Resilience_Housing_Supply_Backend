@@ -49,6 +49,8 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             .Include(x => x.HousingProject)
             .Include(x => x.Documents)
                 .ThenInclude(d => d.UploadedByUser)
+            .Include(x => x.Documents)
+                .ThenInclude(d => d.VerificationResult)
             .Include(x => x.StatusHistories.OrderByDescending(h => h.ChangedAt))
                 .ThenInclude(h => h.ChangedByUser)
             .FirstOrDefaultAsync(x => x.ApplicationId == applicationId);

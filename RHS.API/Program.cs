@@ -88,6 +88,9 @@ builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 // Dependency Injection - FPT AI eKYC
 builder.Services.AddEKycServices(builder.Configuration);
 
+// Dependency Injection - Gemini Document Verification
+builder.Services.AddDocumentVerificationServices(builder.Configuration);
+
 // Background Worker
 builder.Services.AddHostedService<RHS.API.BackgroundServices.PaymentTimeoutWorker>();
 

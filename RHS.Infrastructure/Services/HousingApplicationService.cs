@@ -186,6 +186,7 @@ public class HousingApplicationService : IHousingApplicationService
                 FileUrl            = d.FileUrl,
                 FileSizeBytes      = d.FileSizeBytes,
                 VerificationStatus = d.VerificationStatus,
+                AiRejectedReason   = d.VerificationResult?.ErrorDetails,
                 UploadedAt         = d.UploadedAt,
                 UploadedBy         = d.UploadedBy
             }).ToList(),

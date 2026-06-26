@@ -26,6 +26,24 @@ public class AIVerificationResultConfiguration : IEntityTypeConfiguration<AIVeri
             .IsRequired()
             .HasMaxLength(100);
 
+        builder.Property(x => x.ExtractedFullName)
+            .HasMaxLength(255);
+
+        builder.Property(x => x.ExtractedCitizenId)
+            .HasMaxLength(50);
+
+        builder.Property(x => x.ExtractedAddress)
+            .HasMaxLength(500);
+
+        builder.Property(x => x.ExtractedDateOfBirth)
+            .HasMaxLength(50);
+
+        builder.Property(x => x.ErrorDetails)
+            .HasMaxLength(1000);
+
+        builder.Property(x => x.AiModelUsed)
+            .HasMaxLength(100);
+
         // Relationships
         builder.HasOne(x => x.Document)
             .WithOne(x => x.VerificationResult)

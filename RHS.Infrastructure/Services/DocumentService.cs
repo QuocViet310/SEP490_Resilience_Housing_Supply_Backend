@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using RHS.Application.DTOs.HousingApplications;
 using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
@@ -27,17 +28,20 @@ public class DocumentService : IDocumentService
     private readonly IDocumentRepository _documentRepo;
     private readonly IHousingApplicationRepository _applicationRepo;
     private readonly IFileStorageService _fileStorage;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<DocumentService> _logger;
 
     public DocumentService(
         IDocumentRepository documentRepo,
         IHousingApplicationRepository applicationRepo,
         IFileStorageService fileStorage,
+        IServiceProvider serviceProvider,
         ILogger<DocumentService> logger)
     {
         _documentRepo    = documentRepo;
         _applicationRepo = applicationRepo;
         _fileStorage     = fileStorage;
+        _serviceProvider = serviceProvider;
         _logger          = logger;
     }
 
@@ -137,6 +141,23 @@ public class DocumentService : IDocumentService
         _logger.LogInformation(
             "Document {DocumentId} (type={DocType}) uploaded successfully for application {AppId}.",
             document.DocumentId, document.DocumentType, applicationId);
+
+        // ── 8. Tự động trigger AI Verification chạy nền (async/background) ────────────────
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using (var scope = _serviceProvider.CreateScope())
+                {
+                    var verificationService = scope.ServiceProvider.GetRequiredService<IDocumentVerificationService>();
+                    await verificationService.VerifyDocumentAsync(document.DocumentId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi khi chạy nền AI Verification cho tài liệu {DocumentId}", document.DocumentId);
+            }
+        });
 
         return new UploadDocumentResponseDto
         {
