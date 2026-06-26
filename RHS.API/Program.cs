@@ -80,6 +80,10 @@ builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 builder.Services.AddScoped<IPdfContractService, PdfContractService>();
 builder.Services.AddScoped<IPrincipleAgreementRepository, PrincipleAgreementRepository>();
 
+// Dependency Injection - Notification
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
+
 // Dependency Injection - FPT AI eKYC
 builder.Services.AddEKycServices(builder.Configuration);
 
