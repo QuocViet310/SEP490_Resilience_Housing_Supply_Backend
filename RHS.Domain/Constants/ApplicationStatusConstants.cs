@@ -30,6 +30,9 @@ public static class ApplicationStatusConstants
     /// <summary>Đã hết hạn thanh toán</summary>
     public const string Expired = "EXPIRED";
 
+    /// <summary>Đã thanh toán đặt cọc thành công</summary>
+    public const string DepositPaid = "DEPOSIT_PAID";
+
     /// <summary>Danh sách tất cả trạng thái hợp lệ</summary>
     public static readonly IReadOnlyList<string> AllStatuses = new[]
     {
@@ -40,7 +43,8 @@ public static class ApplicationStatusConstants
         Approved,
         Rejected,
         Canceled,
-        Expired
+        Expired,
+        DepositPaid
     };
 
     /// <summary>

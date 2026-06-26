@@ -10,6 +10,9 @@ public class Payment
     /// <summary>Dự án nhà ở liên kết (nếu có)</summary>
     public Guid? HousingProjectId { get; set; }
 
+    /// <summary>Hồ sơ đăng ký liên kết (dùng cho thanh toán đặt cọc)</summary>
+    public Guid? ApplicationId { get; set; }
+
     /// <summary>Mã đơn hàng nội bộ (duy nhất, dùng cho vnp_TxnRef)</summary>
     public string OrderId { get; set; } = string.Empty;
 
@@ -51,4 +54,6 @@ public class Payment
     public User User { get; set; } = null!;
 
     public HousingProject? HousingProject { get; set; }
+
+    public HousingApplication? HousingApplication { get; set; }
 }
