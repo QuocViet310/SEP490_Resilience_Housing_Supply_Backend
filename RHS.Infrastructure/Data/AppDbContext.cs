@@ -1,13 +1,25 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Configurations;
+using System.Security.Claims;
+using System.Text.Json;
 
 namespace RHS.Infrastructure.Data;
 
 public class AppDbContext : DbContext
 {
+    private readonly IHttpContextAccessor? _httpContextAccessor;
+
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
     {
+    }
+
+    public AppDbContext(
+        DbContextOptions<AppDbContext> options,
+        IHttpContextAccessor httpContextAccessor) : base(options)
+    {
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public DbSet<Role> Roles { get; set; }
@@ -145,5 +157,185 @@ public class AppDbContext : DbContext
         };
 
         modelBuilder.Entity<Role>().HasData(roles);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Automatic Audit Logging
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Entities to exclude from audit logging to avoid infinite loops and noise.
+    /// </summary>
+    private static readonly HashSet<string> ExcludedEntities = new(StringComparer.OrdinalIgnoreCase)
+    {
+        nameof(AuditLog),
+        nameof(RefreshToken),
+        nameof(OtpVerification)
+    };
+
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var auditEntries = OnBeforeSaveChanges();
+        var result = await base.SaveChangesAsync(cancellationToken);
+
+        // Sau khi save, các entity Added sẽ có Id được DB generate
+        if (auditEntries.Count > 0)
+        {
+            await OnAfterSaveChangesAsync(auditEntries, cancellationToken);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Collect audit entries BEFORE SaveChanges — entity states chưa bị reset.
+    /// </summary>
+    private List<AuditEntry> OnBeforeSaveChanges()
+    {
+        ChangeTracker.DetectChanges();
+        var entries = new List<AuditEntry>();
+
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            // Skip excluded entities
+            if (ExcludedEntities.Contains(entry.Entity.GetType().Name))
+                continue;
+
+            // Only track Added, Modified, Deleted
+            if (entry.State is EntityState.Detached or EntityState.Unchanged)
+                continue;
+
+            var auditEntry = new AuditEntry
+            {
+                EntityName = entry.Entity.GetType().Name,
+                Action = entry.State switch
+                {
+                    EntityState.Added    => "INSERT",
+                    EntityState.Modified => "UPDATE",
+                    EntityState.Deleted  => "DELETE",
+                    _ => entry.State.ToString()
+                }
+            };
+
+            // Resolve EntityId from primary key
+            var primaryKey = entry.Properties
+                .FirstOrDefault(p => p.Metadata.IsPrimaryKey());
+            if (primaryKey?.CurrentValue is Guid guidId)
+            {
+                auditEntry.EntityId = guidId;
+            }
+
+            // Collect old/new values
+            foreach (var property in entry.Properties)
+            {
+                var propName = property.Metadata.Name;
+
+                // Skip navigation properties
+                if (property.Metadata.IsPrimaryKey())
+                    continue;
+
+                switch (entry.State)
+                {
+                    case EntityState.Added:
+                        auditEntry.NewValues[propName] = property.CurrentValue;
+                        break;
+
+                    case EntityState.Deleted:
+                        auditEntry.OldValues[propName] = property.OriginalValue;
+                        break;
+
+                    case EntityState.Modified:
+                        if (property.IsModified)
+                        {
+                            auditEntry.OldValues[propName] = property.OriginalValue;
+                            auditEntry.NewValues[propName] = property.CurrentValue;
+                        }
+                        break;
+                }
+            }
+
+            // For Added entities, the PK might not be set yet — flag for post-save
+            if (entry.State == EntityState.Added)
+            {
+                auditEntry.Entry = entry;
+            }
+
+            entries.Add(auditEntry);
+        }
+
+        return entries;
+    }
+
+    /// <summary>
+    /// Write audit log entries AFTER SaveChanges — Added entities now have DB-generated IDs.
+    /// </summary>
+    private async Task OnAfterSaveChangesAsync(
+        List<AuditEntry> auditEntries, CancellationToken cancellationToken)
+    {
+        // Resolve user info from HttpContext
+        Guid? userId = null;
+        var ipAddress = "Unknown";
+
+        if (_httpContextAccessor?.HttpContext != null)
+        {
+            var httpContext = _httpContextAccessor.HttpContext;
+            var userIdClaim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)
+                           ?? httpContext.User.FindFirst("sub");
+            if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var parsedUserId))
+            {
+                userId = parsedUserId;
+            }
+
+            ipAddress = httpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+        }
+
+        var jsonOptions = new JsonSerializerOptions { WriteIndented = false };
+
+        foreach (var auditEntry in auditEntries)
+        {
+            // For Added entries, resolve the PK now
+            if (auditEntry.Entry != null)
+            {
+                var pk = auditEntry.Entry.Properties
+                    .FirstOrDefault(p => p.Metadata.IsPrimaryKey());
+                if (pk?.CurrentValue is Guid guidId)
+                {
+                    auditEntry.EntityId = guidId;
+                }
+            }
+
+            var auditLog = new AuditLog
+            {
+                AuditId    = Guid.NewGuid(),
+                UserId     = userId,
+                Action     = auditEntry.Action,
+                EntityName = auditEntry.EntityName,
+                EntityId   = auditEntry.EntityId,
+                OldValues  = auditEntry.OldValues.Count > 0
+                    ? JsonSerializer.Serialize(auditEntry.OldValues, jsonOptions) : null,
+                NewValues  = auditEntry.NewValues.Count > 0
+                    ? JsonSerializer.Serialize(auditEntry.NewValues, jsonOptions) : null,
+                IpAddress  = ipAddress,
+                ActionTime = DateTime.UtcNow
+            };
+
+            AuditLogs.Add(auditLog);
+        }
+
+        // Save audit logs — call base to avoid recursion
+        await base.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>Helper class to hold audit entry data during processing.</summary>
+    private class AuditEntry
+    {
+        public string EntityName { get; set; } = string.Empty;
+        public string Action { get; set; } = string.Empty;
+        public Guid EntityId { get; set; }
+        public Dictionary<string, object?> OldValues { get; set; } = new();
+        public Dictionary<string, object?> NewValues { get; set; } = new();
+
+        /// <summary>Reference to EntityEntry for Added entities (to resolve PK after save).</summary>
+        public Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry? Entry { get; set; }
     }
 }

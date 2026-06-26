@@ -42,6 +42,7 @@ builder.Services.AddAuthentication(options =>
 });
 
 builder.Services.AddAuthorization();
+builder.Services.AddHttpContextAccessor();
 
 // Dependency Injection - Repositories
 builder.Services.AddScoped<IUserRepository, UserRepository>();
