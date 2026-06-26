@@ -30,18 +30,24 @@ public class PaymentService : IPaymentService
         CreatePaymentDto dto,
         HttpContext httpContext)
     {
+        // TODO: Bước 5 sẽ thêm logic validate Application APPROVED + lấy DepositAmount
+        // Tạm thời dùng placeholder để build pass
+
         // ── 1. Tạo mã đơn hàng duy nhất (timestamp + random suffix) ─────
         var orderId = GenerateOrderId();
 
         // ── 2. Lưu bản ghi Payment với trạng thái Pending ────────────────
+        var orderInfo = dto.OrderInfo ?? $"Dat coc ho so {orderId}";
+        var amount = 0m; // TODO: Bước 5 sẽ lấy từ HousingProject.DepositAmount
+
         var payment = new Payment
         {
             Id               = Guid.NewGuid(),
             UserId           = userId,
-            HousingProjectId = dto.HousingProjectId,
+            ApplicationId    = dto.ApplicationId,
             OrderId          = orderId,
-            OrderInfo        = dto.OrderInfo,
-            Amount           = dto.Amount,
+            OrderInfo        = orderInfo,
+            Amount           = amount,
             Status           = "Pending",
             CreatedAt        = DateTime.UtcNow
         };
@@ -52,9 +58,9 @@ public class PaymentService : IPaymentService
         var vnpRequest = new VnPaymentRequest
         {
             OrderId     = orderId,
-            OrderInfo   = dto.OrderInfo,
-            OrderType   = dto.OrderType,
-            Amount      = dto.Amount,
+            OrderInfo   = orderInfo,
+            OrderType   = "deposit",
+            Amount      = amount,
             CreatedDate = DateTime.Now   // VNPay dùng giờ local (không phải UTC)
         };
 
@@ -66,7 +72,7 @@ public class PaymentService : IPaymentService
             Message    = "Tạo URL thanh toán thành công",
             PaymentUrl = paymentUrl,
             OrderId    = orderId,
-            Amount     = dto.Amount
+            Amount     = amount
         };
     }
 
@@ -142,6 +148,13 @@ public class PaymentService : IPaymentService
         return payments.Select(MapToInfoDto);
     }
 
+    /// <inheritdoc/>
+    public async Task<DepositPaymentResultDto?> GetDepositResultAsync(string orderId)
+    {
+        // TODO: Implement đầy đủ ở Bước 5
+        throw new NotImplementedException("Sẽ được implement ở Bước 5.");
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────
 
     /// <summary>
@@ -164,6 +177,7 @@ public class PaymentService : IPaymentService
         OrderInfo        = payment.OrderInfo,
         Amount           = payment.Amount,
         Status           = payment.Status,
+        ApplicationId    = payment.ApplicationId,
         VnpResponseCode  = payment.VnpResponseCode,
         VnpTransactionNo = payment.VnpTransactionNo,
         VnpBankCode      = payment.VnpBankCode,
