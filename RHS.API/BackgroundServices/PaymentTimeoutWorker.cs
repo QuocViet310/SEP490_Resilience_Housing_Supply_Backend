@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RHS.Domain.Constants;
 using RHS.Domain.Entities;
+using RHS.Application.Interfaces;
 using RHS.Infrastructure.Data;
 using System;
 using System.Linq;
@@ -48,6 +49,7 @@ public class PaymentTimeoutWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
         var cutoffTime = DateTime.UtcNow.AddHours(-24); // 24-hour payment deadline
 
@@ -114,6 +116,20 @@ public class PaymentTimeoutWorker : BackgroundService
                     await transaction.CommitAsync(stoppingToken);
                     
                     _logger.LogInformation("Successfully expired application {AppId} and released 1 unit for project {ProjectId}.", app.ApplicationId, app.ProjectId);
+
+                    // Gửi thông báo cho Applicant
+                    try
+                    {
+                        await notificationService.SendAsync(
+                            app.ApplicantId,
+                            "Hồ sơ đã hết hạn thanh toán",
+                            "Hồ sơ của bạn đã bị hủy do không thanh toán đặt cọc trong vòng 24 giờ.",
+                            NotificationTypeConstants.ApplicationExpired);
+                    }
+                    catch (Exception notifEx)
+                    {
+                        _logger.LogWarning(notifEx, "Failed to send expiry notification for AppId {AppId}.", app.ApplicationId);
+                    }
                 }
                 catch (Exception ex)
                 {
