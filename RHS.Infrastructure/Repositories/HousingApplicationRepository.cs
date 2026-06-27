@@ -31,8 +31,23 @@ public class HousingApplicationRepository : IHousingApplicationRepository
 
     public async Task UpdateAsync(HousingApplication application)
     {
-        application.UpdatedAt = DateTime.UtcNow;
-        _context.HousingApplications.Update(application);
+        // Fetch a fresh tracked entity to avoid tracking conflicts with navigation properties
+        var existingApplication = await _context.HousingApplications
+            .FirstOrDefaultAsync(x => x.ApplicationId == application.ApplicationId);
+        
+        if (existingApplication == null)
+        {
+            throw new InvalidOperationException($"HousingApplication with Id {application.ApplicationId} not found.");
+        }
+
+        // Update only the scalar properties that are allowed to be changed
+        existingApplication.ApplicationStatus = application.ApplicationStatus;
+        existingApplication.SubmittedAt = application.SubmittedAt;
+        existingApplication.UpdatedAt = DateTime.UtcNow;
+        existingApplication.FinalDecisionDate = application.FinalDecisionDate;
+        existingApplication.OfficerId = application.OfficerId;
+        existingApplication.PriorityScore = application.PriorityScore;
+
         await _context.SaveChangesAsync();
     }
 
