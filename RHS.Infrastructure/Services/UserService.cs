@@ -39,6 +39,7 @@ public class UserService : IUserService
             CitizenId = user.CitizenId,
             DateOfBirth = user.DateOfBirth,
             Address = user.Address,
+            ResidentWard = user.ResidentWard,
             Role = user.Role?.RoleName ?? "Applicant",
             IsEmailVerified = user.IsEmailVerified,
             ProfileImageUrl = user.ProfileImageUrl,
@@ -61,6 +62,7 @@ public class UserService : IUserService
         user.PhoneNumber = updateProfileDto.PhoneNumber;
         user.DateOfBirth = updateProfileDto.DateOfBirth;
         user.Address = updateProfileDto.Address;
+        user.ResidentWard = updateProfileDto.ResidentWard;
 
         // CitizenId can only be set once (via eKyc), not overwritten afterwards
         if (string.IsNullOrEmpty(user.CitizenId) && !string.IsNullOrEmpty(updateProfileDto.CitizenId))
@@ -79,6 +81,7 @@ public class UserService : IUserService
             CitizenId = user.CitizenId,
             DateOfBirth = user.DateOfBirth,
             Address = user.Address,
+            ResidentWard = user.ResidentWard,
             Role = user.Role?.RoleName ?? "Applicant",
             IsEmailVerified = user.IsEmailVerified,
             ProfileImageUrl = user.ProfileImageUrl,
@@ -117,6 +120,7 @@ public class UserService : IUserService
             CitizenId = user.CitizenId,
             DateOfBirth = user.DateOfBirth,
             Address = user.Address,
+            ResidentWard = user.ResidentWard,
             Role = user.Role?.RoleName ?? "Applicant",
             IsEmailVerified = user.IsEmailVerified,
             ProfileImageUrl = user.ProfileImageUrl,

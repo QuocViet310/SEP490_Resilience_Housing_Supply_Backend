@@ -9,6 +9,7 @@ public class UserProfileDto
     public string? CitizenId { get; set; }
     public DateTime? DateOfBirth { get; set; }
     public string? Address { get; set; }
+    public string? ResidentWard { get; set; }
     public string Role { get; set; } = string.Empty;
     public bool IsEmailVerified { get; set; }
     public string? ProfileImageUrl { get; set; }
