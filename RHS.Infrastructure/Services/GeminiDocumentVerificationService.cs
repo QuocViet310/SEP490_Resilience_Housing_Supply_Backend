@@ -84,6 +84,8 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
             using (var downloadClient = new HttpClient())
             {
                 downloadClient.Timeout = TimeSpan.FromSeconds(30);
+                // Thêm User-Agent giả lập trình duyệt để tránh bị chặn bởi Cloudinary/WAF
+                downloadClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
                 pdfBytes = await downloadClient.GetByteArrayAsync(document.FileUrl, cancellationToken);
             }
 
