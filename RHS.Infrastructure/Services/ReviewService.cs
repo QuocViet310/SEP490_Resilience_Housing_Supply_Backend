@@ -72,7 +72,7 @@ public class ReviewService : IReviewService
             current: application.ApplicationStatus,
             target: ApplicationStatusConstants.Submitted,
             allowedTargets: new[] { ApplicationStatusConstants.Submitted },
-            validSources: new[] { ApplicationStatusConstants.Draft });
+            validSources: new[] { ApplicationStatusConstants.Draft, ApplicationStatusConstants.NeedMoreDocuments });
 
         // Nghiệp vụ: phải có ít nhất 1 tài liệu trước khi nộp
         var documents = await _documentRepo.GetByApplicationIdAsync(applicationId);
