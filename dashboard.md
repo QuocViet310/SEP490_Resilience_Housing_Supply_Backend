@@ -205,7 +205,7 @@ Authorization:
 
 # Business Rule
 
-Verification Officer must see applications with statuses:
+Verification Officer (Maker) must see applications with statuses:
 
 ```plaintext
 SUBMITTED
@@ -213,7 +213,7 @@ UNDER_REVIEW
 NEED_MORE_DOCUMENTS
 ```
 
-Only these statuses should appear.
+VO pipeline: applications waiting for VO to pick up (SUBMITTED), being reviewed (UNDER_REVIEW), or needing more documents (NEED_MORE_DOCUMENTS). Once VO proposes approval (PROPOSED), the application moves to WM pipeline and is no longer visible here.
 
 ---
 
@@ -352,13 +352,15 @@ Authorization:
 
 # Business Rule
 
-Ward Manager only sees applications with status:
+Ward Manager (Checker) sees applications with statuses:
 
 ```plaintext
+PROPOSED
 UNDER_REVIEW
 ```
 
-No other statuses should appear.
+PROPOSED = VO đã đề xuất phê duyệt, chờ WM chốt quyết định cuối cùng.
+UNDER_REVIEW = hồ sơ chưa qua VO, WM có thể trực tiếp xét duyệt.
 
 ---
 
@@ -371,7 +373,7 @@ No other statuses should appear.
 &projectId=
 ```
 
-Status filter is optional because all records are already UNDER_REVIEW.
+Status filter is optional because all records are already PROPOSED or UNDER_REVIEW.
 
 ---
 

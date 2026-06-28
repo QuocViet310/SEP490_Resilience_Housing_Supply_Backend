@@ -290,11 +290,17 @@ public class HousingApplicationRepository : IHousingApplicationRepository
     public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetWardManagerDashboardAsync(
         HousingApplicationDashboardQueryDto query)
     {
+        var allowedStatuses = new[]
+        {
+            ApplicationStatusConstants.Proposed,
+            ApplicationStatusConstants.UnderReview
+        };
+
         var baseQuery = _context.HousingApplications
             .AsNoTracking()
             .Include(x => x.Applicant)
             .Include(x => x.HousingProject)
-            .Where(x => x.ApplicationStatus == ApplicationStatusConstants.UnderReview);
+            .Where(x => allowedStatuses.Contains(x.ApplicationStatus));
 
         if (query.ProjectId.HasValue)
         {

@@ -6,16 +6,19 @@ namespace RHS.Domain.Constants;
 /// </summary>
 public static class ReviewActionConstants
 {
-    /// <summary>Phê duyệt hồ sơ</summary>
+    /// <summary>Phê duyệt hồ sơ (chỉ Ward Manager)</summary>
     public const string Approve = "APPROVE";
 
-    /// <summary>Từ chối hồ sơ</summary>
+    /// <summary>Từ chối hồ sơ (chỉ Ward Manager)</summary>
     public const string Reject = "REJECT";
 
-    /// <summary>Yêu cầu bổ sung giấy tờ (chỉ Ward Manager)</summary>
+    /// <summary>Yêu cầu bổ sung giấy tờ (VO hoặc WM)</summary>
     public const string RequestMoreDocuments = "REQUEST_MORE_DOCUMENTS";
 
-    /// <summary>Nhận hồ sơ để thẩm định (Verification Officer nhận)</summary>
+    /// <summary>Đề xuất phê duyệt (VO → WM)</summary>
+    public const string Propose = "PROPOSE";
+
+    /// <summary>Nhận hồ sơ để thẩm định (VO nhận)</summary>
     public const string AssignOfficer = "ASSIGN_OFFICER";
 
     /// <summary>Người dân nộp hồ sơ</summary>

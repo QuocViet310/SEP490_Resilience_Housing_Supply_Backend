@@ -11,14 +11,16 @@ namespace RHS.Infrastructure.Services;
 
 /// <summary>
 /// Service xử lý toàn bộ luồng xét duyệt hồ sơ nhà ở xã hội.
-/// Áp dụng state machine dựa trên ApplicationStatusConstants:
+/// Maker-Checker (2-stage review):
 ///
 ///   Applicant: DRAFT → (submit) → SUBMITTED
-///   VO:        SUBMITTED → (assign) → UNDER_REVIEW
-///              UNDER_REVIEW → (approve/reject) → APPROVED / REJECTED
+///   VO (Maker): SUBMITTED → (assign) → UNDER_REVIEW
+///              UNDER_REVIEW → (propose / request docs) → PROPOSED / NEED_MORE_DOCUMENTS
 ///              NEED_MORE_DOCUMENTS → (re-assign) → UNDER_REVIEW
-///   WM:        UNDER_REVIEW → (approve/reject/request) → APPROVED / REJECTED / NEED_MORE_DOCUMENTS
+///   WM (Checker): PROPOSED → (approve/reject/request docs) → APPROVED / REJECTED / NEED_MORE_DOCUMENTS
+///                UNDER_REVIEW → (approve/reject/request docs) → APPROVED / REJECTED / NEED_MORE_DOCUMENTS
 ///
+/// Chỉ WM mới được chốt duyệt/từ chối cuối cùng và trigger thay đổi AvailableUnits.
 /// MỌI hành động đều ghi vào bảng ApplicationStatusHistory.
 /// </summary>
 public class ReviewService : IReviewService
@@ -186,7 +188,7 @@ public class ReviewService : IReviewService
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Verification Officer: Xét duyệt (UNDER_REVIEW → APPROVED/REJECTED)
+    // Verification Officer (Maker): Đề xuất (UNDER_REVIEW → PROPOSED / NEED_MORE_DOCUMENTS)
     // ─────────────────────────────────────────────────────────────
 
     public async Task<ReviewResponseDto> VerificationOfficerReviewAsync(
@@ -201,13 +203,12 @@ public class ReviewService : IReviewService
         // Validate action value
         var (action, targetStatus) = ResolveVoAction(request.Action);
 
-        // Note bắt buộc khi Reject hoặc Request More Documents
-        if (action is ReviewActionConstants.Reject
-                   or ReviewActionConstants.RequestMoreDocuments
+        // Note bắt buộc khi Request More Documents
+        if (action == ReviewActionConstants.RequestMoreDocuments
             && string.IsNullOrWhiteSpace(request.Note))
         {
             throw new ArgumentException(
-                "Ghi chú (Note) là bắt buộc khi thực hiện REJECT hoặc REQUEST_MORE_DOCUMENTS.");
+                "Ghi chú (Note) là bắt buộc khi thực hiện REQUEST_MORE_DOCUMENTS.");
         }
 
         var application = await GetApplicationOrThrowAsync(applicationId);
@@ -225,65 +226,31 @@ public class ReviewService : IReviewService
         var oldStatus = application.ApplicationStatus;
         var now = DateTime.UtcNow;
 
-        using var dbTransaction = await _context.Database.BeginTransactionAsync();
-        try
-        {
-            if (targetStatus == ApplicationStatusConstants.Approved)
-            {
-                var project = await _context.HousingProjects.FirstOrDefaultAsync(p => p.Id == application.ProjectId);
-                if (project == null)
-                {
-                    throw new InvalidOperationException("Khong tim thay du an tuong ung voi ho so.");
-                }
-                if (project.AvailableUnits <= 0)
-                {
-                    throw new InvalidOperationException("Du an da het can ho trong de giu cho.");
-                }
-                project.AvailableUnits -= 1;
-                project.UpdatedAt = now;
-                _context.HousingProjects.Update(project);
-            }
+        application.ApplicationStatus = targetStatus;
+        application.UpdatedAt = now;
 
-            application.ApplicationStatus = targetStatus;
-            application.UpdatedAt = now;
+        await _applicationRepo.UpdateAsync(application);
 
-            // Neu la quyet dinh cuoi thi ghi FinalDecisionDate
-            if (targetStatus is ApplicationStatusConstants.Approved
-                             or ApplicationStatusConstants.Rejected)
-            {
-                application.FinalDecisionDate = now;
-            }
-
-            await _applicationRepo.UpdateAsync(application);
-
-            await AppendHistoryAsync(
-                applicationId: applicationId,
-                changedBy: officerId,
-                action: action,
-                oldStatus: oldStatus,
-                newStatus: targetStatus,
-                note: request.Note?.Trim());
-
-            await dbTransaction.CommitAsync();
-        }
-        catch
-        {
-            await dbTransaction.RollbackAsync();
-            throw;
-        }
+        await AppendHistoryAsync(
+            applicationId: applicationId,
+            changedBy: officerId,
+            action: action,
+            oldStatus: oldStatus,
+            newStatus: targetStatus,
+            note: request.Note?.Trim());
 
         _logger.LogInformation(
-            "VO {OfficerId} reviewed application {AppId}. Status: {Old} " + (char)0x2192 + " {New}.",
+            "VO {OfficerId} proposed on application {AppId}. Status: {Old} → {New}.",
             officerId, applicationId, oldStatus, targetStatus);
 
-        // Gửi thông báo cho Applicant sau khi transaction commit thành công
-        await SendReviewNotificationAsync(application.ApplicantId, targetStatus, request.Note);
+        // Thông báo cho WM rằng có hồ sơ cần xét duyệt, và cho Applicant biết tiến độ
+        await SendVoProposalNotificationAsync(application, request.Note);
 
         return BuildReviewResponse(applicationId, oldStatus, targetStatus, action, now);
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Ward Manager: Xét duyệt (UNDER_REVIEW → APPROVED/REJECTED/NEED_MORE_DOCUMENTS)
+    // Ward Manager (Checker): Chốt duyệt (PROPOSED/UNDER_REVIEW → APPROVED/REJECTED/NEED_MORE_DOCUMENTS)
     // ─────────────────────────────────────────────────────────────
 
     public async Task<ReviewResponseDto> WardManagerReviewAsync(
@@ -309,7 +276,7 @@ public class ReviewService : IReviewService
 
         var application = await GetApplicationOrThrowAsync(applicationId);
 
-        // Validate state machine dựa trên WardManagerTransitions
+        // Validate state machine dựa trên WardManagerTransitions (chấp nhận PROPOSED hoặc UNDER_REVIEW)
         ValidateWmTransition(application.ApplicationStatus, targetStatus);
 
         var oldStatus = application.ApplicationStatus;
@@ -318,16 +285,17 @@ public class ReviewService : IReviewService
         using var dbTransaction = await _context.Database.BeginTransactionAsync();
         try
         {
+            // Chỉ WM mới trigger thay đổi AvailableUnits
             if (targetStatus == ApplicationStatusConstants.Approved)
             {
                 var project = await _context.HousingProjects.FirstOrDefaultAsync(p => p.Id == application.ProjectId);
                 if (project == null)
                 {
-                    throw new InvalidOperationException("Khong tim thay du an tuong ung voi ho so.");
+                    throw new InvalidOperationException("Không tìm thấy dự án tương ứng với hồ sơ.");
                 }
                 if (project.AvailableUnits <= 0)
                 {
-                    throw new InvalidOperationException("Du an da het can ho trong de giu cho.");
+                    throw new InvalidOperationException("Dự án đã hết căn hộ trống để giữ chỗ.");
                 }
                 project.AvailableUnits -= 1;
                 project.UpdatedAt = now;
@@ -362,7 +330,7 @@ public class ReviewService : IReviewService
         }
 
         _logger.LogInformation(
-            "WM {ManagerId} reviewed application {AppId}. Status: {Old} " + (char)0x2192 + " {New}.",
+            "WM {ManagerId} finalized application {AppId}. Status: {Old} " + (char)0x2192 + " {New}.",
             managerId, applicationId, oldStatus, targetStatus);
 
         // Gửi thông báo cho Applicant sau khi transaction commit thành công
@@ -433,30 +401,32 @@ public class ReviewService : IReviewService
     /// Resolve action string của VO thành (ReviewAction, TargetStatus).
     /// Ném ArgumentException nếu action không hợp lệ.
     /// </summary>
+    /// <summary>
+    /// Resolve action của VO (Maker). VO chỉ được PROPOSE hoặc REQUEST_MORE_DOCUMENTS.
+    /// Không được APPROVE/REJECT trực tiếp.
+    /// </summary>
     private static (string action, string targetStatus) ResolveVoAction(string actionInput)
+    {
+        return actionInput.ToUpperInvariant() switch
+        {
+            "PROPOSE"                => (ReviewActionConstants.Propose,              ApplicationStatusConstants.Proposed),
+            "REQUEST_MORE_DOCUMENTS" => (ReviewActionConstants.RequestMoreDocuments, ApplicationStatusConstants.NeedMoreDocuments),
+            _ => throw new ArgumentException(
+                $"Hành động '{actionInput}' không hợp lệ cho Verification Officer. " +
+                "Giá trị hợp lệ: PROPOSE, REQUEST_MORE_DOCUMENTS.")
+        };
+    }
+
+    /// <summary>
+    /// Resolve action của WM (Checker). WM có quyền APPROVE, REJECT, REQUEST_MORE_DOCUMENTS.
+    /// </summary>
+    private static (string action, string targetStatus) ResolveWmAction(string actionInput)
     {
         return actionInput.ToUpperInvariant() switch
         {
             "APPROVE"                => (ReviewActionConstants.Approve,              ApplicationStatusConstants.Approved),
             "REJECT"                 => (ReviewActionConstants.Reject,               ApplicationStatusConstants.Rejected),
             "REQUEST_MORE_DOCUMENTS" => (ReviewActionConstants.RequestMoreDocuments, ApplicationStatusConstants.NeedMoreDocuments),
-            _ => throw new ArgumentException(
-                $"Hành động '{actionInput}' không hợp lệ cho Verification Officer. " +
-                "Giá trị hợp lệ: APPROVE, REJECT, REQUEST_MORE_DOCUMENTS.")
-        };
-    }
-
-    /// <summary>
-    /// Resolve action string của WM thành (ReviewAction, TargetStatus).
-    /// Ném ArgumentException nếu action không hợp lệ.
-    /// </summary>
-    private static (string action, string targetStatus) ResolveWmAction(string actionInput)
-    {
-        return actionInput.ToUpperInvariant() switch
-        {
-            "APPROVE"                => (ReviewActionConstants.Approve,               ApplicationStatusConstants.Approved),
-            "REJECT"                 => (ReviewActionConstants.Reject,                ApplicationStatusConstants.Rejected),
-            "REQUEST_MORE_DOCUMENTS" => (ReviewActionConstants.RequestMoreDocuments,  ApplicationStatusConstants.NeedMoreDocuments),
             _ => throw new ArgumentException(
                 $"Hành động '{actionInput}' không hợp lệ cho Ward Manager. " +
                 "Giá trị hợp lệ: APPROVE, REJECT, REQUEST_MORE_DOCUMENTS.")
@@ -507,6 +477,7 @@ public class ReviewService : IReviewService
         {
             ReviewActionConstants.Submit               => "Nộp hồ sơ",
             ReviewActionConstants.AssignOfficer        => "Nhận hồ sơ thẩm định",
+            ReviewActionConstants.Propose              => "Đề xuất phê duyệt",
             ReviewActionConstants.Approve              => "Phê duyệt hồ sơ",
             ReviewActionConstants.Reject               => "Từ chối hồ sơ",
             ReviewActionConstants.RequestMoreDocuments => "Yêu cầu bổ sung giấy tờ",
@@ -525,8 +496,23 @@ public class ReviewService : IReviewService
     }
 
     /// <summary>
-    /// Gửi thông báo in-app cho Applicant dựa trên trạng thái mới.
-    /// Được gọi SAU khi transaction commit thành công.
+    /// Gửi thông báo khi VO đề xuất phê duyệt.
+    /// Thông báo cho cả Applicant (biết tiến độ) và WM (biết có hồ sơ cần xét duyệt).
+    /// </summary>
+    private async Task SendVoProposalNotificationAsync(HousingApplication application, string? note)
+    {
+        // Thông báo cho Applicant
+        await _notificationService.SendAsync(
+            application.ApplicantId,
+            "Hồ sơ đang chờ phê duyệt",
+            "Hồ sơ của bạn đã được cán bộ thẩm định đề xuất phê duyệt và đang chờ Lãnh đạo phường quyết định." +
+            (string.IsNullOrWhiteSpace(note) ? "" : $" Ghi chú: {note}"),
+            "APPLICATION_PROPOSED");
+    }
+
+    /// <summary>
+    /// Gửi thông báo in-app cho Applicant dựa trên quyết định cuối cùng.
+    /// Chỉ WM mới trigger các notification APPROVED/REJECTED.
     /// </summary>
     private async Task SendReviewNotificationAsync(
         Guid applicantId, string targetStatus, string? note)

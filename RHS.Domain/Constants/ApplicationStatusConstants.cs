@@ -18,7 +18,10 @@ public static class ApplicationStatusConstants
     /// <summary>Yêu cầu bổ sung giấy tờ (VO hoặc Ward Manager yêu cầu)</summary>
     public const string NeedMoreDocuments = "NEED_MORE_DOCUMENTS";
 
-    /// <summary>Đã được phê duyệt</summary>
+    /// <summary>VO đã đề xuất phê duyệt, chờ WM quyết định cuối cùng</summary>
+    public const string Proposed = "PROPOSED";
+
+    /// <summary>Đã được phê duyệt (chỉ Ward Manager mới có quyền)</summary>
     public const string Approved = "APPROVED";
 
     /// <summary>Đã bị từ chối</summary>
@@ -40,6 +43,7 @@ public static class ApplicationStatusConstants
         Submitted,
         UnderReview,
         NeedMoreDocuments,
+        Proposed,
         Approved,
         Rejected,
         Canceled,
@@ -61,8 +65,8 @@ public static class ApplicationStatusConstants
         {
             // VO có thể chuyển từ SUBMITTED → UNDER_REVIEW (nhận hồ sơ)
             [Submitted] = new[] { UnderReview },
-            // VO có thể chuyển từ UNDER_REVIEW → APPROVED, REJECTED, hoặc NEED_MORE_DOCUMENTS
-            [UnderReview] = new[] { Approved, Rejected, NeedMoreDocuments },
+            // VO kiểm tra và đề xuất, KHÔNG được chốt duyệt/từ chối
+            [UnderReview] = new[] { Proposed, NeedMoreDocuments },
             // VO có thể chuyển từ NEED_MORE_DOCUMENTS → UNDER_REVIEW (sau khi người dân bổ sung)
             [NeedMoreDocuments] = new[] { UnderReview }
         };
@@ -70,7 +74,9 @@ public static class ApplicationStatusConstants
     public static readonly IReadOnlyDictionary<string, string[]> WardManagerTransitions =
         new Dictionary<string, string[]>
         {
-            // WM có thể chuyển từ UNDER_REVIEW → APPROVED, REJECTED, hoặc NEED_MORE_DOCUMENTS
+            // WM chốt quyết định cuối cùng từ hồ sơ VO đã đề xuất
+            [Proposed] = new[] { Approved, Rejected, NeedMoreDocuments },
+            // WM cũng có thể trực tiếp xét duyệt hồ sơ chưa qua VO (UNDER_REVIEW)
             [UnderReview] = new[] { Approved, Rejected, NeedMoreDocuments }
         };
 }
