@@ -33,5 +33,13 @@ public interface IFileStorageService
     /// <param name="folder">Thư mục trên Cloudinary (ví dụ: "principle-agreements")</param>
     /// <returns>Secure URL của file đã upload</returns>
     Task<string> UploadPdfFromBytesAsync(byte[] pdfBytes, string fileName, string folder);
+
+    /// <summary>
+    /// Tải file từ URL, tự động sinh chữ ký bảo mật (signed URL) nếu tài nguyên nằm trên Cloudinary.
+    /// </summary>
+    /// <param name="fileUrl">URL của file (từ DB/Cloudinary hoặc ngoài hệ thống)</param>
+    /// <returns>Mảng byte dữ liệu của file</returns>
+    Task<byte[]> DownloadFileAsync(string fileUrl);
 }
+
 

@@ -1,3 +1,8 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
 using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
 using Microsoft.AspNetCore.Http;
@@ -242,16 +247,15 @@ public class FileStorageService : IFileStorageService
 
             using var stream = file.OpenReadStream();
 
-            // Dùng RawUploadParams thay vì ImageUploadParams
-            // để Cloudinary lưu file PDF dưới dạng raw binary
-            var uploadParams = new RawUploadParams
+            // Sử dụng ImageUploadParams thay vì RawUploadParams để PDF được coi là ResourceType.Image.
+            // Điều này cho phép tải file công khai mà không bị chặn 401 bởi Cloudinary Restricted Raw.
+            var uploadParams = new ImageUploadParams
             {
                 File       = new FileDescription(file.FileName, stream),
                 PublicId   = publicId,
                 Folder     = folder,
                 Overwrite  = false,
-                Type       = "upload",
-                AccessMode = "public"
+                Type       = "upload"
             };
 
             var uploadResult = await _cloudinary.UploadAsync(uploadParams);
@@ -297,14 +301,14 @@ public class FileStorageService : IFileStorageService
             using var stream = new MemoryStream(pdfBytes);
             stream.Position = 0; // Đảm bảo đọc từ đầu
 
-            var uploadParams = new RawUploadParams
+            // Sử dụng ImageUploadParams thay vì RawUploadParams để PDF được coi là ResourceType.Image
+            var uploadParams = new ImageUploadParams
             {
                 File       = new FileDescription(fileName, stream),
                 PublicId   = publicId,
                 Folder     = folder,
                 Overwrite  = false,
-                Type       = "upload",
-                AccessMode = "public"
+                Type       = "upload"
             };
 
             var uploadResult = await _cloudinary.UploadAsync(uploadParams);
@@ -332,6 +336,95 @@ public class FileStorageService : IFileStorageService
         {
             _logger.LogError(ex, "Error uploading PDF bytes to Cloudinary.");
             throw new InvalidOperationException("Không thể upload file PDF.", ex);
+        }
+    }
+
+    public async Task<byte[]> DownloadFileAsync(string fileUrl)
+    {
+        if (string.IsNullOrEmpty(fileUrl))
+        {
+            throw new ArgumentException("URL không được trống", nameof(fileUrl));
+        }
+
+        // Nếu không phải link Cloudinary thì tải trực tiếp bằng HttpClient
+        if (!fileUrl.Contains("res.cloudinary.com", StringComparison.OrdinalIgnoreCase))
+        {
+            using var client = new HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+            return await client.GetByteArrayAsync(fileUrl);
+        }
+
+        try
+        {
+            var uri = new Uri(fileUrl);
+            var segments = uri.AbsolutePath.Split('/');
+
+            // Tìm index của segment "upload"
+            int uploadIndex = Array.IndexOf(segments, "upload");
+            if (uploadIndex == -1 || uploadIndex < 2)
+            {
+                // Fallback tải trực tiếp
+                using var client = new HttpClient();
+                client.Timeout = TimeSpan.FromSeconds(30);
+                return await client.GetByteArrayAsync(fileUrl);
+            }
+
+            string resourceType = segments[uploadIndex - 1]; // "image", "raw", etc.
+            
+            // Xác định vị trí của publicId (bỏ qua version nếu có)
+            int startOfPublicIdIndex = uploadIndex + 1;
+            if (startOfPublicIdIndex < segments.Length && segments[startOfPublicIdIndex].StartsWith("v"))
+            {
+                startOfPublicIdIndex++;
+            }
+
+            var publicIdSegments = segments.Skip(startOfPublicIdIndex).ToArray();
+            var publicId = string.Join("/", publicIdSegments);
+
+            // Cloudinary: Đối với raw resource, public ID chứa phần mở rộng (ví dụ .pdf).
+            // Đối với image, public ID thường không bao gồm phần mở rộng (phần mở rộng được coi là format).
+            // Ta sẽ bóc tách format nếu là image.
+            string format = "";
+            if (resourceType.Equals("image", StringComparison.OrdinalIgnoreCase))
+            {
+                var lastDotIndex = publicId.LastIndexOf('.');
+                if (lastDotIndex > 0)
+                {
+                    format = publicId.Substring(lastDotIndex + 1);
+                    publicId = publicId.Substring(0, lastDotIndex);
+                }
+            }
+
+            // Tạo signed URL sử dụng Cloudinary SDK
+            var urlBuilder = _cloudinary.Api.UrlImgUp
+                .ResourceType(resourceType)
+                .Action("upload")
+                .Signed(true);
+
+            // Thiết lập định dạng nếu có
+            if (!string.IsNullOrEmpty(format))
+            {
+                urlBuilder.Format(format);
+            }
+
+            var signedUrl = urlBuilder.BuildUrl(publicId);
+
+            _logger.LogInformation("Generated signed download URL for {ResourceType}: {SignedUrl}", resourceType, signedUrl);
+
+            using (var downloadClient = new HttpClient())
+            {
+                downloadClient.Timeout = TimeSpan.FromSeconds(30);
+                downloadClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+                return await downloadClient.GetByteArrayAsync(signedUrl);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi tải file sử dụng URL ký tên từ Cloudinary: {Url}", fileUrl);
+            // Fallback tải trực tiếp
+            using var client = new HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+            return await client.GetByteArrayAsync(fileUrl);
         }
     }
 }

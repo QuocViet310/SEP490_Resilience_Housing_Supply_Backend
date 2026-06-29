@@ -23,17 +23,20 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
     private readonly HttpClient _geminiClient;
     private readonly GeminiAiOptions _options;
     private readonly AppDbContext _dbContext;
+    private readonly IFileStorageService _fileStorageService;
     private readonly ILogger<GeminiDocumentVerificationService> _logger;
 
     public GeminiDocumentVerificationService(
         HttpClient geminiClient,
         IOptions<GeminiAiOptions> options,
         AppDbContext dbContext,
+        IFileStorageService fileStorageService,
         ILogger<GeminiDocumentVerificationService> logger)
     {
         _geminiClient = geminiClient;
         _options = options.Value;
         _dbContext = dbContext;
+        _fileStorageService = fileStorageService;
         _logger = logger;
 
         // Cấu hình HttpClient cho Gemini
@@ -79,15 +82,8 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
 
         try
         {
-            // 2. Tải file PDF từ FileUrl (Cloudinary)
-            byte[] pdfBytes;
-            using (var downloadClient = new HttpClient())
-            {
-                downloadClient.Timeout = TimeSpan.FromSeconds(30);
-                // Thêm User-Agent giả lập trình duyệt để tránh bị chặn bởi Cloudinary/WAF
-                downloadClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-                pdfBytes = await downloadClient.GetByteArrayAsync(document.FileUrl, cancellationToken);
-            }
+            // 2. Tải file PDF từ FileUrl (sử dụng FileStorageService hỗ trợ Signed URL)
+            byte[] pdfBytes = await _fileStorageService.DownloadFileAsync(document.FileUrl);
 
             if (pdfBytes == null || pdfBytes.Length == 0)
             {

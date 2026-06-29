@@ -244,15 +244,28 @@ public static class DocumentVerificationServiceCollectionExtensions
 
 ---
 
-### Component 7: Database Migration
+### Component 8: Khắc phục lỗi HTTP 401 (Unauthorized) khi tải file từ Cloudinary
 
-#### [NEW] EF Core Migration
-* Chạy lệnh tạo migration:
-  `dotnet ef migrations add AddGeminiVerificationFields`
-* Lệnh update database:
-  `dotnet ef database update`
+> **Nguyên nhân:** Cloudinary chặn việc tải trực tiếp (HTTP GET) các file dạng "raw" nếu thiết lập bảo mật của tài khoản người dùng chặn phân phối tài nguyên thô (Restricted raw media delivery).
+> **Giải pháp:** 
+> 1. Chuyển cơ chế upload PDF từ `RawUploadParams` sang `ImageUploadParams`. Cloudinary hỗ trợ lưu trữ và phân phối định dạng PDF như một loại tài nguyên `image`, không bị giới hạn quyền truy cập mặc định và tương thích tốt với các phương thức xóa/kiểm tra định dạng sẵn có.
+> 2. Bổ sung phương thức `DownloadFileAsync(string fileUrl)` vào `IFileStorageService`. Phương thức này tự động kiểm tra xem URL có phải là của Cloudinary hay không. Nếu có, nó sẽ sử dụng Cloudinary SDK và API credentials để tạo link download có chữ ký xác thực (Signed URL), giải quyết triệt để lỗi 401 cho cả các file cũ đã tải lên trước đó.
+> 3. Cấu hình `GeminiDocumentVerificationService` gọi `IFileStorageService.DownloadFileAsync()` thay vì tự tải trực tiếp qua `HttpClient`.
+
+#### [MODIFY] [IFileStorageService.cs](file:///d:/Đồ%20Án%20Tốt%20Nghiệp/RHS.Application/Interfaces/IFileStorageService.cs)
+- Bổ sung định nghĩa phương thức tải file:
+  `Task<byte[]> DownloadFileAsync(string fileUrl);`
+
+#### [MODIFY] [FileStorageService.cs](file:///d:/Đồ%20Án%20Tốt%20Nghiệp/RHS.Infrastructure/Services/FileStorageService.cs)
+- Chuyển `RawUploadParams` sang `ImageUploadParams` trong cả `UploadPdfAsync` và `UploadPdfFromBytesAsync`.
+- Implement `DownloadFileAsync` sử dụng `_cloudinary.Api.UrlImgUp` kèm thiết lập `.Signed(true)` để ký URL trước khi tải về.
+
+#### [MODIFY] [GeminiDocumentVerificationService.cs](file:///d:/Đồ%20Án%20Tốt%20Nghiệp/RHS.Infrastructure/Services/GeminiDocumentVerificationService.cs)
+- Inject `IFileStorageService` vào constructor.
+- Thay thế đoạn code tự khởi tạo `HttpClient` tải file bằng cách gọi `_fileStorageService.DownloadFileAsync(document.FileUrl)`.
 
 ---
+
 
 ## Verification Plan
 
