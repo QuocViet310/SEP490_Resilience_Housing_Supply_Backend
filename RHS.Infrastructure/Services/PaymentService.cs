@@ -224,14 +224,19 @@ public class PaymentService : IPaymentService
 
         if (responseCode == "00" && transactionStatus == "00")
         {
-            payment.Status = "Success";
             payment.PaidAt = DateTime.UtcNow;
-            await _paymentRepository.UpdateAsync(payment);
 
-            // ── 6. Post-payment: sinh SlotCode + PDF + PrincipleAgreement ──
             if (payment.ApplicationId.HasValue)
             {
+                // Đưa payment.Status = "Success" vào cùng transaction với
+                // ProcessSuccessfulDepositAsync để nếu có lỗi (Cloudinary, DB...)
+                // thì payment cũng không bị ghi nhầm là Success khi slotCode/pdfUrl chưa có
                 await ProcessSuccessfulDepositAsync(payment);
+            }
+            else
+            {
+                payment.Status = "Success";
+                await _paymentRepository.UpdateAsync(payment);
             }
         }
         else
@@ -347,14 +352,15 @@ public class PaymentService : IPaymentService
             var slotCode = await GenerateSlotCodeAsync(project);
             application.SlotCode = slotCode;
 
-            // ── 2. Tìm Ward Manager name (nếu có OfficerId) ────────────────
-            var wardManagerName = "Ban Quản lý Dự án";
-            if (application.OfficerId.HasValue)
-            {
-                var officer = await _context.Users.FindAsync(application.OfficerId.Value);
-                if (officer != null)
-                    wardManagerName = officer.FullName;
-            }
+            // ── 2. Cập nhật payment Status = "Success" TRONG transaction ──
+            payment.Status = "Success";
+            payment.PaidAt ??= DateTime.UtcNow;
+            await _paymentRepository.UpdateAsync(payment);
+
+            // ── 3. Tìm Ward Manager name (nếu có OfficerId) ────────────────
+            // Dùng navigation property đã include thay vì FindAsync để tránh
+            // conflict EF Core tracking (entity đã được load từ GetByIdWithDetailsAsync)
+            var wardManagerName = application.Officer?.FullName ?? "Ban Quản lý Dự án";
 
             // ── 3. Sinh PDF hợp đồng ───────────────────────────────────────
             var pdfUrl = await _pdfContractService.GenerateAndUploadContractAsync(
@@ -376,7 +382,7 @@ public class PaymentService : IPaymentService
             var oldStatus = application.ApplicationStatus;
             application.ApplicationStatus = ApplicationStatusConstants.DepositPaid;
             application.UpdatedAt = DateTime.UtcNow;
-            _context.HousingApplications.Update(application);
+            await _applicationRepo.UpdateAsync(application);
 
             // ── 6. Ghi lịch sử xét duyệt ──────────────────────────────────
             var history = new ApplicationStatusHistory

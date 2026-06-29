@@ -84,8 +84,8 @@ public class VnPayService : IVnPayService
         {
             if (!string.IsNullOrEmpty(key)
                 && key.StartsWith("vnp_", StringComparison.OrdinalIgnoreCase)
-                && key != "vnp_SecureHash"
-                && key != "vnp_SecureHashType")
+                && !string.Equals(key, "vnp_SecureHash", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(key, "vnp_SecureHashType", StringComparison.OrdinalIgnoreCase))
             {
                 vnpParams[key] = value.ToString();
             }
