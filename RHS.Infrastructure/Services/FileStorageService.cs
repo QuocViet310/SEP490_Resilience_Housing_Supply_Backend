@@ -247,15 +247,17 @@ public class FileStorageService : IFileStorageService
 
             using var stream = file.OpenReadStream();
 
-            // Sử dụng ImageUploadParams thay vì RawUploadParams để PDF được coi là ResourceType.Image.
-            // Điều này cho phép tải file công khai mà không bị chặn 401 bởi Cloudinary Restricted Raw.
-            var uploadParams = new ImageUploadParams
+            // Revert về RawUploadParams vì Cloudinary không hỗ trợ tải trực tiếp PDF dưới dạng Image 
+            // trên một số tài khoản (báo lỗi Unsupported ZIP file).
+            // Chúng ta đã có DownloadFileAsync tự động ký URL nên yên tâm dùng raw.
+            var uploadParams = new RawUploadParams
             {
                 File       = new FileDescription(file.FileName, stream),
                 PublicId   = publicId,
                 Folder     = folder,
                 Overwrite  = false,
-                Type       = "upload"
+                Type       = "upload",
+                AccessMode = "public"
             };
 
             var uploadResult = await _cloudinary.UploadAsync(uploadParams);
@@ -301,14 +303,15 @@ public class FileStorageService : IFileStorageService
             using var stream = new MemoryStream(pdfBytes);
             stream.Position = 0; // Đảm bảo đọc từ đầu
 
-            // Sử dụng ImageUploadParams thay vì RawUploadParams để PDF được coi là ResourceType.Image
-            var uploadParams = new ImageUploadParams
+            // Revert về RawUploadParams vì lý do tương thích Cloudinary
+            var uploadParams = new RawUploadParams
             {
                 File       = new FileDescription(fileName, stream),
                 PublicId   = publicId,
                 Folder     = folder,
                 Overwrite  = false,
-                Type       = "upload"
+                Type       = "upload",
+                AccessMode = "public"
             };
 
             var uploadResult = await _cloudinary.UploadAsync(uploadParams);
