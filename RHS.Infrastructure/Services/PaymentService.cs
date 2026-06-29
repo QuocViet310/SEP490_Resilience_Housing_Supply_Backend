@@ -357,8 +357,17 @@ public class PaymentService : IPaymentService
             payment.PaidAt ??= DateTime.UtcNow;
             await _paymentRepository.UpdateAsync(payment);
 
-            // ── 3. Tìm Ward Manager name (nếu có OfficerId) ────────────────
-            var wardManagerName = application.Officer?.FullName ?? "Ban Quản lý Dự án";
+            // ── 3. Tìm Ward Manager name từ lịch sử duyệt hồ sơ ────────────
+            //    Lấy người đã chuyển trạng thái sang APPROVED
+            var approvedHistory = await _context.ApplicationStatusHistories
+                .Include(h => h.ChangedByUser)
+                .Where(h => h.ApplicationId == application.ApplicationId
+                         && h.NewStatus == ApplicationStatusConstants.Approved)
+                .OrderByDescending(h => h.ChangedAt)
+                .FirstOrDefaultAsync();
+
+            var wardManagerName = approvedHistory?.ChangedByUser?.FullName
+                ?? "Ban Quản lý Dự án";
 
             // ── 4. Tạo PrincipleAgreement ───────────────────────────────────
             // PDF được sinh on-demand qua API endpoint (không lưu trên Cloudinary)

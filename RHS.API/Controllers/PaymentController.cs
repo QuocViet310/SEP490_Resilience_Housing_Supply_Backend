@@ -279,7 +279,16 @@ public class PaymentController : ControllerBase
                 .OrderByDescending(p => p.PaidAt)
                 .FirstOrDefaultAsync();
 
-            var wardManagerName = application.Officer?.FullName ?? "Ban Quản lý Dự án";
+            // Tìm Ward Manager = người đã duyệt hồ sơ (NewStatus = APPROVED)
+            var approvedHistory = await context.ApplicationStatusHistories
+                .Include(h => h.ChangedByUser)
+                .Where(h => h.ApplicationId == applicationId
+                         && h.NewStatus == "APPROVED")
+                .OrderByDescending(h => h.ChangedAt)
+                .FirstOrDefaultAsync();
+
+            var wardManagerName = approvedHistory?.ChangedByUser?.FullName
+                ?? "Ban Quản lý Dự án";
 
             // Sinh PDF on-demand
             var pdfBytes = pdfContractService.GeneratePdfBytesOnly(
