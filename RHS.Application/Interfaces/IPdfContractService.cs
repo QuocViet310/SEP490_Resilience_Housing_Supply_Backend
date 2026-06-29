@@ -25,4 +25,15 @@ public interface IPdfContractService
         decimal paymentAmount,
         string? vnpTransactionNo,
         string wardManagerName);
+
+    /// <summary>
+    /// Chỉ sinh PDF bytes (KHÔNG upload). Dùng cho test/debug.
+    /// </summary>
+    byte[] GeneratePdfBytesOnly(
+        HousingApplication application,
+        HousingProject project,
+        string slotCode,
+        decimal paymentAmount,
+        string? vnpTransactionNo,
+        string wardManagerName);
 }

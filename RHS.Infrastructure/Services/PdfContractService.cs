@@ -5,6 +5,7 @@ using QuestPDF.Infrastructure;
 using RHS.Application.Interfaces;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Helpers;
+using System.Reflection;
 
 namespace RHS.Infrastructure.Services;
 
@@ -43,6 +44,16 @@ public class PdfContractService : IPdfContractService
             application, project, slotCode,
             paymentAmount, vnpTransactionNo, wardManagerName);
 
+        _logger.LogInformation(
+            "PDF generated: {ByteCount} bytes for SlotCode={SlotCode}.",
+            pdfBytes.Length, slotCode);
+
+        if (pdfBytes.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"PDF generation returned empty bytes for SlotCode={slotCode}.");
+        }
+
         // ── 2. Upload lên Cloudinary ────────────────────────────────────────
         var fileName = $"HopDong_{slotCode}.pdf";
         var pdfUrl = await _fileStorage.UploadPdfFromBytesAsync(
@@ -52,6 +63,19 @@ public class PdfContractService : IPdfContractService
             "PDF contract uploaded: {Url} for SlotCode={SlotCode}.", pdfUrl, slotCode);
 
         return pdfUrl;
+    }
+
+    /// <inheritdoc/>
+    public byte[] GeneratePdfBytesOnly(
+        HousingApplication application,
+        HousingProject project,
+        string slotCode,
+        decimal paymentAmount,
+        string? vnpTransactionNo,
+        string wardManagerName)
+    {
+        return GeneratePdfBytes(application, project, slotCode,
+            paymentAmount, vnpTransactionNo, wardManagerName);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -71,7 +95,6 @@ public class PdfContractService : IPdfContractService
         var amountFormatted = paymentAmount.ToString("#,##0");
         var fullAddress = $"{project.Street}, {project.Ward}, {project.District}, {project.Province}";
 
-        // Thông tin bốc thăm
         var lotteryDateStr = project.LotteryDate?.ToString("dd/MM/yyyy") ?? "(Sẽ thông báo sau)";
         var lotteryTimeStr = project.LotteryDate?.ToString("HH:mm") ?? "08:00";
         var lotteryLocation = project.LotteryLocation
@@ -82,37 +105,26 @@ public class PdfContractService : IPdfContractService
             container.Page(page =>
             {
                 page.Size(PageSizes.A4);
-                page.MarginHorizontal(60);
+                page.MarginHorizontal(55);
                 page.MarginVertical(40);
-                page.DefaultTextStyle(x => x.FontSize(12).FontFamily("Arial"));
+                page.DefaultTextStyle(x => x.FontSize(12).FontFamily(Fonts.Lato));
 
                 page.Content().Column(col =>
                 {
                     // ── Header quốc hiệu ──────────────────────────────────
-                    col.Item().AlignCenter().Text("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM")
-                        .Bold().FontSize(13);
-                    col.Item().AlignCenter().Text("Độc lập – Tự do – Hạnh phúc")
-                        .Bold().FontSize(12).Underline();
+                    col.Item().AlignCenter().Text("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM").Bold().FontSize(13);
+                    col.Item().AlignCenter().Text("Độc lập – Tự do – Hạnh phúc").Bold().FontSize(12).Underline();
 
-                    col.Item().Height(20);
+                    col.Item().Height(18);
 
                     // ── Tiêu đề ────────────────────────────────────────────
-                    col.Item().AlignCenter().Text("HỢP ĐỒNG NGUYÊN TẮC")
-                        .Bold().FontSize(16);
+                    col.Item().AlignCenter().Text("HỢP ĐỒNG NGUYÊN TẮC").Bold().FontSize(15);
 
-                    col.Item().Height(15);
+                    col.Item().Height(12);
 
                     // ── Căn cứ pháp lý ─────────────────────────────────────
-                    col.Item().Text(text =>
-                    {
-                        text.Span("- Căn cứ Bộ luật Dân sự số 91/2015/QH13 được Quốc hội nước Cộng hoà xã hội chủ nghĩa Việt Nam thông qua ngày 24 tháng 11 năm 2015;")
-                            .Italic().FontSize(11);
-                    });
-                    col.Item().Text(text =>
-                    {
-                        text.Span("- Căn cứ vào nhu cầu và khả năng của cả 2 bên.")
-                            .Italic().FontSize(11);
-                    });
+                    col.Item().Text("- Căn cứ Bộ luật Dân sự số 91/2015/QH13 ngày 24/11/2015;").Italic().FontSize(11);
+                    col.Item().Text("- Căn cứ vào nhu cầu và khả năng của cả 2 bên.").Italic().FontSize(11);
 
                     col.Item().Height(10);
 
@@ -120,71 +132,42 @@ public class PdfContractService : IPdfContractService
 
                     col.Item().Height(12);
 
-                    // ── BÊN A: BAN QUẢN LÝ DỰ ÁN ──────────────────────────
-                    col.Item().Text("BÊN ĐẠI DIỆN CUNG CẤP: BAN QUẢN LÝ DỰ ÁN").Bold();
+                    // ── BÊN A ──────────────────────────────────────────────
+                    col.Item().Text("BÊN ĐẠI DIỆN CUNG CẤP (BÊN A): BAN QUẢN LÝ DỰ ÁN").Bold();
                     col.Item().PaddingLeft(20).Column(sub =>
                     {
-                        sub.Item().Text(t =>
-                        {
-                            t.Span("Dự án: ").SemiBold();
-                            t.Span(project.ProjectName);
-                        });
-                        sub.Item().Text(t =>
-                        {
-                            t.Span("Địa chỉ dự án: ").SemiBold();
-                            t.Span(fullAddress);
-                        });
-                        sub.Item().Text(t =>
-                        {
-                            t.Span("Đại diện bởi Ông/Bà: ").SemiBold();
-                            t.Span(wardManagerName);
-                        });
-                        sub.Item().Text(t =>
-                        {
-                            t.Span("Chức vụ: ").SemiBold();
-                            t.Span("Cán bộ quản lý địa bàn");
-                        });
+                        sub.Item().Text(t => { t.Span("Dự án: ").SemiBold(); t.Span(project.ProjectName); });
+                        sub.Item().Text(t => { t.Span("Địa chỉ dự án: ").SemiBold(); t.Span(fullAddress); });
+                        sub.Item().Text(t => { t.Span("Đại diện bởi Ông/Bà: ").SemiBold(); t.Span(wardManagerName); });
+                        sub.Item().Text(t => { t.Span("Chức vụ: ").SemiBold(); t.Span("Cán bộ quản lý địa bàn"); });
                     });
 
                     col.Item().Height(10);
 
-                    // ── BÊN B: NGƯỜI ĐĂNG KÝ ───────────────────────────────
-                    col.Item().Text("BÊN ĐĂNG KÝ NHẬN NHÀ: NGƯỜI ĐĂNG KÝ").Bold();
+                    // ── BÊN B ──────────────────────────────────────────────
+                    col.Item().Text("BÊN ĐĂNG KÝ NHẬN NHÀ (BÊN B): NGƯỜI ĐĂNG KÝ").Bold();
                     col.Item().PaddingLeft(20).Column(sub =>
                     {
-                        sub.Item().Text(t =>
-                        {
-                            t.Span("Họ và tên: ").SemiBold();
-                            t.Span(application.FullName);
-                        });
-                        sub.Item().Text(t =>
-                        {
-                            t.Span("Số CCCD: ").SemiBold();
-                            t.Span(application.CitizenId);
-                        });
-                        sub.Item().Text(t =>
-                        {
-                            t.Span("Nơi thường trú: ").SemiBold();
-                            t.Span(application.PermanentAddress);
-                        });
+                        sub.Item().Text(t => { t.Span("Họ và tên: ").SemiBold(); t.Span(application.FullName); });
+                        sub.Item().Text(t => { t.Span("Số CCCD: ").SemiBold(); t.Span(application.CitizenId); });
+                        sub.Item().Text(t => { t.Span("Nơi thường trú: ").SemiBold(); t.Span(application.PermanentAddress); });
                     });
 
                     col.Item().Height(10);
 
-                    col.Item().Text("Sau khi bàn bạc, hai bên thống nhất ký kết Hợp đồng nguyên tắc này với các điều khoản sau:")
-                        .Italic();
+                    col.Item().Text("Hai bên thống nhất ký kết Hợp đồng nguyên tắc với các điều khoản sau:").Italic();
 
                     col.Item().Height(12);
 
                     // ── ĐIỀU 1 ──────────────────────────────────────────────
                     col.Item().Text("ĐIỀU 1: ĐỐI TƯỢNG HỢP ĐỒNG").Bold();
-                    col.Item().PaddingLeft(10).Text(t =>
+                    col.Item().PaddingLeft(15).Text(t =>
                     {
-                        t.Span($"Bên A xác nhận Bên B đủ điều kiện và chính thức sở hữu một (01) suất mua/thuê căn hộ thuộc Dự án Nhà ở xã hội ");
+                        t.Span("Bên A xác nhận Bên B đủ điều kiện sở hữu một (01) suất mua/thuê căn hộ thuộc Dự án Nhà ở xã hội ");
                         t.Span(project.ProjectName).Bold();
                         t.Span(".");
                     });
-                    col.Item().PaddingLeft(10).Text(t =>
+                    col.Item().PaddingLeft(15).Text(t =>
                     {
                         t.Span("Mã định danh suất mua: ").SemiBold();
                         t.Span(slotCode).Bold().FontColor(Colors.Blue.Darken2);
@@ -194,15 +177,15 @@ public class PdfContractService : IPdfContractService
 
                     // ── ĐIỀU 2 ──────────────────────────────────────────────
                     col.Item().Text("ĐIỀU 2: THANH TOÁN TÀI CHÍNH").Bold();
-                    col.Item().PaddingLeft(10).Column(sub =>
+                    col.Item().PaddingLeft(15).Column(sub =>
                     {
                         sub.Item().Text(t =>
                         {
-                            t.Span("Để bảo đảm suất mua nêu trên, Bên B đã hoàn tất thanh toán số tiền là: ");
+                            t.Span("1. Bên B đã hoàn tất thanh toán số tiền: ");
                             t.Span($"{amountFormatted} VNĐ").Bold();
                             t.Span(".");
                         });
-                        sub.Item().Text(t =>
+                        sub.Item().PaddingLeft(10).Text(t =>
                         {
                             t.Span("(Bằng chữ: ");
                             t.Span($"{amountInWords} đồng chẵn").Italic();
@@ -210,9 +193,13 @@ public class PdfContractService : IPdfContractService
                         });
                         sub.Item().Text(t =>
                         {
-                            t.Span("Phương thức thanh toán: ").SemiBold();
-                            t.Span($"Chuyển khoản thành công qua Cổng thanh toán điện tử: {vnpTransactionNo ?? "N/A"}");
-                            t.Span(".");
+                            t.Span("2. Phương thức thanh toán: ").SemiBold();
+                            t.Span($"Chuyển khoản qua Cổng thanh toán điện tử VNPay.");
+                        });
+                        sub.Item().PaddingLeft(10).Text(t =>
+                        {
+                            t.Span("Mã giao dịch: ").SemiBold();
+                            t.Span(vnpTransactionNo ?? "N/A");
                         });
                     });
 
@@ -220,11 +207,9 @@ public class PdfContractService : IPdfContractService
 
                     // ── ĐIỀU 3 ──────────────────────────────────────────────
                     col.Item().Text("ĐIỀU 3: BỐC THĂM VỊ TRÍ CĂN HỘ").Bold();
-                    col.Item().PaddingLeft(10).Column(sub =>
+                    col.Item().PaddingLeft(15).Column(sub =>
                     {
-                        sub.Item().Text("Do dự án có nhiều vị trí/tầng/hướng khác nhau, Bên B sẽ tham gia buổi bốc thăm để nhận mã số căn hộ cụ thể (Số phòng, Tầng, Tòa).");
-                        sub.Item().Height(5);
-                        sub.Item().Text("Thông tin buổi bốc thăm:").SemiBold();
+                        sub.Item().Text("1. Bên B sẽ tham gia buổi bốc thăm để nhận mã số căn hộ cụ thể (Số phòng, Tầng, Tòa).");
                         sub.Item().PaddingLeft(10).Text(t =>
                         {
                             t.Span("Thời gian tổ chức: ").SemiBold();
@@ -235,37 +220,35 @@ public class PdfContractService : IPdfContractService
                             t.Span("Địa điểm tổ chức: ").SemiBold();
                             t.Span(lotteryLocation);
                         });
-                        sub.Item().Height(5);
-                        sub.Item().Text("Sau khi có kết quả bốc thăm vị trí căn hộ, hai bên sẽ tiến hành ký Hợp đồng Mua bán/Bàn giao nhà chính thức dựa trên mã căn hộ mà Bên B bốc trúng.");
+                        sub.Item().Text("2. Sau bốc thăm, hai bên tiến hành ký Hợp đồng Mua bán chính thức.");
                     });
 
                     col.Item().Height(10);
 
                     // ── ĐIỀU 4 ──────────────────────────────────────────────
                     col.Item().Text("ĐIỀU 4: ĐIỀU KHOẢN CHUNG").Bold();
-                    col.Item().PaddingLeft(10).Column(sub =>
+                    col.Item().PaddingLeft(15).Column(sub =>
                     {
-                        sub.Item().Text("Hợp đồng này có hiệu lực kể từ thời điểm hệ thống ghi nhận thanh toán thành công.");
-                        sub.Item().Text("Hợp đồng được tạo lập dưới dạng chứng từ điện tử trên Hệ thống Quản lý, có giá trị pháp lý và hiệu lực đối soát tương đương bản giấy.");
+                        sub.Item().Text("1. Hợp đồng có hiệu lực kể từ thời điểm hệ thống ghi nhận thanh toán thành công.");
+                        sub.Item().Text("2. Hợp đồng được tạo lập dưới dạng chứng từ điện tử trên Hệ thống Quản lý, có giá trị pháp lý tương đương bản giấy.");
                     });
 
-                    col.Item().Height(30);
+                    col.Item().Height(35);
 
                     // ── Chữ ký ──────────────────────────────────────────────
                     col.Item().Row(row =>
                     {
                         row.RelativeItem().AlignCenter().Column(left =>
                         {
-                            left.Item().Text("ĐẠI DIỆN BÊN CUNG CẤP").Bold().FontSize(11);
-                            left.Item().Height(50); // Khoảng trống cho chữ ký
-                            left.Item().Text(wardManagerName).Bold();
+                            left.Item().AlignCenter().Text("ĐẠI DIỆN BÊN CUNG CẤP").Bold().FontSize(11);
+                            left.Item().Height(70);
+                            left.Item().AlignCenter().Text(wardManagerName).Bold();
                         });
-
                         row.RelativeItem().AlignCenter().Column(right =>
                         {
-                            right.Item().Text("ĐẠI DIỆN BÊN ĐĂNG KÝ NHẬN NHÀ").Bold().FontSize(11);
-                            right.Item().Height(50);
-                            right.Item().Text(application.FullName).Bold();
+                            right.Item().AlignCenter().Text("ĐẠI DIỆN BÊN ĐĂNG KÝ NHẬN NHÀ").Bold().FontSize(11);
+                            right.Item().Height(70);
+                            right.Item().AlignCenter().Text(application.FullName).Bold();
                         });
                     });
                 });

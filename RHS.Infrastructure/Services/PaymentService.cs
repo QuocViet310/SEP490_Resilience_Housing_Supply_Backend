@@ -358,22 +358,15 @@ public class PaymentService : IPaymentService
             await _paymentRepository.UpdateAsync(payment);
 
             // ── 3. Tìm Ward Manager name (nếu có OfficerId) ────────────────
-            // Dùng navigation property đã include thay vì FindAsync để tránh
-            // conflict EF Core tracking (entity đã được load từ GetByIdWithDetailsAsync)
             var wardManagerName = application.Officer?.FullName ?? "Ban Quản lý Dự án";
 
-            // ── 3. Sinh PDF hợp đồng ───────────────────────────────────────
-            var pdfUrl = await _pdfContractService.GenerateAndUploadContractAsync(
-                application, project, slotCode,
-                payment.Amount, payment.VnpTransactionNo,
-                wardManagerName);
-
             // ── 4. Tạo PrincipleAgreement ───────────────────────────────────
+            // PDF được sinh on-demand qua API endpoint (không lưu trên Cloudinary)
             var agreement = new PrincipleAgreement
             {
                 Id            = Guid.NewGuid(),
                 ApplicationId = application.ApplicationId,
-                PdfUrl        = pdfUrl,
+                PdfUrl        = $"/api/payment/download-contract/{application.ApplicationId}",
                 CreatedAt     = DateTime.UtcNow
             };
             await _context.PrincipleAgreements.AddAsync(agreement);

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using RHS.Application.DTOs.Payment;
 using RHS.Application.Interfaces;
 using System.Security.Claims;
@@ -227,4 +228,78 @@ public class PaymentController : ControllerBase
             data    = payments
         });
     }
+
+    /// <summary>
+    /// Tải hợp đồng nguyên tắc dưới dạng PDF.
+    /// PDF được sinh on-demand từ dữ liệu hồ sơ trong DB (không lưu trên Cloudinary).
+    /// </summary>
+    [HttpGet("download-contract/{applicationId}")]
+    [Authorize]
+    public async Task<IActionResult> DownloadContract(
+        Guid applicationId,
+        [FromServices] IPdfContractService pdfContractService,
+        [FromServices] RHS.Infrastructure.Data.AppDbContext context)
+    {
+        try
+        {
+            // Verify user owns this application hoặc là Officer/Admin
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+            if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
+                return Unauthorized(new { success = false, message = "Token không hợp lệ" });
+
+            var application = await context.HousingApplications
+                .Include(a => a.Officer)
+                .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
+
+            if (application == null)
+                return NotFound(new { success = false, message = "Không tìm thấy hồ sơ" });
+
+            // Chỉ cho phép applicant sở hữu hoặc officer/admin
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
+            if (application.ApplicantId != userId
+                && !userRole.Contains("Admin")
+                && !userRole.Contains("Officer"))
+            {
+                return Forbid();
+            }
+
+            // Kiểm tra hồ sơ đã thanh toán đặt cọc chưa
+            if (string.IsNullOrEmpty(application.SlotCode))
+                return BadRequest(new { success = false, message = "Hồ sơ chưa thanh toán đặt cọc" });
+
+            var project = await context.HousingProjects
+                .FirstOrDefaultAsync(p => p.Id == application.ProjectId);
+
+            if (project == null)
+                return NotFound(new { success = false, message = "Không tìm thấy dự án" });
+
+            // Tìm payment tương ứng
+            var payment = await context.Payments
+                .Where(p => p.ApplicationId == applicationId && p.Status == "Success")
+                .OrderByDescending(p => p.PaidAt)
+                .FirstOrDefaultAsync();
+
+            var wardManagerName = application.Officer?.FullName ?? "Ban Quản lý Dự án";
+
+            // Sinh PDF on-demand
+            var pdfBytes = pdfContractService.GeneratePdfBytesOnly(
+                application, project, application.SlotCode,
+                payment?.Amount ?? project.DepositAmount,
+                payment?.VnpTransactionNo,
+                wardManagerName);
+
+            var fileName = $"HopDong_{application.SlotCode}.pdf";
+            return File(pdfBytes, "application/pdf", fileName);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Lỗi tạo hợp đồng PDF",
+                error   = ex.Message
+            });
+        }
+    }
+
 }

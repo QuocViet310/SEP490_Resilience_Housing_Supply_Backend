@@ -249,7 +249,9 @@ public class FileStorageService : IFileStorageService
                 File       = new FileDescription(file.FileName, stream),
                 PublicId   = publicId,
                 Folder     = folder,
-                Overwrite  = false
+                Overwrite  = false,
+                Type       = "upload",
+                AccessMode = "public"
             };
 
             var uploadResult = await _cloudinary.UploadAsync(uploadParams);
@@ -279,18 +281,30 @@ public class FileStorageService : IFileStorageService
     }
     public async Task<string> UploadPdfFromBytesAsync(byte[] pdfBytes, string fileName, string folder)
     {
+        if (pdfBytes == null || pdfBytes.Length == 0)
+        {
+            throw new InvalidOperationException("PDF bytes is null or empty — cannot upload.");
+        }
+
+        _logger.LogInformation(
+            "UploadPdfFromBytesAsync: {ByteCount} bytes, fileName={FileName}, folder={Folder}.",
+            pdfBytes.Length, fileName, folder);
+
         try
         {
             var publicId = $"{folder}/{Guid.NewGuid()}";
 
             using var stream = new MemoryStream(pdfBytes);
+            stream.Position = 0; // Đảm bảo đọc từ đầu
 
             var uploadParams = new RawUploadParams
             {
-                File      = new FileDescription(fileName, stream),
-                PublicId  = publicId,
-                Folder    = folder,
-                Overwrite = false
+                File       = new FileDescription(fileName, stream),
+                PublicId   = publicId,
+                Folder     = folder,
+                Overwrite  = false,
+                Type       = "upload",
+                AccessMode = "public"
             };
 
             var uploadResult = await _cloudinary.UploadAsync(uploadParams);
@@ -298,13 +312,15 @@ public class FileStorageService : IFileStorageService
             if (uploadResult.StatusCode != System.Net.HttpStatusCode.OK)
             {
                 _logger.LogError(
-                    "Cloudinary PDF bytes upload failed: {Error}", uploadResult.Error?.Message);
+                    "Cloudinary PDF bytes upload failed: {Error}, StatusCode={StatusCode}",
+                    uploadResult.Error?.Message, uploadResult.StatusCode);
                 throw new InvalidOperationException(
                     $"Upload PDF thất bại: {uploadResult.Error?.Message}");
             }
 
             _logger.LogInformation(
-                "PDF bytes uploaded successfully to Cloudinary: {Url}", uploadResult.SecureUrl);
+                "PDF bytes uploaded successfully to Cloudinary: {Url}, Bytes={Bytes}",
+                uploadResult.SecureUrl, uploadResult.Bytes);
 
             return uploadResult.SecureUrl.ToString();
         }
