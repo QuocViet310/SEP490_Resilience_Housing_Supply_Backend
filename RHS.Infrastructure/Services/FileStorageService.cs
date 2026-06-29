@@ -235,6 +235,37 @@ public class FileStorageService : IFileStorageService
             return false;
         }
 
+        // Kiểm tra signature (magic bytes) của PDF: phải bắt đầu bằng %PDF- (0x25, 0x50, 0x44, 0x46, 0x2D)
+        try
+        {
+            using var stream = file.OpenReadStream();
+            if (stream.Length < 4)
+            {
+                _logger.LogWarning("PDF validation failed: file length is too short.");
+                return false;
+            }
+
+            byte[] header = new byte[4];
+            int bytesRead = stream.Read(header, 0, 4);
+            if (bytesRead < 4)
+            {
+                _logger.LogWarning("PDF validation failed: could not read 4 bytes of signature.");
+                return false;
+            }
+
+            // %PDF in ASCII is 0x25, 0x50, 0x44, 0x46
+            if (header[0] != 0x25 || header[1] != 0x50 || header[2] != 0x44 || header[3] != 0x46)
+            {
+                _logger.LogWarning("PDF validation failed: invalid PDF signature (magic bytes).");
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error reading file stream for PDF validation.");
+            return false;
+        }
+
         return true;
     }
 
