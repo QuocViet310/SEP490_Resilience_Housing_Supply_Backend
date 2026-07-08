@@ -12,16 +12,16 @@ public static class ApplicationStatusConstants
     /// <summary>Đã nộp - chờ xét duyệt</summary>
     public const string Submitted = "SUBMITTED";
 
-    /// <summary>Đang thẩm định bởi Verification Officer</summary>
-    public const string UnderReview = "UNDER_REVIEW";
+    /// <summary>Đang thẩm định bởi Housing Developer (CĐT)</summary>
+    public const string Reviewing = "REVIEWING";
 
-    /// <summary>Yêu cầu bổ sung giấy tờ (VO hoặc Ward Manager yêu cầu)</summary>
+    /// <summary>Yêu cầu bổ sung giấy tờ (CĐT yêu cầu)</summary>
     public const string NeedMoreDocuments = "NEED_MORE_DOCUMENTS";
 
-    /// <summary>VO đã đề xuất phê duyệt, chờ WM quyết định cuối cùng</summary>
-    public const string Proposed = "PROPOSED";
+    /// <summary>CĐT đã chốt danh sách, gửi lên Sở Xây dựng</summary>
+    public const string PendingSxdReview = "PENDING_SXD_REVIEW";
 
-    /// <summary>Đã được phê duyệt (chỉ Ward Manager mới có quyền)</summary>
+    /// <summary>Sở Xây dựng đã phê duyệt</summary>
     public const string Approved = "APPROVED";
 
     /// <summary>Đã bị từ chối</summary>
@@ -41,9 +41,9 @@ public static class ApplicationStatusConstants
     {
         Draft,
         Submitted,
-        UnderReview,
+        Reviewing,
         NeedMoreDocuments,
-        Proposed,
+        PendingSxdReview,
         Approved,
         Rejected,
         Canceled,
@@ -60,23 +60,23 @@ public static class ApplicationStatusConstants
     /// Định nghĩa các chuyển trạng thái hợp lệ theo vai trò nghiệp vụ.
     /// Key: trạng thái hiện tại → Value: các trạng thái có thể chuyển sang
     /// </summary>
-    public static readonly IReadOnlyDictionary<string, string[]> VerificationOfficerTransitions =
+    public static readonly IReadOnlyDictionary<string, string[]> HousingDeveloperTransitions =
         new Dictionary<string, string[]>
         {
-            // VO có thể chuyển từ SUBMITTED → UNDER_REVIEW (nhận hồ sơ)
-            [Submitted] = new[] { UnderReview },
-            // VO kiểm tra và đề xuất, KHÔNG được chốt duyệt/từ chối
-            [UnderReview] = new[] { Proposed, NeedMoreDocuments },
-            // VO có thể chuyển từ NEED_MORE_DOCUMENTS → UNDER_REVIEW (sau khi người dân bổ sung)
-            [NeedMoreDocuments] = new[] { UnderReview }
+            // CĐT có thể chuyển từ SUBMITTED → REVIEWING (nhận hồ sơ)
+            [Submitted] = new[] { Reviewing },
+            // CĐT kiểm tra và đề xuất lên SXD, hoặc yêu cầu bổ sung, hoặc từ chối
+            [Reviewing] = new[] { PendingSxdReview, NeedMoreDocuments, Rejected },
+            // CĐT có thể chuyển từ NEED_MORE_DOCUMENTS → REVIEWING (sau khi người dân bổ sung)
+            [NeedMoreDocuments] = new[] { Reviewing }
         };
 
-    public static readonly IReadOnlyDictionary<string, string[]> WardManagerTransitions =
+    public static readonly IReadOnlyDictionary<string, string[]> DepartmentOfConstructionTransitions =
         new Dictionary<string, string[]>
         {
-            // WM chốt quyết định cuối cùng từ hồ sơ VO đã đề xuất
-            [Proposed] = new[] { Approved, Rejected, NeedMoreDocuments },
-            // WM cũng có thể trực tiếp xét duyệt hồ sơ chưa qua VO (UNDER_REVIEW)
-            [UnderReview] = new[] { Approved, Rejected, NeedMoreDocuments }
+            // SXD chốt quyết định phê duyệt/từ chối/yêu cầu bổ sung từ hồ sơ CĐT đề xuất
+            [PendingSxdReview] = new[] { Approved, Rejected, NeedMoreDocuments },
+            // SXD cũng có thể trực tiếp xét duyệt hồ sơ đang thẩm định (REVIEWING)
+            [Reviewing] = new[] { Approved, Rejected, NeedMoreDocuments }
         };
 }

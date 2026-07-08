@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using RHS.Application.DTOs.HousingProjects;
 using RHS.Application.Interfaces;
+using RHS.Domain.Constants;
 using System.Security.Claims;
 
 namespace RHS.API.Controllers;
@@ -70,18 +71,17 @@ public class HousingProjectsController : ControllerBase
                 StatusId = statusId
             };
 
-            string? residentWard = null;
+            Guid? currentUserId = null;
+            string? currentUserRole = null;
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
             if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var userId))
             {
-                var user = await _userRepository.GetByIdAsync(userId);
-                if (user != null)
-                {
-                    residentWard = user.ResidentWard;
-                }
+                currentUserId = userId;
+                var roleClaim = User.FindFirst(ClaimTypes.Role) ?? User.FindFirst("role");
+                currentUserRole = roleClaim?.Value;
             }
 
-            var result = await _service.GetHousingProjectsAsync(request, residentWard);
+            var result = await _service.GetHousingProjectsAsync(request, currentUserId, currentUserRole);
             return Ok(result);
         }
         catch (Exception ex)
@@ -227,6 +227,50 @@ public class HousingProjectsController : ControllerBase
         {
             _logger.LogError(ex, "An error occurred while deleting housing project");
             return StatusCode(StatusCodes.Status500InternalServerError, 
+                new { message = "An error occurred while processing your request" });
+        }
+    }
+
+    /// <summary>
+    /// Approve or Reject a housing project (Department of Construction only)
+    /// </summary>
+    [HttpPatch("{id}/status")]
+    [Authorize(Roles = RoleConstants.DepartmentOfConstruction)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<HousingProjectResponseDto>> UpdateProjectStatus(
+        Guid id,
+        [FromQuery] string action,
+        [FromQuery] string? rejectReason = null)
+    {
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            return BadRequest(new { message = "Action is required." });
+        }
+
+        try
+        {
+            var result = await _service.UpdateProjectStatusAsync(id, action, rejectReason);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Validation error while updating status for housing project {Id}", id);
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Project not found or state invalid for {Id}", id);
+            return NotFound(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error occurred while updating status for housing project {Id}", id);
+            return StatusCode(StatusCodes.Status500InternalServerError,
                 new { message = "An error occurred while processing your request" });
         }
     }

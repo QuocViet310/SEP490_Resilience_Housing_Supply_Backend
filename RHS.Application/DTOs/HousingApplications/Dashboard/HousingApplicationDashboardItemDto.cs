@@ -15,9 +15,10 @@ namespace RHS.Application.DTOs.HousingApplications.Dashboard
         public string ApplicationStatus { get; set; } = string.Empty;
 
         public decimal PriorityScore { get; set; }
-
-        public decimal EstimatedMonthlyIncome { get; set; }
-
+        public string? MaritalStatus { get; set; }
+        public int HouseholdMembersCount { get; set; }
+        public string? PriorityGroup { get; set; }
+        public string? ReceiptUrl { get; set; }
         public DateTime SubmittedAt { get; set; }
     }
 }

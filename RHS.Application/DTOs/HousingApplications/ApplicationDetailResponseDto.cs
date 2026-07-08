@@ -28,7 +28,10 @@ public class ApplicationDetailResponseDto
     public string CurrentResidence { get; set; } = string.Empty;
     public string PermanentAddress { get; set; } = string.Empty;
     public string HousingStatus { get; set; } = string.Empty;
-    public decimal EstimatedMonthlyIncome { get; set; }
+    public string? MaritalStatus { get; set; }
+    public int HouseholdMembersCount { get; set; }
+    public string? PriorityGroup { get; set; }
+    public string? ReceiptUrl { get; set; }
 
     // ── Cán bộ thẩm định ──────────────────────────────────────────
     public Guid? OfficerId { get; set; }

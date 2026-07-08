@@ -3,10 +3,9 @@ using System.ComponentModel.DataAnnotations;
 namespace RHS.Application.DTOs.HousingApplications;
 
 /// <summary>
-/// Request DTO cho Ward Manager thực hiện xét duyệt hồ sơ.
-/// WM có thể: Approve, Reject, hoặc Request More Documents (từ trạng thái UNDER_REVIEW).
+/// Request DTO cho Department Of Construction (SXD) thực hiện xét duyệt hồ sơ.
 /// </summary>
-public class WardManagerReviewRequestDto
+public class DepartmentOfConstructionReviewRequestDto
 {
     /// <summary>
     /// Hành động thực hiện. Giá trị hợp lệ:
@@ -17,7 +16,6 @@ public class WardManagerReviewRequestDto
 
     /// <summary>
     /// Ghi chú/Lý do. BẮT BUỘC khi Action = "REJECT" hoặc "REQUEST_MORE_DOCUMENTS".
-    /// Tối đa 1000 ký tự.
     /// </summary>
     [MaxLength(1000, ErrorMessage = "Ghi chú không được quá 1000 ký tự.")]
     public string? Note { get; set; }

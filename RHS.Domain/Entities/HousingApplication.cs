@@ -64,8 +64,10 @@ public class HousingApplication
     /// </summary>
     public string HousingStatus { get; set; } = string.Empty;
 
-    /// <summary>Mức thu nhập hàng tháng (VNĐ)</summary>
-    public decimal EstimatedMonthlyIncome { get; set; }
+    public string? MaritalStatus { get; set; }
+    public int HouseholdMembersCount { get; set; }
+    public string? PriorityGroup { get; set; }
+    public string? ReceiptUrl { get; set; }
 
     // ─────────────────────────────────────────────────────────────
     // Navigation properties

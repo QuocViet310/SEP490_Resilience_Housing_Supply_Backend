@@ -54,8 +54,17 @@ public class CreateApplicationRequestDto
     [Required(ErrorMessage = "Thực trạng nhà ở là bắt buộc.")]
     public string HousingStatus { get; set; } = string.Empty;
 
-    /// <summary>Mức thu nhập hàng tháng (VNĐ)</summary>
-    [Required(ErrorMessage = "Mức thu nhập là bắt buộc.")]
-    [Range(0, double.MaxValue, ErrorMessage = "Mức thu nhập không được âm.")]
-    public decimal EstimatedMonthlyIncome { get; set; }
+    /// <summary>Tình trạng hôn nhân</summary>
+    [Required(ErrorMessage = "Tình trạng hôn nhân là bắt buộc.")]
+    [MaxLength(50, ErrorMessage = "Tình trạng hôn nhân không được quá 50 ký tự.")]
+    public string MaritalStatus { get; set; } = string.Empty;
+
+    /// <summary>Số thành viên hộ gia đình</summary>
+    [Required(ErrorMessage = "Số thành viên hộ gia đình là bắt buộc.")]
+    [Range(1, 100, ErrorMessage = "Số thành viên hộ gia đình phải từ 1 trở lên.")]
+    public int HouseholdMembersCount { get; set; }
+
+    /// <summary>Nhóm đối tượng ưu tiên</summary>
+    [MaxLength(100, ErrorMessage = "Nhóm đối tượng ưu tiên không được quá 100 ký tự.")]
+    public string? PriorityGroup { get; set; }
 }

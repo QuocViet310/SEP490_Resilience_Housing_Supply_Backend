@@ -17,12 +17,25 @@ public class HousingApplicationConfiguration : IEntityTypeConfiguration<HousingA
             .IsRequired()
             .HasMaxLength(50);
 
-        // ── Điểm ưu tiên & Thu nhập ───────────────────────────────
+        // ── Điểm ưu tiên & Thông tin mới ───────────────────────────
         builder.Property(x => x.PriorityScore)
             .HasPrecision(18, 2);
 
-        builder.Property(x => x.EstimatedMonthlyIncome)
-            .HasPrecision(18, 2);
+        builder.Property(x => x.MaritalStatus)
+            .IsRequired(false)
+            .HasMaxLength(50);
+
+        builder.Property(x => x.HouseholdMembersCount)
+            .IsRequired()
+            .HasDefaultValue(1);
+
+        builder.Property(x => x.PriorityGroup)
+            .IsRequired(false)
+            .HasMaxLength(100);
+
+        builder.Property(x => x.ReceiptUrl)
+            .IsRequired(false)
+            .HasMaxLength(500);
 
         builder.Property(x => x.SlotCode)
             .IsRequired(false)

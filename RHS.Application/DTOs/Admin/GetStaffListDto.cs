@@ -7,7 +7,7 @@ public class GetStaffListDto
 {
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 10;
-    public string? Role { get; set; } // Lọc theo vai trò (Ward Manager, Verification Officer)
+    public string? Role { get; set; } // Lọc theo vai trò (Department Of Construction, Housing Developer)
     public string? Status { get; set; } // Lọc theo trạng thái (Active, Inactive, Suspended)
     public string? SearchTerm { get; set; } // Tìm kiếm theo email hoặc tên
 }

@@ -42,6 +42,17 @@ public class HousingProject
 
     public bool IsDeleted { get; set; }
 
+    // New Legal and Developer properties
+    public string? DecisionNumber { get; set; }
+    public DateTime? ApprovalDate { get; set; }
+    public bool IsConfirmed { get; set; }
+    public DateTime? ApplicationOpenDate { get; set; }
+    public DateTime? ApplicationCloseDate { get; set; }
+    public string? RejectReason { get; set; }
+    
+    public Guid? DeveloperId { get; set; }
+    public User? Developer { get; set; }
+
     // Navigation Properties
     public HousingProjectStatus? HousingProjectStatus { get; set; }
     public ICollection<HousingApplication> HousingApplications { get; set; } = new List<HousingApplication>();

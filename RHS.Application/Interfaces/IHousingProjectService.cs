@@ -6,10 +6,12 @@ public interface IHousingProjectService
 {
     Task<PagedResultDto<HousingProjectResponseDto>> GetHousingProjectsAsync(
         HousingProjectFilterRequestDto request,
-        string? residentWard = null);
+        Guid? currentUserId = null,
+        string? currentUserRole = null);
 
     Task<HousingProjectResponseDto> CreateHousingProjectAsync(
-        CreateHousingProjectRequestDto request);
+        CreateHousingProjectRequestDto request,
+        Guid? developerId = null);
 
     Task<HousingProjectResponseDto> UpdateHousingProjectAsync(
         Guid id,
@@ -18,4 +20,9 @@ public interface IHousingProjectService
     Task DeleteHousingProjectAsync(Guid id);
 
     Task<HousingProjectResponseDto> GetHousingProjectByIdAsync(Guid id);
+
+    Task<HousingProjectResponseDto> UpdateProjectStatusAsync(
+        Guid id,
+        string action,
+        string? rejectReason);
 }

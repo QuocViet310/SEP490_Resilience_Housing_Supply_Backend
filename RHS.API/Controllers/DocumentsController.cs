@@ -197,7 +197,7 @@ public class DocumentsController : ControllerBase
     /// Trigger xác minh AI thủ công cho tài liệu.
     /// </summary>
     [HttpPost("{documentId:guid}/verify")]
-    [Authorize(Roles = $"{RoleConstants.VerificationOfficer},{RoleConstants.SystemAdministrator},{RoleConstants.HousingAuthorityOfficer}")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.HousingAuthorityOfficer}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]

@@ -21,5 +21,14 @@ public class HousingProjectResponseDto
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public string? Status { get; set; }
+    
+    // Legal fields
+    public string? DecisionNumber { get; set; }
+    public DateTime? ApprovalDate { get; set; }
+    public bool IsConfirmed { get; set; }
+    public DateTime? ApplicationOpenDate { get; set; }
+    public DateTime? ApplicationCloseDate { get; set; }
+    public string? RejectReason { get; set; }
+    
     public List<ProjectImageResponseDto> Images { get; set; } = new List<ProjectImageResponseDto>();
 }

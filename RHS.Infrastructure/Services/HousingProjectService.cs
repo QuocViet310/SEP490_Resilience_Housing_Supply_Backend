@@ -20,7 +20,8 @@ public class HousingProjectService : IHousingProjectService
 
     public async Task<PagedResultDto<HousingProjectResponseDto>> GetHousingProjectsAsync(
         HousingProjectFilterRequestDto request,
-        string? residentWard = null)
+        Guid? currentUserId = null,
+        string? currentUserRole = null)
     {
         // Validate request
         if (request.PageIndex < 1)
@@ -33,11 +34,12 @@ public class HousingProjectService : IHousingProjectService
             request.PageSize = 100;
 
         // Call repository to get paginated results
-        return await _repository.GetHousingProjectsAsync(request, residentWard);
+        return await _repository.GetHousingProjectsAsync(request, currentUserId, currentUserRole);
     }
 
     public async Task<HousingProjectResponseDto> CreateHousingProjectAsync(
-        CreateHousingProjectRequestDto request)
+        CreateHousingProjectRequestDto request,
+        Guid? developerId = null)
     {
         // Validate request
         ValidateHousingProjectRequest(request);
@@ -69,7 +71,15 @@ public class HousingProjectService : IHousingProjectService
             AvailableUnits = request.AvailableUnits,
             ThumbnailUrl = thumbnailUrl,
             HousingProjectStatusId = request.HousingProjectStatusId,
-            IsDeleted = false
+            IsDeleted = false,
+            
+            // New legal & developer fields
+            DecisionNumber = request.DecisionNumber,
+            ApprovalDate = request.ApprovalDate,
+            IsConfirmed = request.IsConfirmed,
+            ApplicationOpenDate = request.ApplicationOpenDate,
+            ApplicationCloseDate = request.ApplicationCloseDate,
+            DeveloperId = developerId
         };
 
         // Upload/Process multiple images
@@ -165,6 +175,13 @@ public class HousingProjectService : IHousingProjectService
         existingProject.AvailableUnits = request.AvailableUnits;
         existingProject.ThumbnailUrl = thumbnailUrl;
         existingProject.HousingProjectStatusId = request.HousingProjectStatusId;
+
+        // Update legal fields
+        existingProject.DecisionNumber = request.DecisionNumber;
+        existingProject.ApprovalDate = request.ApprovalDate;
+        existingProject.IsConfirmed = request.IsConfirmed;
+        existingProject.ApplicationOpenDate = request.ApplicationOpenDate;
+        existingProject.ApplicationCloseDate = request.ApplicationCloseDate;
 
         // Update images
         existingProject.ProjectImages.Clear();
@@ -309,6 +326,27 @@ public class HousingProjectService : IHousingProjectService
         {
             throw new ArgumentException("AvailableUnits must be greater than or equal to 0.");
         }
+
+        // IsConfirmed must be true
+        if (request.IsConfirmed != true)
+        {
+            throw new ArgumentException("IsConfirmed must be true.");
+        }
+
+        // DecisionNumber cannot be blank
+        if (string.IsNullOrWhiteSpace(request.DecisionNumber))
+        {
+            throw new ArgumentException("DecisionNumber is required and cannot be blank.");
+        }
+
+        // ApplicationOpenDate must be less than ApplicationCloseDate
+        if (request.ApplicationOpenDate != null && request.ApplicationCloseDate != null)
+        {
+            if (request.ApplicationOpenDate >= request.ApplicationCloseDate)
+            {
+                throw new ArgumentException("ApplicationOpenDate must be earlier than ApplicationCloseDate.");
+            }
+        }
     }
 
     private HousingProjectResponseDto MapToResponseDto(HousingProject project)
@@ -334,6 +372,12 @@ public class HousingProjectService : IHousingProjectService
             CreatedAt = project.CreatedAt,
             UpdatedAt = project.UpdatedAt,
             Status = project.HousingProjectStatus?.StatusName,
+            DecisionNumber = project.DecisionNumber,
+            ApprovalDate = project.ApprovalDate,
+            IsConfirmed = project.IsConfirmed,
+            ApplicationOpenDate = project.ApplicationOpenDate,
+            ApplicationCloseDate = project.ApplicationCloseDate,
+            RejectReason = project.RejectReason,
             Images = project.ProjectImages
                 .OrderBy(x => x.DisplayOrder)
                 .Select(x => new ProjectImageResponseDto
@@ -344,5 +388,58 @@ public class HousingProjectService : IHousingProjectService
                 })
                 .ToList()
         };
+    }
+
+    public async Task<HousingProjectResponseDto> UpdateProjectStatusAsync(Guid id, string action, string? rejectReason)
+    {
+        var project = await _repository.GetByIdAsync(id);
+        if (project == null)
+        {
+            throw new InvalidOperationException($"Housing project with ID {id} not found.");
+        }
+
+        // Must be PENDING to approve/reject
+        if (project.HousingProjectStatus?.StatusCode != "PENDING")
+        {
+            throw new ArgumentException("Chỉ dự án có trạng thái PENDING mới có thể phê duyệt hoặc từ chối.");
+        }
+
+        if (action.Equals("APPROVE", StringComparison.OrdinalIgnoreCase))
+        {
+            var upcomingStatus = await _repository.GetStatusByCodeAsync("UPCOMING");
+            if (upcomingStatus == null)
+            {
+                throw new InvalidOperationException("Không tìm thấy trạng thái UPCOMING trên hệ thống.");
+            }
+            project.HousingProjectStatusId = upcomingStatus.Id;
+            project.HousingProjectStatus = upcomingStatus;
+            project.RejectReason = null;
+            project.ApprovalDate = DateTime.UtcNow;
+        }
+        else if (action.Equals("REJECT", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(rejectReason))
+            {
+                throw new ArgumentException("Lý do từ chối (RejectReason) là bắt buộc khi từ chối dự án.");
+            }
+            var rejectedStatus = await _repository.GetStatusByCodeAsync("REJECTED");
+            if (rejectedStatus == null)
+            {
+                throw new InvalidOperationException("Không tìm thấy trạng thái REJECTED trên hệ thống.");
+            }
+            project.HousingProjectStatusId = rejectedStatus.Id;
+            project.HousingProjectStatus = rejectedStatus;
+            project.RejectReason = rejectReason.Trim();
+            project.ApprovalDate = DateTime.UtcNow;
+        }
+        else
+        {
+            throw new ArgumentException("Hành động không hợp lệ. Chỉ chấp nhận APPROVE hoặc REJECT.");
+        }
+
+        await _repository.UpdateAsync(project);
+        
+        var updatedProject = await _repository.GetByIdAsync(project.Id);
+        return MapToResponseDto(updatedProject ?? project);
     }
 }

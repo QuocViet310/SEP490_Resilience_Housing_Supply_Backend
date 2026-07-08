@@ -77,7 +77,9 @@ public class HousingApplicationService : IHousingApplicationService
             CurrentResidence       = request.CurrentResidence.Trim(),
             PermanentAddress       = request.PermanentAddress.Trim(),
             HousingStatus          = request.HousingStatus,
-            EstimatedMonthlyIncome = request.EstimatedMonthlyIncome
+            MaritalStatus          = request.MaritalStatus.Trim(),
+            HouseholdMembersCount  = request.HouseholdMembersCount,
+            PriorityGroup          = request.PriorityGroup?.Trim()
         };
 
         // 4. Lưu vào DB
@@ -171,7 +173,10 @@ public class HousingApplicationService : IHousingApplicationService
             CurrentResidence       = app.CurrentResidence,
             PermanentAddress       = app.PermanentAddress,
             HousingStatus          = app.HousingStatus,
-            EstimatedMonthlyIncome = app.EstimatedMonthlyIncome,
+            MaritalStatus          = app.MaritalStatus,
+            HouseholdMembersCount  = app.HouseholdMembersCount,
+            PriorityGroup          = app.PriorityGroup,
+            ReceiptUrl             = app.ReceiptUrl,
 
             // ── Cán bộ thẩm định ──────────────────────────────────
             OfficerId      = app.OfficerId,
@@ -208,18 +213,18 @@ public class HousingApplicationService : IHousingApplicationService
         };
     }
 
-    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetVerificationOfficerDashboardAsync(
+    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetHousingDeveloperDashboardAsync(
         HousingApplicationDashboardQueryDto query)
     {
         NormalizeDashboardQuery(query);
-        return await _applicationRepo.GetVerificationOfficerDashboardAsync(query);
+        return await _applicationRepo.GetHousingDeveloperDashboardAsync(query);
     }
 
-    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetWardManagerDashboardAsync(
+    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetDepartmentOfConstructionDashboardAsync(
         HousingApplicationDashboardQueryDto query)
     {
         NormalizeDashboardQuery(query);
-        return await _applicationRepo.GetWardManagerDashboardAsync(query);
+        return await _applicationRepo.GetDepartmentOfConstructionDashboardAsync(query);
     }
 
     private static void NormalizeDashboardQuery(HousingApplicationDashboardQueryDto query)

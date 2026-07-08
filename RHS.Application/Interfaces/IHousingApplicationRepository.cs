@@ -57,9 +57,9 @@ public interface IHousingApplicationRepository
     /// <returns><c>true</c> nếu CCCD đã tồn tại trong hồ sơ khác của dự án đó.</returns>
     Task<bool> CitizenIdExistsInProjectAsync(string citizenId, Guid projectId, Guid excludeApplicationId);
 
-    Task<PagedResult<HousingApplicationDashboardItemDto>> GetVerificationOfficerDashboardAsync(
+    Task<PagedResult<HousingApplicationDashboardItemDto>> GetHousingDeveloperDashboardAsync(
         HousingApplicationDashboardQueryDto query);
 
-    Task<PagedResult<HousingApplicationDashboardItemDto>> GetWardManagerDashboardAsync(
+    Task<PagedResult<HousingApplicationDashboardItemDto>> GetDepartmentOfConstructionDashboardAsync(
         HousingApplicationDashboardQueryDto query);
 }

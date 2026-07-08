@@ -92,8 +92,6 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CitizenId).HasMaxLength(20);
             entity.Property(e => e.Status).IsRequired().HasMaxLength(50);
             entity.Property(e => e.ProfileImageUrl).HasMaxLength(500);
-            entity.Property(e => e.ResidentWard).HasMaxLength(100).IsRequired(false);
-            entity.Property(e => e.ManagedWard).HasMaxLength(100).IsRequired(false);
 
             entity.HasOne(e => e.Role)
                 .WithMany(r => r.Users)

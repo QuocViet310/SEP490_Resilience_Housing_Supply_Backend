@@ -17,13 +17,24 @@ public class HousingProjectRepository : IHousingProjectRepository
 
     public async Task<PagedResultDto<HousingProjectResponseDto>> GetHousingProjectsAsync(
         HousingProjectFilterRequestDto request,
-        string? residentWard = null)
+        Guid? currentUserId = null,
+        string? currentUserRole = null)
     {
         // Build the query with filtering
         IQueryable<HousingProject> query = _context.HousingProjects
             .Include(x => x.HousingProjectStatus)
             .Include(x => x.ProjectImages)
             .AsNoTracking();
+
+        // Apply security status filter
+        query = query.Where(x =>
+            (x.HousingProjectStatus != null && x.HousingProjectStatus.StatusCode == "UPCOMING") ||
+            (x.HousingProjectStatus != null && x.HousingProjectStatus.StatusCode == "OPEN") ||
+            (x.HousingProjectStatus != null && x.HousingProjectStatus.StatusCode == "CLOSED") ||
+            (x.HousingProjectStatus != null && x.HousingProjectStatus.StatusCode == "FULL") ||
+            (currentUserId.HasValue && x.DeveloperId == currentUserId.Value) ||
+            (currentUserRole == "Department Of Construction" || currentUserRole == "System Administrator")
+        );
 
         // Apply search filter (by project name)
         if (!string.IsNullOrWhiteSpace(request.Search))
@@ -77,16 +88,8 @@ public class HousingProjectRepository : IHousingProjectRepository
         // Get total count before pagination
         var totalCount = await query.CountAsync();
 
-        // Apply sorting (prioritize matching resident ward first, then newest first)
-        if (!string.IsNullOrEmpty(residentWard))
-        {
-            query = query.OrderByDescending(x => x.Ward == residentWard)
-                         .ThenByDescending(x => x.CreatedAt);
-        }
-        else
-        {
-            query = query.OrderByDescending(x => x.CreatedAt);
-        }
+        // Apply sorting (newest first)
+        query = query.OrderByDescending(x => x.CreatedAt);
 
         // Apply pagination
         var pageIndex = Math.Max(request.PageIndex, 1);
@@ -120,6 +123,12 @@ public class HousingProjectRepository : IHousingProjectRepository
             CreatedAt = x.CreatedAt,
             UpdatedAt = x.UpdatedAt,
             Status = x.HousingProjectStatus?.StatusName,
+            DecisionNumber = x.DecisionNumber,
+            ApprovalDate = x.ApprovalDate,
+            IsConfirmed = x.IsConfirmed,
+            ApplicationOpenDate = x.ApplicationOpenDate,
+            ApplicationCloseDate = x.ApplicationCloseDate,
+            RejectReason = x.RejectReason,
             Images = x.ProjectImages
                 .OrderBy(p => p.DisplayOrder)
                 .Select(p => new ProjectImageResponseDto
@@ -191,5 +200,12 @@ public class HousingProjectRepository : IHousingProjectRepository
             .IgnoreQueryFilters()
             .AsNoTracking()
             .AnyAsync(x => x.Id == statusId);
+    }
+
+    public async Task<HousingProjectStatus?> GetStatusByCodeAsync(string code)
+    {
+        return await _context.HousingProjectStatuses
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.StatusCode == code);
     }
 }

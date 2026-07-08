@@ -28,8 +28,8 @@ public class CreateStaffDto
     public string? Address { get; set; }
 
     [Required(ErrorMessage = "Vai trò là bắt buộc")]
-    [RegularExpression(@"^(Ward Manager|Verification Officer)$", 
-        ErrorMessage = "Vai trò phải là 'Ward Manager' hoặc 'Verification Officer'")]
+    [RegularExpression(@"^(Department Of Construction|Housing Developer)$", 
+        ErrorMessage = "Vai trò phải là 'Department Of Construction' hoặc 'Housing Developer'")]
     public string Role { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Mật khẩu tạm thời là bắt buộc")]

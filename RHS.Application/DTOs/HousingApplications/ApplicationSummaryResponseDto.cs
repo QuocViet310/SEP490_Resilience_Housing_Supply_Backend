@@ -23,6 +23,9 @@ public class ApplicationSummaryResponseDto
 
     // Thông tin nhanh
     public string HousingStatus { get; set; } = string.Empty;
-    public decimal EstimatedMonthlyIncome { get; set; }
+    public string? MaritalStatus { get; set; }
+    public int HouseholdMembersCount { get; set; }
+    public string? PriorityGroup { get; set; }
+    public string? ReceiptUrl { get; set; }
     public int DocumentCount { get; set; }
 }

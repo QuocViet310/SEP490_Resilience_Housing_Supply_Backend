@@ -6,6 +6,7 @@ using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Data;
+using System.Linq;
 
 namespace RHS.Infrastructure.Repositories;
 
@@ -197,7 +198,10 @@ public class HousingApplicationRepository : IHousingApplicationRepository
                 SubmittedAt       = x.SubmittedAt,
                 FinalDecisionDate = x.FinalDecisionDate,
                 HousingStatus     = x.HousingStatus,
-                EstimatedMonthlyIncome = x.EstimatedMonthlyIncome,
+                MaritalStatus     = x.MaritalStatus,
+                HouseholdMembersCount = x.HouseholdMembersCount,
+                PriorityGroup     = x.PriorityGroup,
+                ReceiptUrl        = x.ReceiptUrl,
                 DocumentCount     = x.Documents.Count
             })
             .ToListAsync();
@@ -211,14 +215,15 @@ public class HousingApplicationRepository : IHousingApplicationRepository
         };
     }
 
-    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetVerificationOfficerDashboardAsync(
+    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetHousingDeveloperDashboardAsync(
         HousingApplicationDashboardQueryDto query)
     {
         var allowedStatuses = new[]
         {
             ApplicationStatusConstants.Submitted,
-            ApplicationStatusConstants.UnderReview,
-            ApplicationStatusConstants.NeedMoreDocuments
+            ApplicationStatusConstants.Reviewing,
+            ApplicationStatusConstants.NeedMoreDocuments,
+            ApplicationStatusConstants.PendingSxdReview
         };
 
         var baseQuery = _context.HousingApplications
@@ -273,7 +278,10 @@ public class HousingApplicationRepository : IHousingApplicationRepository
                 ProjectName = x.HousingProject.ProjectName,
                 ApplicationStatus = x.ApplicationStatus,
                 PriorityScore = x.PriorityScore,
-                EstimatedMonthlyIncome = x.EstimatedMonthlyIncome,
+                MaritalStatus = x.MaritalStatus,
+                HouseholdMembersCount = x.HouseholdMembersCount,
+                PriorityGroup = x.PriorityGroup,
+                ReceiptUrl = x.ReceiptUrl,
                 SubmittedAt = x.SubmittedAt
             })
             .ToListAsync();
@@ -287,13 +295,13 @@ public class HousingApplicationRepository : IHousingApplicationRepository
         };
     }
 
-    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetWardManagerDashboardAsync(
+    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetDepartmentOfConstructionDashboardAsync(
         HousingApplicationDashboardQueryDto query)
     {
         var allowedStatuses = new[]
         {
-            ApplicationStatusConstants.Proposed,
-            ApplicationStatusConstants.UnderReview
+            ApplicationStatusConstants.PendingSxdReview,
+            ApplicationStatusConstants.Reviewing
         };
 
         var baseQuery = _context.HousingApplications
@@ -335,7 +343,10 @@ public class HousingApplicationRepository : IHousingApplicationRepository
                 ProjectName = x.HousingProject.ProjectName,
                 ApplicationStatus = x.ApplicationStatus,
                 PriorityScore = x.PriorityScore,
-                EstimatedMonthlyIncome = x.EstimatedMonthlyIncome,
+                MaritalStatus = x.MaritalStatus,
+                HouseholdMembersCount = x.HouseholdMembersCount,
+                PriorityGroup = x.PriorityGroup,
+                ReceiptUrl = x.ReceiptUrl,
                 SubmittedAt = x.SubmittedAt
             })
             .ToListAsync();

@@ -7,7 +7,8 @@ public interface IHousingProjectRepository
 {
     Task<PagedResultDto<HousingProjectResponseDto>> GetHousingProjectsAsync(
         HousingProjectFilterRequestDto request,
-        string? residentWard = null);
+        Guid? currentUserId = null,
+        string? currentUserRole = null);
 
     Task<HousingProject> CreateAsync(HousingProject entity);
 
@@ -20,4 +21,6 @@ public interface IHousingProjectRepository
     Task<bool> ExistsAsync(Guid id);
 
     Task<bool> StatusExistsAsync(Guid statusId);
+
+    Task<HousingProjectStatus?> GetStatusByCodeAsync(string code);
 }

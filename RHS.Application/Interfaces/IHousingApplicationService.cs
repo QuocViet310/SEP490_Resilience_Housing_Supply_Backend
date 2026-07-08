@@ -39,9 +39,9 @@ public interface IHousingApplicationService
     Task<PagedResultDto<ApplicationSummaryResponseDto>> GetAllApplicationsAsync(
         ApplicationFilterRequestDto filter);
 
-    Task<PagedResult<HousingApplicationDashboardItemDto>> GetVerificationOfficerDashboardAsync(
+    Task<PagedResult<HousingApplicationDashboardItemDto>> GetHousingDeveloperDashboardAsync(
         HousingApplicationDashboardQueryDto query);
 
-    Task<PagedResult<HousingApplicationDashboardItemDto>> GetWardManagerDashboardAsync(
+    Task<PagedResult<HousingApplicationDashboardItemDto>> GetDepartmentOfConstructionDashboardAsync(
         HousingApplicationDashboardQueryDto query);
 }

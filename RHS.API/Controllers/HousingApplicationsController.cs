@@ -121,10 +121,11 @@ public class HousingApplicationsController : ControllerBase
     // ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// [VerificationOfficer | WardManager] Lấy tất cả hồ sơ (có phân trang + lọc).
+    /// <summary>
+    /// [HousingDeveloper | DepartmentOfConstruction] Lấy tất cả hồ sơ (có phân trang + lọc).
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = $"{RoleConstants.VerificationOfficer},{RoleConstants.WardManager}")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -148,49 +149,49 @@ public class HousingApplicationsController : ControllerBase
     // ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// [VerificationOfficer] Lấy danh sách hồ sơ cho Dashboard của Verification Officer.
+    /// [HousingDeveloper] Lấy danh sách hồ sơ cho Dashboard của CĐT.
     /// </summary>
-    [HttpGet("dashboard/vo")]
-    [Authorize(Roles = RoleConstants.VerificationOfficer)]
+    [HttpGet("dashboard/developer")]
+    [Authorize(Roles = RoleConstants.HousingDeveloper)]
     [ProducesResponseType(typeof(PagedResult<HousingApplicationDashboardItemDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetVerificationOfficerDashboard(
+    public async Task<IActionResult> GetHousingDeveloperDashboard(
         [FromQuery] HousingApplicationDashboardQueryDto query)
     {
         try
         {
-            var result = await _applicationService.GetVerificationOfficerDashboardAsync(query);
+            var result = await _applicationService.GetHousingDeveloperDashboardAsync(query);
             return Ok(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving Verification Officer dashboard.");
+            _logger.LogError(ex, "Error retrieving Housing Developer dashboard.");
             return StatusCode(500, new { message = "Đã xảy ra lỗi khi tải dữ liệu dashboard." });
         }
     }
 
     /// <summary>
-    /// [WardManager] Lấy danh sách hồ sơ cho Dashboard của Ward Manager.
+    /// [DepartmentOfConstruction] Lấy danh sách hồ sơ cho Dashboard của Sở Xây Dựng.
     /// </summary>
-    [HttpGet("dashboard/wm")]
-    [Authorize(Roles = RoleConstants.WardManager)]
+    [HttpGet("dashboard/sxd")]
+    [Authorize(Roles = RoleConstants.DepartmentOfConstruction)]
     [ProducesResponseType(typeof(PagedResult<HousingApplicationDashboardItemDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetWardManagerDashboard(
+    public async Task<IActionResult> GetDepartmentOfConstructionDashboard(
         [FromQuery] HousingApplicationDashboardQueryDto query)
     {
         try
         {
-            var result = await _applicationService.GetWardManagerDashboardAsync(query);
+            var result = await _applicationService.GetDepartmentOfConstructionDashboardAsync(query);
             return Ok(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving Ward Manager dashboard.");
+            _logger.LogError(ex, "Error retrieving Department Of Construction dashboard.");
             return StatusCode(500, new { message = "Đã xảy ra lỗi khi tải dữ liệu dashboard." });
         }
     }
@@ -200,11 +201,12 @@ public class HousingApplicationsController : ControllerBase
     // ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// [Applicant | VerificationOfficer | WardManager] Lấy chi tiết hồ sơ theo ID.
+    /// <summary>
+    /// [Applicant | HousingDeveloper | DepartmentOfConstruction] Lấy chi tiết hồ sơ theo ID.
     /// Bao gồm danh sách tài liệu và lịch sử xét duyệt.
     /// </summary>
     [HttpGet("{id:guid}")]
-    [Authorize(Roles = $"{RoleConstants.Applicant},{RoleConstants.VerificationOfficer},{RoleConstants.WardManager}")]
+    [Authorize(Roles = $"{RoleConstants.Applicant},{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction}")]
     [ProducesResponseType(typeof(ApplicationDetailResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
@@ -287,15 +289,16 @@ public class HousingApplicationsController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────
-    // VERIFICATION OFFICER: Nhận hồ sơ (SUBMITTED → UNDER_REVIEW)
+    // ──────────────────────────────────────────────────────────────
+    // HOUSING DEVELOPER: Nhận hồ sơ (SUBMITTED → REVIEWING)
     // ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// [VerificationOfficer] Nhận hồ sơ để thẩm định.
-    /// Chuyển trạng thái SUBMITTED (hoặc NEED_MORE_DOCUMENTS) → UNDER_REVIEW.
+    /// [HousingDeveloper] Nhận hồ sơ để thẩm định.
+    /// Chuyển trạng thái SUBMITTED (hoặc NEED_MORE_DOCUMENTS) → REVIEWING.
     /// </summary>
     [HttpPost("{id:guid}/assign")]
-    [Authorize(Roles = RoleConstants.VerificationOfficer)]
+    [Authorize(Roles = RoleConstants.HousingDeveloper)]
     [ProducesResponseType(typeof(ReviewResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -317,7 +320,7 @@ public class HousingApplicationsController : ControllerBase
         }
         catch (InvalidApplicationStatusTransitionException ex)
         {
-            _logger.LogWarning("VO assign failed for {Id}: {Message}", id, ex.Message);
+            _logger.LogWarning("Developer assign failed for {Id}: {Message}", id, ex.Message);
             return UnprocessableEntity(new { errorCode = ex.ErrorCode, message = ex.Message });
         }
         catch (Exception ex)
@@ -328,35 +331,35 @@ public class HousingApplicationsController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────
-    // VERIFICATION OFFICER: Xét duyệt (UNDER_REVIEW → APPROVED/REJECTED)
+    // ──────────────────────────────────────────────────────────────
+    // HOUSING DEVELOPER: Xét duyệt (REVIEWING → PENDING_SXD_REVIEW/REJECTED/NEED_MORE_DOCUMENTS)
     // ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// [VerificationOfficer] Xét duyệt hồ sơ.
-    /// Action: APPROVE → APPROVED | REJECT (+ Note) → REJECTED.
+    /// [HousingDeveloper] Xét duyệt hồ sơ.
     /// </summary>
-    [HttpPost("{id:guid}/vo-review")]
-    [Authorize(Roles = RoleConstants.VerificationOfficer)]
+    [HttpPost("{id:guid}/developer-review")]
+    [Authorize(Roles = RoleConstants.HousingDeveloper)]
     [ProducesResponseType(typeof(ReviewResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> VerificationOfficerReview(
+    public async Task<IActionResult> HousingDeveloperReview(
         Guid id,
-        [FromBody] VerificationOfficerReviewRequestDto request)
+        [FromBody] HousingDeveloperReviewRequestDto request)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        var officerId = GetCurrentUserId();
-        if (officerId == Guid.Empty)
+        var developerId = GetCurrentUserId();
+        if (developerId == Guid.Empty)
             return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
 
         try
         {
-            var result = await _reviewService.VerificationOfficerReviewAsync(id, officerId, request);
+            var result = await _reviewService.HousingDeveloperReviewAsync(id, developerId, request);
             return Ok(result);
         }
         catch (ApplicationNotFoundException ex)
@@ -365,7 +368,7 @@ public class HousingApplicationsController : ControllerBase
         }
         catch (InvalidApplicationStatusTransitionException ex)
         {
-            _logger.LogWarning("VO review failed for {Id}: {Message}", id, ex.Message);
+            _logger.LogWarning("Developer review failed for {Id}: {Message}", id, ex.Message);
             return UnprocessableEntity(new { errorCode = ex.ErrorCode, message = ex.Message });
         }
         catch (ArgumentException ex)
@@ -378,41 +381,39 @@ public class HousingApplicationsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in VO review for application {Id}.", id);
+            _logger.LogError(ex, "Error in Developer review for application {Id}.", id);
             return StatusCode(500, new { message = "Đã xảy ra lỗi khi xét duyệt hồ sơ." });
         }
     }
 
     // ──────────────────────────────────────────────────────────────
-    // WARD MANAGER: Xét duyệt (UNDER_REVIEW → APPROVED/REJECTED/NEED_MORE_DOCUMENTS)
+    // DEPARTMENT OF CONSTRUCTION: Xét duyệt (PENDING_SXD_REVIEW → APPROVED/REJECTED/NEED_MORE_DOCUMENTS)
     // ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// [WardManager] Xét duyệt hồ sơ.
-    /// Action: APPROVE → APPROVED | REJECT (+ Note) → REJECTED
-    ///       | REQUEST_MORE_DOCUMENTS (+ Note) → NEED_MORE_DOCUMENTS.
+    /// [DepartmentOfConstruction] Xét duyệt hồ sơ.
     /// </summary>
-    [HttpPost("{id:guid}/wm-review")]
-    [Authorize(Roles = RoleConstants.WardManager)]
+    [HttpPost("{id:guid}/sxd-review")]
+    [Authorize(Roles = RoleConstants.DepartmentOfConstruction)]
     [ProducesResponseType(typeof(ReviewResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> WardManagerReview(
+    public async Task<IActionResult> DepartmentOfConstructionReview(
         Guid id,
-        [FromBody] WardManagerReviewRequestDto request)
+        [FromBody] DepartmentOfConstructionReviewRequestDto request)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        var managerId = GetCurrentUserId();
-        if (managerId == Guid.Empty)
+        var sxdUserId = GetCurrentUserId();
+        if (sxdUserId == Guid.Empty)
             return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
 
         try
         {
-            var result = await _reviewService.WardManagerReviewAsync(id, managerId, request);
+            var result = await _reviewService.DepartmentOfConstructionReviewAsync(id, sxdUserId, request);
             return Ok(result);
         }
         catch (ApplicationNotFoundException ex)
@@ -421,7 +422,7 @@ public class HousingApplicationsController : ControllerBase
         }
         catch (InvalidApplicationStatusTransitionException ex)
         {
-            _logger.LogWarning("WM review failed for {Id}: {Message}", id, ex.Message);
+            _logger.LogWarning("SXD review failed for {Id}: {Message}", id, ex.Message);
             return UnprocessableEntity(new { errorCode = ex.ErrorCode, message = ex.Message });
         }
         catch (ArgumentException ex)
@@ -430,7 +431,7 @@ public class HousingApplicationsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in WM review for application {Id}.", id);
+            _logger.LogError(ex, "Error in SXD review for application {Id}.", id);
             return StatusCode(500, new { message = "Đã xảy ra lỗi khi xét duyệt hồ sơ." });
         }
     }

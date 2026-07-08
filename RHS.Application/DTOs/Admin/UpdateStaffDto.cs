@@ -26,7 +26,7 @@ public class UpdateStaffDto
         ErrorMessage = "Trạng thái phải là 'Active', 'Inactive' hoặc 'Suspended'")]
     public string? Status { get; set; }
 
-    [RegularExpression(@"^(Ward Manager|Verification Officer)$",
-        ErrorMessage = "Vai trò phải là 'Ward Manager' hoặc 'Verification Officer'")]
+    [RegularExpression(@"^(Department Of Construction|Housing Developer)$",
+        ErrorMessage = "Vai trò phải là 'Department Of Construction' hoặc 'Housing Developer'")]
     public string? Role { get; set; }
 }

@@ -20,30 +20,22 @@ public interface IReviewService
         Guid officerId);
 
     /// <summary>
-    /// VO xét duyệt hồ sơ: APPROVE (UNDER_REVIEW → APPROVED)
-    /// hoặc REJECT (UNDER_REVIEW → REJECTED).
-    /// Ghi log: Action = APPROVE hoặc REJECT.
-    /// Note bắt buộc khi REJECT.
+    /// CĐT xét duyệt hồ sơ.
     /// </summary>
-    Task<ReviewResponseDto> VerificationOfficerReviewAsync(
+    Task<ReviewResponseDto> HousingDeveloperReviewAsync(
         Guid applicationId,
-        Guid officerId,
-        VerificationOfficerReviewRequestDto request);
+        Guid developerId,
+        HousingDeveloperReviewRequestDto request);
 
-    // ── Ward Manager (WM) ─────────────────────────────────────────
+    // ── Department Of Construction (SXD) ──────────────────────────
 
     /// <summary>
-    /// WM xét duyệt hồ sơ:
-    ///   APPROVE   → UNDER_REVIEW → APPROVED
-    ///   REJECT    → UNDER_REVIEW → REJECTED
-    ///   REQUEST_MORE_DOCUMENTS → UNDER_REVIEW → NEED_MORE_DOCUMENTS
-    /// Ghi log: Action tương ứng.
-    /// Note bắt buộc khi REJECT hoặc REQUEST_MORE_DOCUMENTS.
+    /// SXD xét duyệt hồ sơ.
     /// </summary>
-    Task<ReviewResponseDto> WardManagerReviewAsync(
+    Task<ReviewResponseDto> DepartmentOfConstructionReviewAsync(
         Guid applicationId,
-        Guid managerId,
-        WardManagerReviewRequestDto request);
+        Guid sxdUserId,
+        DepartmentOfConstructionReviewRequestDto request);
 
     // ── Applicant submit ──────────────────────────────────────────
 

@@ -7,7 +7,7 @@ using System.Security.Claims;
 namespace RHS.API.Controllers;
 
 /// <summary>
-/// Controller để quản lý cán bộ (Ward Manager & Verification Officer)
+/// Controller để quản lý cán bộ (Department Of Construction & Housing Developer)
 /// Chỉ System Administrator mới có thể truy cập các endpoint này
 /// </summary>
 [ApiController]
@@ -23,7 +23,7 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
-    /// Admin tạo tài khoản cán bộ mới (Ward Manager hoặc Verification Officer)
+    /// Admin tạo tài khoản cán bộ mới (Department Of Construction hoặc Housing Developer)
     /// </summary>
     /// <param name="createStaffDto">Thông tin cán bộ cần tạo</param>
     /// <returns>Thông tin cán bộ vừa được tạo</returns>

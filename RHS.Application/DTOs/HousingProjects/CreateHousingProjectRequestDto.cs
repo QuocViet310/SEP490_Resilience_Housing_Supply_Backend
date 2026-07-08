@@ -24,4 +24,11 @@ public class CreateHousingProjectRequestDto
 
     public IFormFile? ThumbnailFile { get; set; }
     public List<IFormFile>? ImageFiles { get; set; }
+
+    // Legal properties
+    public string? DecisionNumber { get; set; }
+    public DateTime? ApprovalDate { get; set; }
+    public bool IsConfirmed { get; set; }
+    public DateTime? ApplicationOpenDate { get; set; }
+    public DateTime? ApplicationCloseDate { get; set; }
 }
