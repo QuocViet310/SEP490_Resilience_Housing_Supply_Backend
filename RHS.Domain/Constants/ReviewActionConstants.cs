@@ -32,4 +32,13 @@ public static class ReviewActionConstants
 
     /// <summary>Thanh toán đặt cọc thành công → sinh hợp đồng + SlotCode</summary>
     public const string DepositPayment = "DEPOSIT_PAYMENT";
+
+    /// <summary>Người dân tự hủy hồ sơ</summary>
+    public const string Cancel = "CANCEL";
+
+    /// <summary>CĐT gửi danh sách hồ sơ lên Sở Xây dựng (batch)</summary>
+    public const string SubmitToDepartment = "SUBMIT_TO_DEPARTMENT";
+
+    /// <summary>Hệ thống tự động phê duyệt sau 20 ngày (Tacit Approval)</summary>
+    public const string TacitApproval = "TACIT_APPROVAL";
 }

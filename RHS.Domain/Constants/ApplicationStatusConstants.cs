@@ -65,8 +65,9 @@ public static class ApplicationStatusConstants
         {
             // CĐT có thể chuyển từ SUBMITTED → REVIEWING (nhận hồ sơ)
             [Submitted] = new[] { Reviewing },
-            // CĐT kiểm tra và đề xuất lên SXD, hoặc yêu cầu bổ sung, hoặc từ chối
-            [Reviewing] = new[] { PendingSxdReview, NeedMoreDocuments, Rejected },
+            // CĐT kiểm tra và yêu cầu bổ sung, hoặc từ chối
+            // (Gửi lên SXD sẽ dùng API batch riêng: POST /api/housing-developer/submit-to-department)
+            [Reviewing] = new[] { NeedMoreDocuments, Rejected },
             // CĐT có thể chuyển từ NEED_MORE_DOCUMENTS → REVIEWING (sau khi người dân bổ sung)
             [NeedMoreDocuments] = new[] { Reviewing }
         };
@@ -74,9 +75,19 @@ public static class ApplicationStatusConstants
     public static readonly IReadOnlyDictionary<string, string[]> DepartmentOfConstructionTransitions =
         new Dictionary<string, string[]>
         {
-            // SXD chốt quyết định phê duyệt/từ chối/yêu cầu bổ sung từ hồ sơ CĐT đề xuất
-            [PendingSxdReview] = new[] { Approved, Rejected, NeedMoreDocuments },
-            // SXD cũng có thể trực tiếp xét duyệt hồ sơ đang thẩm định (REVIEWING)
-            [Reviewing] = new[] { Approved, Rejected, NeedMoreDocuments }
+            // SXD chỉ xử lý hồ sơ đã được CĐT gửi lên (PENDING_SXD_REVIEW)
+            // Phê duyệt hoặc từ chối cuối cùng
+            [PendingSxdReview] = new[] { Approved, Rejected }
         };
+
+    /// <summary>
+    /// Các trạng thái mà Applicant KHÔNG được phép tự hủy (trạng thái đóng).
+    /// </summary>
+    public static readonly IReadOnlyList<string> ClosedStatuses = new[]
+    {
+        DepositPaid,
+        Rejected,
+        Canceled,
+        Expired
+    };
 }

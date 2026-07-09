@@ -23,4 +23,10 @@ public static class NotificationTypeConstants
 
     /// <summary>Hết hạn thanh toán, hồ sơ bị hủy tự động</summary>
     public const string ApplicationExpired = "APPLICATION_EXPIRED";
+
+    /// <summary>CĐT gửi hồ sơ lên Sở Xây dựng — thông báo cho SXD</summary>
+    public const string ApplicationPendingSxdReview = "APPLICATION_PENDING_SXD_REVIEW";
+
+    /// <summary>Người dân tự hủy hồ sơ</summary>
+    public const string ApplicationCanceled = "APPLICATION_CANCELED";
 }
