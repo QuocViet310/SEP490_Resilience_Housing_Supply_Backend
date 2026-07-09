@@ -30,6 +30,7 @@ public class ReviewService : IReviewService
     private readonly IReviewHistoryRepository _historyRepo;
     private readonly IDocumentRepository _documentRepo;
     private readonly IHousingProjectRepository _projectRepo;
+    private readonly IUserRepository _userRepo;
     private readonly INotificationService _notificationService;
     private readonly IPdfReceiptService _pdfReceiptService;
     private readonly AppDbContext _context;
@@ -40,6 +41,7 @@ public class ReviewService : IReviewService
         IReviewHistoryRepository historyRepo,
         IDocumentRepository documentRepo,
         IHousingProjectRepository projectRepo,
+        IUserRepository userRepo,
         INotificationService notificationService,
         IPdfReceiptService pdfReceiptService,
         AppDbContext context,
@@ -49,6 +51,7 @@ public class ReviewService : IReviewService
         _historyRepo        = historyRepo;
         _documentRepo       = documentRepo;
         _projectRepo        = projectRepo;
+        _userRepo           = userRepo;
         _notificationService = notificationService;
         _pdfReceiptService   = pdfReceiptService;
         _context            = context;
@@ -498,6 +501,9 @@ public class ReviewService : IReviewService
             ReviewActionConstants.Approve              => "Phê duyệt hồ sơ",
             ReviewActionConstants.Reject               => "Từ chối hồ sơ",
             ReviewActionConstants.RequestMoreDocuments => "Yêu cầu bổ sung giấy tờ",
+            ReviewActionConstants.SubmitToDepartment   => "Gửi lên Sở Xây dựng",
+            ReviewActionConstants.Cancel               => "Hủy hồ sơ",
+            ReviewActionConstants.TacitApproval        => "Tự động phê duyệt (20 ngày)",
             _ => action
         };
 
@@ -584,13 +590,137 @@ public class ReviewService : IReviewService
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Task #7: CĐT gửi danh sách lên SXD (stub — full implementation in Commit 5)
+    // Task #7: CĐT gửi danh sách hồ sơ lên Sở Xây dựng
     // ─────────────────────────────────────────────────────────────
 
     public async Task<List<ReviewResponseDto>> SubmitToDepartmentAsync(
         Guid developerId,
         SubmitToDepartmentRequestDto request)
     {
-        throw new NotImplementedException("SubmitToDepartmentAsync will be implemented in Commit 5.");
+        _logger.LogInformation(
+            "CĐT {DeveloperId} submitting {Count} applications to SXD.",
+            developerId, request.ApplicationIds.Count);
+
+        // 1. Load tất cả applications theo IDs
+        var applications = await _applicationRepo.GetByIdsAsync(request.ApplicationIds);
+
+        // Validate: tìm đủ số lượng?
+        if (applications.Count != request.ApplicationIds.Count)
+        {
+            var foundIds = applications.Select(a => a.ApplicationId).ToHashSet();
+            var missingIds = request.ApplicationIds.Where(id => !foundIds.Contains(id)).ToList();
+            throw new ArgumentException(
+                $"Không tìm thấy {missingIds.Count} hồ sơ: {string.Join(", ", missingIds)}");
+        }
+
+        // 2. Validate: tất cả phải đang ở REVIEWING
+        var notReviewing = applications
+            .Where(a => a.ApplicationStatus != ApplicationStatusConstants.Reviewing)
+            .Select(a => new { a.ApplicationId, a.ApplicationStatus })
+            .ToList();
+        if (notReviewing.Any())
+        {
+            throw new ArgumentException(
+                $"Các hồ sơ sau không ở trạng thái REVIEWING: " +
+                string.Join(", ", notReviewing.Select(x => $"{x.ApplicationId} ({x.ApplicationStatus})")));
+        }
+
+        // 3. Validate: tất cả phải thuộc dự án của CĐT hiện tại
+        var notOwned = applications
+            .Where(a => a.HousingProject?.DeveloperId != developerId)
+            .Select(a => a.ApplicationId)
+            .ToList();
+        if (notOwned.Any())
+        {
+            throw new UnauthorizedAccessException(
+                $"Bạn không có quyền gửi các hồ sơ sau (không thuộc dự án của bạn): " +
+                string.Join(", ", notOwned));
+        }
+
+        var now = DateTime.UtcNow;
+        var results = new List<ReviewResponseDto>();
+
+        // 4. Batch update: REVIEWING → PENDING_SXD_REVIEW
+        using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            foreach (var app in applications)
+            {
+                var oldStatus = app.ApplicationStatus;
+                app.ApplicationStatus = ApplicationStatusConstants.PendingSxdReview;
+                app.UpdatedAt = now;
+
+                await _applicationRepo.UpdateAsync(app);
+
+                // 5. Ghi history cho từng hồ sơ
+                await AppendHistoryAsync(
+                    applicationId: app.ApplicationId,
+                    changedBy: developerId,
+                    action: ReviewActionConstants.SubmitToDepartment,
+                    oldStatus: oldStatus,
+                    newStatus: ApplicationStatusConstants.PendingSxdReview,
+                    note: "CĐT gửi danh sách đề nghị phê duyệt lên Sở Xây dựng.");
+
+                results.Add(BuildReviewResponse(
+                    app.ApplicationId, oldStatus,
+                    ApplicationStatusConstants.PendingSxdReview,
+                    ReviewActionConstants.SubmitToDepartment, now));
+            }
+
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+
+        _logger.LogInformation(
+            "CĐT {DeveloperId} successfully submitted {Count} applications to SXD.",
+            developerId, applications.Count);
+
+        // 6. Gửi thông báo cho TẤT CẢ user có role SXD
+        await SendBatchNotificationToSxdAsync(applications, developerId);
+
+        // 7. Gửi thông báo cho từng Applicant
+        foreach (var app in applications)
+        {
+            await _notificationService.SendAsync(
+                app.ApplicantId,
+                "Hồ sơ đã được gửi lên Sở Xây Dựng",
+                "Hồ sơ của bạn đã được CĐT thẩm định và gửi lên Sở Xây Dựng để phê duyệt.",
+                NotificationTypeConstants.ApplicationPendingSxdReview);
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Gửi thông báo cho tất cả user SXD khi CĐT gửi danh sách hồ sơ.
+    /// </summary>
+    private async Task SendBatchNotificationToSxdAsync(
+        List<HousingApplication> applications, Guid developerId)
+    {
+        var sxdUsers = await _userRepo.GetByRoleAsync(RoleConstants.DepartmentOfConstruction);
+        if (sxdUsers.Count == 0)
+        {
+            _logger.LogWarning("Không tìm thấy user SXD nào để gửi thông báo.");
+            return;
+        }
+
+        var projectName = applications.First().HousingProject?.ProjectName ?? "N/A";
+        var title = "Danh sách hồ sơ mới cần hậu kiểm";
+        var content = $"CĐT đã gửi {applications.Count} hồ sơ từ dự án \"{projectName}\" cần hậu kiểm và phê duyệt.";
+
+        foreach (var sxdUser in sxdUsers)
+        {
+            await _notificationService.SendAsync(
+                sxdUser.Id, title, content,
+                NotificationTypeConstants.ApplicationPendingSxdReview);
+        }
+
+        _logger.LogInformation(
+            "Sent SXD notification to {Count} users for {AppCount} applications.",
+            sxdUsers.Count, applications.Count);
     }
 }
