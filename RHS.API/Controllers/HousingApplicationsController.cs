@@ -13,9 +13,9 @@ namespace RHS.API.Controllers;
 /// API quản lý hồ sơ đăng ký nhà ở xã hội.
 ///
 /// Phân quyền theo endpoint:
-///   - Applicant : tạo hồ sơ, xem hồ sơ của mình, nộp hồ sơ
-///   - Verification Officer : xem tất cả, nhận hồ sơ, xét duyệt
-///   - Ward Manager  : xem tất cả, phê duyệt / từ chối / yêu cầu bổ sung
+///   - Applicant              : tạo hồ sơ, xem hồ sơ, nộp hồ sơ, hủy hồ sơ
+///   - HousingDeveloper (CĐT) : nhận hồ sơ, thẩm định (reject/request docs), dashboard
+///   - DepartmentOfConstruction (SXD) : hậu kiểm, phê duyệt / từ chối, dashboard
 /// </summary>
 [ApiController]
 [Route("api/housing-applications")]
@@ -293,14 +293,14 @@ public class HousingApplicationsController : ControllerBase
 
     // ──────────────────────────────────────────────────────────────
     // ──────────────────────────────────────────────────────────────
-    // HOUSING DEVELOPER: Nhận hồ sơ (SUBMITTED → REVIEWING)
+    // HOUSING DEVELOPER: Nhận hồ sơ (SUBMITTED / NEED_MORE_DOCUMENTS → REVIEWING)
     // ──────────────────────────────────────────────────────────────
 
     /// <summary>
     /// [HousingDeveloper] Nhận hồ sơ để thẩm định.
     /// Chuyển trạng thái SUBMITTED (hoặc NEED_MORE_DOCUMENTS) → REVIEWING.
     /// </summary>
-    [HttpPost("{id:guid}/assign")]
+    [HttpPatch("{id:guid}/assign")]
     [Authorize(Roles = RoleConstants.HousingDeveloper)]
     [ProducesResponseType(typeof(ReviewResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -335,13 +335,15 @@ public class HousingApplicationsController : ControllerBase
 
     // ──────────────────────────────────────────────────────────────
     // ──────────────────────────────────────────────────────────────
-    // HOUSING DEVELOPER: Xét duyệt (REVIEWING → PENDING_SXD_REVIEW/REJECTED/NEED_MORE_DOCUMENTS)
+    // HOUSING DEVELOPER: Xét duyệt (REVIEWING → REJECTED / NEED_MORE_DOCUMENTS)
     // ──────────────────────────────────────────────────────────────
 
     /// <summary>
     /// [HousingDeveloper] Xét duyệt hồ sơ.
+    /// Actions: REJECT, REQUEST_MORE_DOCUMENTS.
+    /// (PROPOSE đã được thay thế bằng API batch: POST /api/housing-developer/submit-to-department)
     /// </summary>
-    [HttpPost("{id:guid}/developer-review")]
+    [HttpPatch("{id:guid}/developer-review")]
     [Authorize(Roles = RoleConstants.HousingDeveloper)]
     [ProducesResponseType(typeof(ReviewResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -390,13 +392,14 @@ public class HousingApplicationsController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────
-    // DEPARTMENT OF CONSTRUCTION: Xét duyệt (PENDING_SXD_REVIEW → APPROVED/REJECTED/NEED_MORE_DOCUMENTS)
+    // DEPARTMENT OF CONSTRUCTION: Hậu kiểm (PENDING_SXD_REVIEW → APPROVED / REJECTED)
     // ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// [DepartmentOfConstruction] Xét duyệt hồ sơ.
+    /// [DepartmentOfConstruction] Hậu kiểm và phê duyệt cuối.
+    /// Actions: APPROVE, REJECT.
     /// </summary>
-    [HttpPost("{id:guid}/sxd-review")]
+    [HttpPatch("{id:guid}/sxd-review")]
     [Authorize(Roles = RoleConstants.DepartmentOfConstruction)]
     [ProducesResponseType(typeof(ReviewResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
