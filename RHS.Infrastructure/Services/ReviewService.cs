@@ -264,8 +264,8 @@ public class ReviewService : IReviewService
             "CĐT {DeveloperId} reviewed application {AppId}. Status: {Old} → {New}.",
             developerId, applicationId, oldStatus, targetStatus);
 
-        // Gửi thông báo cho SXD hoặc Applicant
-        await SendDeveloperProposalNotificationAsync(application, request.Note);
+        // Gửi thông báo cho Applicant
+        await SendDeveloperReviewNotificationAsync(application, targetStatus, request.Note);
 
         return BuildReviewResponse(applicationId, oldStatus, targetStatus, action, now);
     }
@@ -418,18 +418,19 @@ public class ReviewService : IReviewService
     }
 
     /// <summary>
-    /// Resolve action của CĐT.
+    /// Resolve action của CĐT (Task #6).
+    /// Chỉ hỗ trợ: REQUEST_MORE_DOCUMENTS, REJECT.
+    /// (PROPOSE đã được thay thế bằng API batch: POST /api/housing-developer/submit-to-department)
     /// </summary>
     private static (string action, string targetStatus) ResolveDeveloperAction(string actionInput)
     {
         return actionInput.ToUpperInvariant() switch
         {
-            "PROPOSE"                => (ReviewActionConstants.Propose,              ApplicationStatusConstants.PendingSxdReview),
             "REQUEST_MORE_DOCUMENTS" => (ReviewActionConstants.RequestMoreDocuments, ApplicationStatusConstants.NeedMoreDocuments),
             "REJECT"                 => (ReviewActionConstants.Reject,               ApplicationStatusConstants.Rejected),
             _ => throw new ArgumentException(
                 $"Hành động '{actionInput}' không hợp lệ cho Housing Developer. " +
-                "Giá trị hợp lệ: PROPOSE, REQUEST_MORE_DOCUMENTS, REJECT.")
+                "Giá trị hợp lệ: REQUEST_MORE_DOCUMENTS, REJECT.")
         };
     }
 
@@ -512,17 +513,30 @@ public class ReviewService : IReviewService
     }
 
     /// <summary>
-    /// Gửi thông báo khi CĐT đề xuất phê duyệt.
+    /// Gửi thông báo cho Applicant khi CĐT thẩm định hồ sơ (Task #6).
     /// </summary>
-    private async Task SendDeveloperProposalNotificationAsync(HousingApplication application, string? note)
+    private async Task SendDeveloperReviewNotificationAsync(
+        HousingApplication application, string targetStatus, string? note)
     {
-        // Thông báo cho Applicant
-        await _notificationService.SendAsync(
-            application.ApplicantId,
-            "Hồ sơ đã được gửi lên Sở Xây Dựng",
-            "Hồ sơ của bạn đã được CĐT thẩm định và đề xuất gửi lên Sở Xây Dựng phê duyệt." +
-            (string.IsNullOrWhiteSpace(note) ? "" : $" Ghi chú: {note}"),
-            "APPLICATION_PENDING_SXD_REVIEW");
+        var (title, content, notifType) = targetStatus switch
+        {
+            ApplicationStatusConstants.NeedMoreDocuments => (
+                "Yêu cầu bổ sung giấy tờ",
+                $"CĐT yêu cầu bạn bổ sung giấy tờ cho hồ sơ.{(string.IsNullOrWhiteSpace(note) ? "" : $" Chi tiết: {note}")}",
+                NotificationTypeConstants.ApplicationNeedMoreDocs),
+
+            ApplicationStatusConstants.Rejected => (
+                "Hồ sơ bị từ chối bởi CĐT",
+                $"Hồ sơ của bạn đã bị CĐT từ chối.{(string.IsNullOrWhiteSpace(note) ? "" : $" Lý do: {note}")}",
+                NotificationTypeConstants.ApplicationRejected),
+
+            _ => (null!, null!, null!)
+        };
+
+        if (title != null)
+        {
+            await _notificationService.SendAsync(application.ApplicantId, title, content, notifType);
+        }
     }
 
     /// <summary>

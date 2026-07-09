@@ -98,9 +98,13 @@ public class HousingApplicationRepository : IHousingApplicationRepository
 
     public async Task<bool> ExistsByApplicantAndProjectAsync(Guid applicantId, Guid projectId)
     {
+        // Exclude REJECTED/CANCELED để cho phép người dân nộp lại hồ sơ cho cùng dự án
         return await _context.HousingApplications
             .AsNoTracking()
-            .AnyAsync(x => x.ApplicantId == applicantId && x.ProjectId == projectId);
+            .AnyAsync(x => x.ApplicantId == applicantId 
+                && x.ProjectId == projectId
+                && x.ApplicationStatus != ApplicationStatusConstants.Rejected
+                && x.ApplicationStatus != ApplicationStatusConstants.Canceled);
     }
 
     public async Task<bool> CitizenIdExistsInProjectAsync(
@@ -108,12 +112,15 @@ public class HousingApplicationRepository : IHousingApplicationRepository
         Guid   projectId,
         Guid   excludeApplicationId)
     {
+        // Exclude REJECTED/CANCELED để giải phóng CCCD cho người dân nộp hồ sơ khác
         return await _context.HousingApplications
             .AsNoTracking()
             .AnyAsync(x =>
                 x.CitizenId    == citizenId         &&
                 x.ProjectId    == projectId          &&
-                x.ApplicationId != excludeApplicationId);
+                x.ApplicationId != excludeApplicationId &&
+                x.ApplicationStatus != ApplicationStatusConstants.Rejected &&
+                x.ApplicationStatus != ApplicationStatusConstants.Canceled);
     }
 
     // ─────────────────────────────────────────────────────────────
