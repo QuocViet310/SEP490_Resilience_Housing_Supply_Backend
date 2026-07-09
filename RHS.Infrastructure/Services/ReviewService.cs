@@ -578,7 +578,7 @@ public class ReviewService : IReviewService
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Task #11: Applicant tự hủy hồ sơ (stub — full implementation in Commit 9)
+    // Task #11: Applicant tự hủy hồ sơ
     // ─────────────────────────────────────────────────────────────
 
     public async Task<ReviewResponseDto> CancelApplicationAsync(
@@ -586,7 +586,85 @@ public class ReviewService : IReviewService
         Guid applicantId,
         CancelApplicationRequestDto request)
     {
-        throw new NotImplementedException("CancelApplicationAsync will be implemented in Commit 9.");
+        _logger.LogInformation(
+            "Applicant {ApplicantId} requesting cancellation for application {AppId}.",
+            applicantId, applicationId);
+
+        var application = await GetApplicationOrThrowAsync(applicationId);
+
+        // Validate: chỉ chủ hồ sơ mới được hủy
+        if (application.ApplicantId != applicantId)
+        {
+            throw new UnauthorizedAccessException(
+                "Bạn không có quyền hủy hồ sơ này.");
+        }
+
+        // Validate: không được hủy nếu hồ sơ đã ở trạng thái đóng
+        if (ApplicationStatusConstants.ClosedStatuses.Contains(application.ApplicationStatus))
+        {
+            throw new InvalidApplicationStatusTransitionException(
+                application.ApplicationStatus, ApplicationStatusConstants.Canceled);
+        }
+
+        var oldStatus = application.ApplicationStatus;
+        var now = DateTime.UtcNow;
+
+        using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            // Nếu hủy ở bước APPROVED → hoàn lại 1 suất cho dự án
+            if (oldStatus == ApplicationStatusConstants.Approved)
+            {
+                var project = await _context.HousingProjects
+                    .FirstOrDefaultAsync(p => p.Id == application.ProjectId);
+                if (project != null)
+                {
+                    project.AvailableUnits += 1;
+                    project.UpdatedAt = now;
+                    _context.HousingProjects.Update(project);
+
+                    _logger.LogInformation(
+                        "Restored 1 unit for project {ProjectId}. AvailableUnits = {Units}.",
+                        project.Id, project.AvailableUnits);
+                }
+            }
+
+            application.ApplicationStatus = ApplicationStatusConstants.Canceled;
+            application.UpdatedAt = now;
+
+            await _applicationRepo.UpdateAsync(application);
+
+            await AppendHistoryAsync(
+                applicationId: applicationId,
+                changedBy: applicantId,
+                action: ReviewActionConstants.Cancel,
+                oldStatus: oldStatus,
+                newStatus: ApplicationStatusConstants.Canceled,
+                note: request.CancelReason.Trim());
+
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+
+        _logger.LogInformation(
+            "Applicant {ApplicantId} canceled application {AppId}. Status: {Old} → CANCELED.",
+            applicantId, applicationId, oldStatus);
+
+        // Gửi thông báo xác nhận hủy cho Applicant
+        await _notificationService.SendAsync(
+            applicantId,
+            "Hồ sơ đã được hủy",
+            $"Bạn đã hủy hồ sơ thành công. Lý do: {request.CancelReason.Trim()}",
+            NotificationTypeConstants.ApplicationCanceled);
+
+        return BuildReviewResponse(
+            applicationId, oldStatus,
+            ApplicationStatusConstants.Canceled,
+            ReviewActionConstants.Cancel, now);
     }
 
     // ─────────────────────────────────────────────────────────────

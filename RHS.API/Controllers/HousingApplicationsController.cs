@@ -440,6 +440,58 @@ public class HousingApplicationsController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────
+    // APPLICANT: Tự hủy hồ sơ (Task #11)
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// [Applicant] Tự hủy hồ sơ đang xử lý.
+    /// Điều kiện: Hồ sơ không ở trạng thái đóng (DEPOSIT_PAID, REJECTED, CANCELED, EXPIRED).
+    /// Nếu hủy ở bước APPROVED → hoàn lại 1 suất (AvailableUnits) cho dự án.
+    /// Giải phóng CCCD cho người dân nộp hồ sơ khác.
+    /// </summary>
+    [HttpPatch("{id:guid}/cancel")]
+    [Authorize(Roles = RoleConstants.Applicant)]
+    [ProducesResponseType(typeof(ReviewResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> CancelApplication(
+        Guid id,
+        [FromBody] CancelApplicationRequestDto request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var applicantId = GetCurrentUserId();
+        if (applicantId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
+
+        try
+        {
+            var result = await _reviewService.CancelApplicationAsync(id, applicantId, request);
+            return Ok(result);
+        }
+        catch (ApplicationNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (InvalidApplicationStatusTransitionException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error canceling application {Id}.", id);
+            return StatusCode(500, new { message = "Đã xảy ra lỗi khi hủy hồ sơ." });
+        }
+    }
+    // ──────────────────────────────────────────────────────────────
     // Private helper
     // ──────────────────────────────────────────────────────────────
 
