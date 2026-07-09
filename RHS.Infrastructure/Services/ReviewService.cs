@@ -289,13 +289,12 @@ public class ReviewService : IReviewService
         // Validate action value
         var (action, targetStatus) = ResolveDepartmentOfConstructionAction(request.Action);
 
-        // Note bắt buộc khi Reject hoặc Request More Documents
-        if (action is ReviewActionConstants.Reject
-                   or ReviewActionConstants.RequestMoreDocuments
+        // Note bắt buộc khi Reject
+        if (action == ReviewActionConstants.Reject
             && string.IsNullOrWhiteSpace(request.Note))
         {
             throw new ArgumentException(
-                "Ghi chú (Note) là bắt buộc khi thực hiện REJECT hoặc REQUEST_MORE_DOCUMENTS.");
+                "Ghi chú (Note) là bắt buộc khi thực hiện REJECT.");
         }
 
         var application = await GetApplicationOrThrowAsync(applicationId);
@@ -438,18 +437,19 @@ public class ReviewService : IReviewService
     }
 
     /// <summary>
-    /// Resolve action của SXD.
+    /// Resolve action của SXD (Task #8).
+    /// Chỉ hỗ trợ: APPROVE, REJECT.
+    /// (REQUEST_MORE_DOCUMENTS đã bị loại bỏ — SXD không gửi trả về cho người dân)
     /// </summary>
     private static (string action, string targetStatus) ResolveDepartmentOfConstructionAction(string actionInput)
     {
         return actionInput.ToUpperInvariant() switch
         {
-            "APPROVE"                => (ReviewActionConstants.Approve,              ApplicationStatusConstants.Approved),
-            "REJECT"                 => (ReviewActionConstants.Reject,               ApplicationStatusConstants.Rejected),
-            "REQUEST_MORE_DOCUMENTS" => (ReviewActionConstants.RequestMoreDocuments, ApplicationStatusConstants.NeedMoreDocuments),
+            "APPROVE" => (ReviewActionConstants.Approve, ApplicationStatusConstants.Approved),
+            "REJECT"  => (ReviewActionConstants.Reject,  ApplicationStatusConstants.Rejected),
             _ => throw new ArgumentException(
                 $"Hành động '{actionInput}' không hợp lệ cho Department Of Construction. " +
-                "Giá trị hợp lệ: APPROVE, REJECT, REQUEST_MORE_DOCUMENTS.")
+                "Giá trị hợp lệ: APPROVE, REJECT.")
         };
     }
 

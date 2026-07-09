@@ -9,7 +9,7 @@ public class HousingDeveloperReviewRequestDto
 {
     /// <summary>
     /// Hành động thực hiện. Giá trị hợp lệ:
-    /// "PROPOSE", "REJECT", hoặc "REQUEST_MORE_DOCUMENTS".
+    /// "REJECT" hoặc "REQUEST_MORE_DOCUMENTS".
     /// </summary>
     [Required(ErrorMessage = "Hành động là bắt buộc.")]
     public string Action { get; set; } = string.Empty;
