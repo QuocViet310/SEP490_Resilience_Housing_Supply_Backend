@@ -40,26 +40,34 @@ public interface IHousingApplicationRepository
 
     /// <summary>
     /// Kiểm tra Applicant đã có hồ sơ cho dự án này chưa.
-    /// Quy định: mỗi người chỉ được 1 hồ sơ/dự án.
+    /// Quy định: mỗi người chỉ được 1 hồ sơ/dự án (trừ REJECTED/CANCELED).
     /// </summary>
     Task<bool> ExistsByApplicantAndProjectAsync(Guid applicantId, Guid projectId);
 
     /// <summary>
     /// Kiểm tra một số CCCD đã tồn tại trong hồ sơ KHÁC của cùng dự án hay chưa.
-    /// Được gọi khi Applicant Submit để đảm bảo mỗi CCCD chỉ có một hồ sơ trong một dự án,
-    /// bất kể người dùng sử dụng tài khoản nào.
+    /// Exclude các hồ sơ REJECTED/CANCELED để giải phóng CCCD.
     /// </summary>
-    /// <param name="citizenId">Số CCCD cần kiểm tra.</param>
-    /// <param name="projectId">Dự án cần kiểm tra.</param>
-    /// <param name="excludeApplicationId">
-    /// ID hồ sơ hiện tại — sẽ bị loại trừ khỏi tìm kiếm để tránh tự block chính mình.
-    /// </param>
-    /// <returns><c>true</c> nếu CCCD đã tồn tại trong hồ sơ khác của dự án đó.</returns>
     Task<bool> CitizenIdExistsInProjectAsync(string citizenId, Guid projectId, Guid excludeApplicationId);
+
+    /// <summary>
+    /// Lấy danh sách hồ sơ theo nhiều IDs (dùng cho batch operations như Task #7).
+    /// </summary>
+    Task<List<HousingApplication>> GetByIdsAsync(IEnumerable<Guid> ids);
+
+    // ── Dashboard ────────────────────────────────────────────────────
 
     Task<PagedResult<HousingApplicationDashboardItemDto>> GetHousingDeveloperDashboardAsync(
         HousingApplicationDashboardQueryDto query);
 
     Task<PagedResult<HousingApplicationDashboardItemDto>> GetDepartmentOfConstructionDashboardAsync(
         HousingApplicationDashboardQueryDto query);
+
+    // ── Final List ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lấy danh sách chốt cuối (DEPOSIT_PAID) cho dự án (Task #10).
+    /// </summary>
+    Task<List<FinalListItemDto>> GetFinalListByProjectAsync(Guid projectId);
 }
+

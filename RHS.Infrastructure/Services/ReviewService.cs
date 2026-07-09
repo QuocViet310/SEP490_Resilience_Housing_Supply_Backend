@@ -556,4 +556,27 @@ public class ReviewService : IReviewService
             await _notificationService.SendAsync(applicantId, title, content, notifType);
         }
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Task #11: Applicant tự hủy hồ sơ (stub — full implementation in Commit 9)
+    // ─────────────────────────────────────────────────────────────
+
+    public async Task<ReviewResponseDto> CancelApplicationAsync(
+        Guid applicationId,
+        Guid applicantId,
+        CancelApplicationRequestDto request)
+    {
+        throw new NotImplementedException("CancelApplicationAsync will be implemented in Commit 9.");
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Task #7: CĐT gửi danh sách lên SXD (stub — full implementation in Commit 5)
+    // ─────────────────────────────────────────────────────────────
+
+    public async Task<List<ReviewResponseDto>> SubmitToDepartmentAsync(
+        Guid developerId,
+        SubmitToDepartmentRequestDto request)
+    {
+        throw new NotImplementedException("SubmitToDepartmentAsync will be implemented in Commit 5.");
+    }
 }

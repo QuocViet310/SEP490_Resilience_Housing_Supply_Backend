@@ -232,4 +232,13 @@ public class HousingApplicationService : IHousingApplicationService
         if (query.PageIndex < 1) query.PageIndex = 1;
         query.PageSize = Math.Clamp(query.PageSize, 1, 50);
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Final List (Task #10)
+    // ─────────────────────────────────────────────────────────────
+
+    public async Task<List<FinalListItemDto>> GetFinalListByProjectAsync(Guid projectId)
+    {
+        return await _applicationRepo.GetFinalListByProjectAsync(projectId);
+    }
 }

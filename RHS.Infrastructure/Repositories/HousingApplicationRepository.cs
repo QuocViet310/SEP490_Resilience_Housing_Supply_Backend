@@ -359,4 +359,51 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             Items = items
         };
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Batch & Final List (stubs — full implementation in later commits)
+    // ─────────────────────────────────────────────────────────────
+
+    public async Task<List<HousingApplication>> GetByIdsAsync(IEnumerable<Guid> ids)
+    {
+        var idList = ids.ToList();
+        return await _context.HousingApplications
+            .Include(x => x.HousingProject)
+            .Where(x => idList.Contains(x.ApplicationId))
+            .ToListAsync();
+    }
+
+    public async Task<List<FinalListItemDto>> GetFinalListByProjectAsync(Guid projectId)
+    {
+        return await _context.HousingApplications
+            .AsNoTracking()
+            .Include(x => x.HousingProject)
+            .Where(x => x.ProjectId == projectId
+                && x.ApplicationStatus == ApplicationStatusConstants.DepositPaid)
+            .Select(x => new FinalListItemDto
+            {
+                ApplicationId = x.ApplicationId,
+                ApplicationStatus = x.ApplicationStatus,
+                PriorityScore = x.PriorityScore,
+                SubmittedAt = x.SubmittedAt,
+                FinalDecisionDate = x.FinalDecisionDate,
+                SlotCode = x.SlotCode,
+                ApplicantId = x.ApplicantId,
+                FullName = x.FullName,
+                CitizenId = x.CitizenId,
+                Occupation = x.Occupation,
+                WorkPlace = x.WorkPlace,
+                CurrentResidence = x.CurrentResidence,
+                PermanentAddress = x.PermanentAddress,
+                HousingStatus = x.HousingStatus,
+                MaritalStatus = x.MaritalStatus,
+                HouseholdMembersCount = x.HouseholdMembersCount,
+                PriorityGroup = x.PriorityGroup,
+                ProjectId = x.ProjectId,
+                ProjectName = x.HousingProject.ProjectName,
+                ProjectAddress = $"{x.HousingProject.Street}, {x.HousingProject.Ward}, {x.HousingProject.District}, {x.HousingProject.Province}"
+            })
+            .OrderBy(x => x.FullName)
+            .ToListAsync();
+    }
 }
