@@ -230,7 +230,100 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             ApplicationStatusConstants.Submitted,
             ApplicationStatusConstants.Reviewing,
             ApplicationStatusConstants.NeedMoreDocuments,
-            ApplicationStatusConstants.PendingSxdReview
+            ApplicationStatusConstants.PendingSxdReview,
+            ApplicationStatusConstants.Rejected
+        };
+
+        var baseQuery = _context.HousingApplications
+            .AsNoTracking()
+            .Include(x => x.Applicant)
+            .Include(x => x.HousingProject)
+            .Where(x => allowedStatuses.Contains(x.ApplicationStatus));
+
+        // Filter theo dự án của CĐT đang đăng nhập
+        if (query.DeveloperId.HasValue)
+        {
+            baseQuery = baseQuery.Where(x => x.HousingProject.DeveloperId == query.DeveloperId.Value);
+        }
+
+        if (query.ProjectId.HasValue)
+        {
+            baseQuery = baseQuery.Where(x => x.ProjectId == query.ProjectId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Status))
+        {
+            var statusUpper = query.Status.Trim().ToUpper();
+            if (allowedStatuses.Contains(statusUpper))
+            {
+                baseQuery = baseQuery.Where(x => x.ApplicationStatus == statusUpper);
+            }
+            else
+            {
+                baseQuery = baseQuery.Where(x => false);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim().ToLower();
+            baseQuery = baseQuery.Where(x =>
+                x.FullName.ToLower().Contains(term) ||
+                x.Applicant.Email.ToLower().Contains(term) ||
+                x.HousingProject.ProjectName.ToLower().Contains(term));
+        }
+
+        var totalCount = await baseQuery.CountAsync();
+
+        // Custom sort: SUBMITTED ưu tiên nhất (chờ tiếp nhận), sau đó REVIEWING, rồi theo ngày nộp
+        var sortedQuery = baseQuery
+            .OrderBy(x =>
+                x.ApplicationStatus == ApplicationStatusConstants.Submitted ? 0 :
+                x.ApplicationStatus == ApplicationStatusConstants.Reviewing ? 1 :
+                x.ApplicationStatus == ApplicationStatusConstants.NeedMoreDocuments ? 2 : 3)
+            .ThenByDescending(x => x.SubmittedAt);
+
+        var pageIndex = Math.Max(query.PageIndex, 1);
+        var pageSize = Math.Clamp(query.PageSize, 1, 50);
+        var skip = (pageIndex - 1) * pageSize;
+
+        var items = await sortedQuery
+            .Skip(skip)
+            .Take(pageSize)
+            .Select(x => new HousingApplicationDashboardItemDto
+            {
+                ApplicationId = x.ApplicationId,
+                ApplicantName = x.FullName,
+                ApplicantEmail = x.Applicant.Email,
+                ProjectName = x.HousingProject.ProjectName,
+                ApplicationStatus = x.ApplicationStatus,
+                PriorityScore = x.PriorityScore,
+                MaritalStatus = x.MaritalStatus,
+                HouseholdMembersCount = x.HouseholdMembersCount,
+                PriorityGroup = x.PriorityGroup,
+                ReceiptUrl = x.ReceiptUrl,
+                SubmittedAt = x.SubmittedAt
+            })
+            .ToListAsync();
+
+        return new PagedResult<HousingApplicationDashboardItemDto>
+        {
+            PageIndex = pageIndex,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+            Items = items
+        };
+    }
+
+    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetDepartmentOfConstructionDashboardAsync(
+        HousingApplicationDashboardQueryDto query)
+    {
+        // SXD chỉ thấy: hồ sơ đã được CĐT gửi lên (PENDING_SXD_REVIEW) + đã xử lý (APPROVED, REJECTED)
+        var allowedStatuses = new[]
+        {
+            ApplicationStatusConstants.PendingSxdReview,
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.Rejected
         };
 
         var baseQuery = _context.HousingApplications
@@ -268,72 +361,11 @@ public class HousingApplicationRepository : IHousingApplicationRepository
 
         var totalCount = await baseQuery.CountAsync();
 
-        var sortedQuery = baseQuery.OrderByDescending(x => x.SubmittedAt);
-
-        var pageIndex = Math.Max(query.PageIndex, 1);
-        var pageSize = Math.Clamp(query.PageSize, 1, 50);
-        var skip = (pageIndex - 1) * pageSize;
-
-        var items = await sortedQuery
-            .Skip(skip)
-            .Take(pageSize)
-            .Select(x => new HousingApplicationDashboardItemDto
-            {
-                ApplicationId = x.ApplicationId,
-                ApplicantName = x.FullName,
-                ApplicantEmail = x.Applicant.Email,
-                ProjectName = x.HousingProject.ProjectName,
-                ApplicationStatus = x.ApplicationStatus,
-                PriorityScore = x.PriorityScore,
-                MaritalStatus = x.MaritalStatus,
-                HouseholdMembersCount = x.HouseholdMembersCount,
-                PriorityGroup = x.PriorityGroup,
-                ReceiptUrl = x.ReceiptUrl,
-                SubmittedAt = x.SubmittedAt
-            })
-            .ToListAsync();
-
-        return new PagedResult<HousingApplicationDashboardItemDto>
-        {
-            PageIndex = pageIndex,
-            PageSize = pageSize,
-            TotalCount = totalCount,
-            Items = items
-        };
-    }
-
-    public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetDepartmentOfConstructionDashboardAsync(
-        HousingApplicationDashboardQueryDto query)
-    {
-        var allowedStatuses = new[]
-        {
-            ApplicationStatusConstants.PendingSxdReview,
-            ApplicationStatusConstants.Reviewing
-        };
-
-        var baseQuery = _context.HousingApplications
-            .AsNoTracking()
-            .Include(x => x.Applicant)
-            .Include(x => x.HousingProject)
-            .Where(x => allowedStatuses.Contains(x.ApplicationStatus));
-
-        if (query.ProjectId.HasValue)
-        {
-            baseQuery = baseQuery.Where(x => x.ProjectId == query.ProjectId.Value);
-        }
-
-        if (!string.IsNullOrWhiteSpace(query.Search))
-        {
-            var term = query.Search.Trim().ToLower();
-            baseQuery = baseQuery.Where(x =>
-                x.FullName.ToLower().Contains(term) ||
-                x.Applicant.Email.ToLower().Contains(term) ||
-                x.HousingProject.ProjectName.ToLower().Contains(term));
-        }
-
-        var totalCount = await baseQuery.CountAsync();
-
-        var sortedQuery = baseQuery.OrderByDescending(x => x.SubmittedAt);
+        // Ưu tiên PENDING_SXD_REVIEW lên đầu (chờ hậu kiểm), sau đó theo ngày nộp
+        var sortedQuery = baseQuery
+            .OrderBy(x =>
+                x.ApplicationStatus == ApplicationStatusConstants.PendingSxdReview ? 0 : 1)
+            .ThenByDescending(x => x.SubmittedAt);
 
         var pageIndex = Math.Max(query.PageIndex, 1);
         var pageSize = Math.Clamp(query.PageSize, 1, 50);

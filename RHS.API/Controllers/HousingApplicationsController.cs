@@ -150,6 +150,7 @@ public class HousingApplicationsController : ControllerBase
 
     /// <summary>
     /// [HousingDeveloper] Lấy danh sách hồ sơ cho Dashboard của CĐT.
+    /// Chỉ hiển thị hồ sơ thuộc dự án của CĐT đang đăng nhập.
     /// </summary>
     [HttpGet("dashboard/developer")]
     [Authorize(Roles = RoleConstants.HousingDeveloper)]
@@ -162,6 +163,8 @@ public class HousingApplicationsController : ControllerBase
     {
         try
         {
+            // Inject DeveloperId từ JWT để filter chỉ dự án của CĐT đang đăng nhập
+            query.DeveloperId = GetCurrentUserId();
             var result = await _applicationService.GetHousingDeveloperDashboardAsync(query);
             return Ok(result);
         }
