@@ -270,6 +270,9 @@ namespace RHS.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("ApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime>("AssessmentDate")
                         .HasColumnType("datetime2");
 
@@ -280,10 +283,16 @@ namespace RHS.Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("ReasonsJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("AssessmentId");
+
+                    b.HasIndex("ApplicationId");
 
                     b.HasIndex("AssessmentDate");
 
@@ -305,6 +314,10 @@ namespace RHS.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal?>("AverageHousingAreaPerPerson")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("CitizenId")
                         .IsRequired()
@@ -337,9 +350,20 @@ namespace RHS.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<Guid?>("LatestAssessmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("LotteryResult")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.Property<string>("MaritalStatus")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal?>("MonthlyIncome")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("Occupation")
                         .HasMaxLength(200)
@@ -371,6 +395,10 @@ namespace RHS.Infrastructure.Migrations
                     b.Property<string>("SlotCode")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal?>("SpouseMonthlyIncome")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime>("SubmittedAt")
                         .HasColumnType("datetime2");
@@ -487,6 +515,9 @@ namespace RHS.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("PublicAnnounceAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("RejectReason")
                         .HasMaxLength(1000)
@@ -632,6 +663,52 @@ namespace RHS.Infrastructure.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("IssueReports", (string)null);
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.LotteryDraw", b =>
+                {
+                    b.Property<Guid>("DrawId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("DrawnAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("DrawnBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("PriorityAllocated")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("RandomAllocated")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RandomSeed")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("TotalParticipants")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TotalUnits")
+                        .HasColumnType("int");
+
+                    b.HasKey("DrawId");
+
+                    b.HasIndex("DrawnAt");
+
+                    b.HasIndex("DrawnBy");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("LotteryDraws", (string)null);
                 });
 
             modelBuilder.Entity("RHS.Domain.Entities.Message", b =>
@@ -827,8 +904,24 @@ namespace RHS.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasDefaultValue("General");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<DateTime>("EffectiveDate")
                         .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
 
                     b.Property<string>("PolicyName")
                         .IsRequired()
@@ -844,6 +937,8 @@ namespace RHS.Infrastructure.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("PolicyId");
+
+                    b.HasIndex("Category");
 
                     b.HasIndex("EffectiveDate");
 
@@ -1153,11 +1248,18 @@ namespace RHS.Infrastructure.Migrations
 
             modelBuilder.Entity("RHS.Domain.Entities.EligibilityAssessment", b =>
                 {
+                    b.HasOne("RHS.Domain.Entities.HousingApplication", "Application")
+                        .WithMany()
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("RHS.Domain.Entities.User", "User")
                         .WithMany("EligibilityAssessments")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Application");
 
                     b.Navigation("User");
                 });
@@ -1230,6 +1332,25 @@ namespace RHS.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("RHS.Domain.Entities.LotteryDraw", b =>
+                {
+                    b.HasOne("RHS.Domain.Entities.User", "DrawnByUser")
+                        .WithMany()
+                        .HasForeignKey("DrawnBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RHS.Domain.Entities.HousingProject", "HousingProject")
+                        .WithMany("LotteryDraws")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("DrawnByUser");
+
+                    b.Navigation("HousingProject");
                 });
 
             modelBuilder.Entity("RHS.Domain.Entities.Message", b =>
@@ -1393,6 +1514,8 @@ namespace RHS.Infrastructure.Migrations
                     b.Navigation("HousingApplications");
 
                     b.Navigation("HousingQuotas");
+
+                    b.Navigation("LotteryDraws");
 
                     b.Navigation("ProjectImages");
 

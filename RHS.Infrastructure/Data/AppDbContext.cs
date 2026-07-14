@@ -46,6 +46,7 @@ public class AppDbContext : DbContext
     public DbSet<IssueReport> IssueReports { get; set; }
     public DbSet<Wishlist> Wishlists { get; set; }
     public DbSet<PrincipleAgreement> PrincipleAgreements { get; set; }
+    public DbSet<LotteryDraw> LotteryDraws { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -70,6 +71,7 @@ public class AppDbContext : DbContext
         modelBuilder.ApplyConfiguration(new IssueReportConfiguration());
         modelBuilder.ApplyConfiguration(new WishlistConfiguration());
         modelBuilder.ApplyConfiguration(new PrincipleAgreementConfiguration());
+        modelBuilder.ApplyConfiguration(new LotteryDrawConfiguration());
         // Role Configuration
         modelBuilder.Entity<Role>(entity =>
         {

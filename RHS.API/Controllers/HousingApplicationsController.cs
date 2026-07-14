@@ -87,6 +87,59 @@ public class HousingApplicationsController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────
+    // APPLICANT: Cập nhật hồ sơ (DRAFT / NEED_MORE_DOCUMENTS)
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// [Applicant] Cập nhật thông tin form của hồ sơ.
+    /// Chỉ cho phép khi hồ sơ ở trạng thái DRAFT hoặc NEED_MORE_DOCUMENTS.
+    /// Không cho phép đổi dự án (ProjectId).
+    /// </summary>
+    [HttpPut("{id:guid}")]
+    [Authorize(Roles = RoleConstants.Applicant)]
+    [ProducesResponseType(typeof(ApplicationDetailResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> UpdateApplication(
+        Guid id,
+        [FromBody] UpdateApplicationRequestDto request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var applicantId = GetCurrentUserId();
+        if (applicantId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
+
+        try
+        {
+            var result = await _applicationService.UpdateApplicationAsync(applicantId, id, request);
+            return Ok(result);
+        }
+        catch (ApplicationNotFoundException ex)
+        {
+            return NotFound(new { errorCode = ex.ErrorCode, message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning("Validation error updating application {Id}: {Message}", id, ex.Message);
+            return UnprocessableEntity(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating housing application {Id}.", id);
+            return StatusCode(500, new { message = "Đã xảy ra lỗi khi cập nhật hồ sơ." });
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // APPLICANT: Xem hồ sơ của mình
     // ──────────────────────────────────────────────────────────────
 
@@ -449,7 +502,7 @@ public class HousingApplicationsController : ControllerBase
     /// <summary>
     /// [Applicant] Tự hủy hồ sơ đang xử lý.
     /// Điều kiện: Hồ sơ không ở trạng thái đóng (DEPOSIT_PAID, REJECTED, CANCELED, EXPIRED).
-    /// Nếu hủy ở bước APPROVED → hoàn lại 1 suất (AvailableUnits) cho dự án.
+    /// APPROVED không giữ suất vật lý — hủy không hoàn AvailableUnits.
     /// Giải phóng CCCD cho người dân nộp hồ sơ khác.
     /// </summary>
     [HttpPatch("{id:guid}/cancel")]

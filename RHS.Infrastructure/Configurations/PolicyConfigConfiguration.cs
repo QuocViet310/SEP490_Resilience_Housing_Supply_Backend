@@ -20,6 +20,18 @@ public class PolicyConfigConfiguration : IEntityTypeConfiguration<PolicyConfig>
             .IsRequired()
             .HasMaxLength(2000);
 
+        builder.Property(x => x.Category)
+            .IsRequired()
+            .HasMaxLength(100)
+            .HasDefaultValue("General");
+
+        builder.Property(x => x.Description)
+            .HasMaxLength(1000);
+
+        builder.Property(x => x.IsActive)
+            .IsRequired()
+            .HasDefaultValue(true);
+
         // Relationships
         builder.HasOne(x => x.UpdatedByUser)
             .WithMany()
@@ -29,5 +41,6 @@ public class PolicyConfigConfiguration : IEntityTypeConfiguration<PolicyConfig>
         // Indexes
         builder.HasIndex(x => x.PolicyName).IsUnique();
         builder.HasIndex(x => x.EffectiveDate);
+        builder.HasIndex(x => x.Category);
     }
 }

@@ -1,36 +1,31 @@
 namespace RHS.Domain.Constants;
 
 /// <summary>
-/// Định nghĩa các hằng số loại giấy tờ được phép upload trong hồ sơ nhà ở xã hội.
-/// Applicant chỉ được chọn 1 trong 2 loại chính theo nghiệp vụ.
+/// Loại giấy tờ bắt buộc khi nộp hồ sơ mua NOXH (đối tượng hộ nghèo/cận nghèo đô thị).
+/// Người dân phải nộp đủ cả 2 loại.
 /// </summary>
 public static class DocumentTypeConstants
 {
     /// <summary>
-    /// Giấy tờ chứng minh điều kiện nhà ở
-    /// (ví dụ: xác nhận chưa có nhà, hoặc diện tích nhà ở < 15m²)
+    /// Giấy xác nhận nhà ở (Đ29): chưa có nhà (NO_HOUSE) hoặc có nhà nhưng &lt; 15 m²/người (SMALL_HOUSE).
     /// </summary>
     public const string HousingConditionProof = "HOUSING_CONDITION_PROOF";
 
     /// <summary>
-    /// Giấy chứng nhận hộ nghèo/cận nghèo
-    /// (do UBND Phường/Xã cấp)
+    /// Giấy chứng nhận hộ nghèo / hộ cận nghèo (do địa phương cấp).
     /// </summary>
     public const string PovertyHouseholdCertificate = "POVERTY_HOUSEHOLD_CERTIFICATE";
 
-    /// <summary>
-    /// Danh sách 2 loại giấy tờ chính mà Applicant được phép chọn upload.
-    /// Applicant CHỈ ĐƯỢC upload 1 trong 2 loại này.
-    /// </summary>
+    /// <summary>Hai loại giấy tờ Applicant được phép upload — và bắt buộc đủ cả hai khi nộp.</summary>
     public static readonly IReadOnlyList<string> AllowedApplicantDocumentTypes = new[]
     {
         HousingConditionProof,
         PovertyHouseholdCertificate
     };
 
-    /// <summary>
-    /// Kiểm tra loại giấy tờ có phải là loại Applicant được phép upload không.
-    /// </summary>
+    /// <summary>Hai loại bắt buộc khi SUBMITTED.</summary>
+    public static readonly IReadOnlyList<string> RequiredForSubmit = AllowedApplicantDocumentTypes;
+
     public static bool IsAllowedApplicantType(string documentType)
         => AllowedApplicantDocumentTypes.Contains(documentType);
 }

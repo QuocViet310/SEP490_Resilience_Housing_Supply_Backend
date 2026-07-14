@@ -24,7 +24,7 @@ public interface IReviewService
     /// <summary>
     /// Applicant tự hủy hồ sơ (Task #11).
     /// Điều kiện: Hồ sơ KHÔNG nằm ở trạng thái đóng (DEPOSIT_PAID, REJECTED, CANCELED, EXPIRED).
-    /// Nếu hủy ở bước APPROVED → hoàn lại 1 suất (AvailableUnits += 1) cho dự án.
+    /// APPROVED không giữ suất vật lý — hủy không hoàn AvailableUnits (suất chỉ trừ khi bốc thăm trúng).
     /// Giải phóng CCCD cho người dân nộp hồ sơ khác.
     /// Ghi log: Action = CANCEL.
     /// </summary>

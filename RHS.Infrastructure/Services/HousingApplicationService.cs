@@ -15,13 +15,16 @@ namespace RHS.Infrastructure.Services;
 public class HousingApplicationService : IHousingApplicationService
 {
     private readonly IHousingApplicationRepository _applicationRepo;
+    private readonly IEligibilityRuleEngine _eligibilityEngine;
     private readonly ILogger<HousingApplicationService> _logger;
 
     public HousingApplicationService(
         IHousingApplicationRepository applicationRepo,
+        IEligibilityRuleEngine eligibilityEngine,
         ILogger<HousingApplicationService> logger)
     {
         _applicationRepo = applicationRepo;
+        _eligibilityEngine = eligibilityEngine;
         _logger = logger;
     }
 
@@ -43,6 +46,12 @@ public class HousingApplicationService : IHousingApplicationService
             throw new ArgumentException(
                 $"Thực trạng nhà ở '{request.HousingStatus}' không hợp lệ. " +
                 $"Giá trị cho phép: {string.Join(", ", HousingStatusConstants.AllValues)}");
+        }
+
+        if (!PriorityGroupConstants.IsValid(request.PriorityGroup))
+        {
+            throw new ArgumentException(
+                "Đối tượng phải là hộ nghèo đô thị (URBAN_POOR) hoặc hộ cận nghèo đô thị (URBAN_NEAR_POOR).");
         }
 
         // 2. Kiểm tra trùng lặp: mỗi Applicant chỉ được 1 hồ sơ/dự án
@@ -79,7 +88,11 @@ public class HousingApplicationService : IHousingApplicationService
             HousingStatus          = request.HousingStatus,
             MaritalStatus          = request.MaritalStatus.Trim(),
             HouseholdMembersCount  = request.HouseholdMembersCount,
-            PriorityGroup          = request.PriorityGroup?.Trim()
+            PriorityGroup          = request.PriorityGroup.Trim(),
+            MonthlyIncome          = request.MonthlyIncome,
+            SpouseMonthlyIncome    = request.SpouseMonthlyIncome,
+            AverageHousingAreaPerPerson = request.AverageHousingAreaPerPerson,
+            LotteryResult          = LotteryResultConstants.Pending
         };
 
         // 4. Lưu vào DB
@@ -100,6 +113,81 @@ public class HousingApplicationService : IHousingApplicationService
     }
 
     // ─────────────────────────────────────────────────────────────
+    // Cập nhật hồ sơ (DRAFT / NEED_MORE_DOCUMENTS)
+    // ─────────────────────────────────────────────────────────────
+
+    public async Task<ApplicationDetailResponseDto> UpdateApplicationAsync(
+        Guid applicantId,
+        Guid applicationId,
+        UpdateApplicationRequestDto request)
+    {
+        _logger.LogInformation(
+            "Applicant {ApplicantId} đang cập nhật hồ sơ {ApplicationId}.",
+            applicantId, applicationId);
+
+        var application = await _applicationRepo.GetByIdWithDetailsAsync(applicationId);
+        if (application is null)
+            throw new ApplicationNotFoundException(applicationId);
+
+        if (application.ApplicantId != applicantId)
+            throw new UnauthorizedAccessException("Bạn không có quyền cập nhật hồ sơ này.");
+
+        var editableStatuses = new[]
+        {
+            ApplicationStatusConstants.Draft,
+            ApplicationStatusConstants.NeedMoreDocuments
+        };
+
+        if (!editableStatuses.Contains(application.ApplicationStatus))
+        {
+            throw new ArgumentException(
+                $"Chỉ được cập nhật hồ sơ ở trạng thái DRAFT hoặc NEED_MORE_DOCUMENTS. Hiện tại: {application.ApplicationStatus}.");
+        }
+
+        if (!HousingStatusConstants.IsValid(request.HousingStatus))
+        {
+            throw new ArgumentException(
+                $"Thực trạng nhà ở '{request.HousingStatus}' không hợp lệ. " +
+                $"Giá trị cho phép: {string.Join(", ", HousingStatusConstants.AllValues)}");
+        }
+
+        if (!PriorityGroupConstants.IsValid(request.PriorityGroup))
+        {
+            throw new ArgumentException(
+                "Đối tượng phải là hộ nghèo đô thị (URBAN_POOR) hoặc hộ cận nghèo đô thị (URBAN_NEAR_POOR).");
+        }
+
+        application.FullName              = request.FullName.Trim();
+        application.CitizenId             = request.CitizenId.Trim();
+        application.Occupation            = request.Occupation?.Trim();
+        application.WorkPlace             = request.WorkPlace?.Trim();
+        application.CurrentResidence      = request.CurrentResidence.Trim();
+        application.PermanentAddress      = request.PermanentAddress.Trim();
+        application.HousingStatus         = request.HousingStatus;
+        application.MaritalStatus         = request.MaritalStatus.Trim();
+        application.HouseholdMembersCount = request.HouseholdMembersCount;
+        application.PriorityGroup         = request.PriorityGroup.Trim();
+        application.MonthlyIncome         = request.MonthlyIncome;
+        application.SpouseMonthlyIncome   = request.SpouseMonthlyIncome;
+        application.AverageHousingAreaPerPerson = request.AverageHousingAreaPerPerson;
+        application.UpdatedAt             = DateTime.UtcNow;
+
+        await _applicationRepo.UpdateAsync(application);
+
+        _logger.LogInformation(
+            "Cập nhật hồ sơ thành công. ApplicationId={ApplicationId}.",
+            application.ApplicationId);
+
+        // Reload to ensure navigation props for detail DTO
+        var updated = await _applicationRepo.GetByIdWithDetailsAsync(applicationId)
+            ?? throw new ApplicationNotFoundException(applicationId);
+
+        var dto = MapToDetailDto(updated);
+        dto.Eligibility = await _eligibilityEngine.GetLatestForApplicationAsync(applicationId);
+        return dto;
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // Xem chi tiết hồ sơ
     // ─────────────────────────────────────────────────────────────
 
@@ -113,7 +201,9 @@ public class HousingApplicationService : IHousingApplicationService
             throw new ApplicationNotFoundException(applicationId);
         }
 
-        return MapToDetailDto(application);
+        var dto = MapToDetailDto(application);
+        dto.Eligibility = await _eligibilityEngine.GetLatestForApplicationAsync(applicationId);
+        return dto;
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -177,6 +267,11 @@ public class HousingApplicationService : IHousingApplicationService
             HouseholdMembersCount  = app.HouseholdMembersCount,
             PriorityGroup          = app.PriorityGroup,
             ReceiptUrl             = app.ReceiptUrl,
+            SlotCode               = app.SlotCode,
+            LotteryResult          = app.LotteryResult,
+            MonthlyIncome          = app.MonthlyIncome,
+            SpouseMonthlyIncome    = app.SpouseMonthlyIncome,
+            AverageHousingAreaPerPerson = app.AverageHousingAreaPerPerson,
 
             // ── Cán bộ thẩm định ──────────────────────────────────
             OfficerId      = app.OfficerId,

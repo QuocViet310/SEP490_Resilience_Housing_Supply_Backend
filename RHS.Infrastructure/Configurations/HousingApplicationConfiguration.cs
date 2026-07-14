@@ -41,6 +41,19 @@ public class HousingApplicationConfiguration : IEntityTypeConfiguration<HousingA
             .IsRequired(false)
             .HasMaxLength(50);
 
+        builder.Property(x => x.MonthlyIncome)
+            .HasPrecision(18, 2);
+
+        builder.Property(x => x.SpouseMonthlyIncome)
+            .HasPrecision(18, 2);
+
+        builder.Property(x => x.AverageHousingAreaPerPerson)
+            .HasPrecision(18, 2);
+
+        builder.Property(x => x.LotteryResult)
+            .IsRequired(false)
+            .HasMaxLength(30);
+
         // ── Thời gian ─────────────────────────────────────────────
         builder.Property(x => x.CreatedAt)
             .IsRequired();

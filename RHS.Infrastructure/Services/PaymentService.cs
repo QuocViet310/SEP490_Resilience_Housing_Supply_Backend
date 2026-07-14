@@ -411,7 +411,7 @@ public class PaymentService : IPaymentService
             await _notificationService.SendAsync(
                 application.ApplicantId,
                 "Thanh toán đặt cọc thành công",
-                $"Mã suất bốc thăm: {slotCode}. Hợp đồng nguyên tắc đã được tạo.",
+                $"Mã tham dự bốc thăm: {slotCode}. Hợp đồng nguyên tắc đã được tạo (cam kết tham gia phân suất, chưa đồng nghĩa đã được phân căn).",
                 NotificationTypeConstants.DepositPaid);
         }
         catch (Exception ex)

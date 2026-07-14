@@ -48,6 +48,25 @@ public class HousingApplicationRepository : IHousingApplicationRepository
         existingApplication.FinalDecisionDate = application.FinalDecisionDate;
         existingApplication.OfficerId = application.OfficerId;
         existingApplication.PriorityScore = application.PriorityScore;
+        existingApplication.SlotCode = application.SlotCode;
+        existingApplication.ReceiptUrl = application.ReceiptUrl;
+
+        // Form fields (applicant edit)
+        existingApplication.FullName = application.FullName;
+        existingApplication.CitizenId = application.CitizenId;
+        existingApplication.Occupation = application.Occupation;
+        existingApplication.WorkPlace = application.WorkPlace;
+        existingApplication.CurrentResidence = application.CurrentResidence;
+        existingApplication.PermanentAddress = application.PermanentAddress;
+        existingApplication.HousingStatus = application.HousingStatus;
+        existingApplication.MaritalStatus = application.MaritalStatus;
+        existingApplication.HouseholdMembersCount = application.HouseholdMembersCount;
+        existingApplication.PriorityGroup = application.PriorityGroup;
+        existingApplication.MonthlyIncome = application.MonthlyIncome;
+        existingApplication.SpouseMonthlyIncome = application.SpouseMonthlyIncome;
+        existingApplication.AverageHousingAreaPerPerson = application.AverageHousingAreaPerPerson;
+        existingApplication.LotteryResult = application.LotteryResult;
+        existingApplication.LatestAssessmentId = application.LatestAssessmentId;
 
         await _context.SaveChangesAsync();
     }
@@ -112,15 +131,32 @@ public class HousingApplicationRepository : IHousingApplicationRepository
         Guid   projectId,
         Guid   excludeApplicationId)
     {
-        // Exclude REJECTED/CANCELED để giải phóng CCCD cho người dân nộp hồ sơ khác
+        // Chỉ tính hồ sơ còn hiệu lực của tài khoản Active.
+        // REJECTED / CANCELED / EXPIRED không chiếm CCCD.
+        // Applicant Status=Deleted (xóa mềm) không chiếm CCCD (trừ khi đã DEPOSIT_PAID — vẫn giữ để Đ38).
+        var blocked = new[]
+        {
+            ApplicationStatusConstants.Draft,
+            ApplicationStatusConstants.Submitted,
+            ApplicationStatusConstants.Reviewing,
+            ApplicationStatusConstants.NeedMoreDocuments,
+            ApplicationStatusConstants.PendingSxdReview,
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.DepositPaid
+        };
+
         return await _context.HousingApplications
             .AsNoTracking()
+            .Include(x => x.Applicant)
             .AnyAsync(x =>
-                x.CitizenId    == citizenId         &&
-                x.ProjectId    == projectId          &&
-                x.ApplicationId != excludeApplicationId &&
-                x.ApplicationStatus != ApplicationStatusConstants.Rejected &&
-                x.ApplicationStatus != ApplicationStatusConstants.Canceled);
+                x.CitizenId == citizenId
+                && x.ProjectId == projectId
+                && x.ApplicationId != excludeApplicationId
+                && blocked.Contains(x.ApplicationStatus)
+                && (
+                    x.Applicant.Status == "Active"
+                    || x.ApplicationStatus == ApplicationStatusConstants.DepositPaid
+                ));
     }
 
     // ─────────────────────────────────────────────────────────────

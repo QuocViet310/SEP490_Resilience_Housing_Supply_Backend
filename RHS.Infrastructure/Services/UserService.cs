@@ -1,6 +1,10 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using RHS.Application.DTOs.User;
 using RHS.Application.Interfaces;
+using RHS.Domain.Constants;
+using RHS.Domain.Entities;
+using RHS.Infrastructure.Data;
 using BCrypt.Net;
 
 namespace RHS.Infrastructure.Services;
@@ -10,15 +14,18 @@ public class UserService : IUserService
     private readonly IUserRepository _userRepository;
     private readonly IFileStorageService _fileStorageService;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly AppDbContext _db;
 
     public UserService(
-        IUserRepository userRepository, 
+        IUserRepository userRepository,
         IFileStorageService fileStorageService,
-        IRefreshTokenRepository refreshTokenRepository)
+        IRefreshTokenRepository refreshTokenRepository,
+        AppDbContext db)
     {
         _userRepository = userRepository;
         _fileStorageService = fileStorageService;
         _refreshTokenRepository = refreshTokenRepository;
+        _db = db;
     }
 
     public async Task<UserProfileDto?> GetProfileAsync(Guid userId)
@@ -56,18 +63,37 @@ public class UserService : IUserService
             return null;
         }
 
-        // Update user information
-        user.FullName = updateProfileDto.FullName;
-        user.PhoneNumber = updateProfileDto.PhoneNumber;
-        user.DateOfBirth = updateProfileDto.DateOfBirth;
-        user.Address = updateProfileDto.Address;
-
-        // CitizenId can only be set once (via eKyc), not overwritten afterwards
-        if (string.IsNullOrEmpty(user.CitizenId) && !string.IsNullOrEmpty(updateProfileDto.CitizenId))
+        // Đã xác minh eKYC (có CCCD): chỉ cho đổi số điện thoại.
+        // Họ tên / ngày sinh / địa chỉ / CCCD chỉ cập nhật qua luồng xác minh danh tính.
+        var hasEkyc = !string.IsNullOrWhiteSpace(user.CitizenId);
+        if (hasEkyc)
         {
-            user.CitizenId = updateProfileDto.CitizenId;
+            user.PhoneNumber = updateProfileDto.PhoneNumber;
+        }
+        else
+        {
+            // Lần đầu điền từ eKYC OCR
+            if (!string.IsNullOrWhiteSpace(updateProfileDto.FullName))
+                user.FullName = updateProfileDto.FullName.Trim();
+
+            user.PhoneNumber = updateProfileDto.PhoneNumber;
+            user.DateOfBirth = updateProfileDto.DateOfBirth;
+            user.Address = updateProfileDto.Address;
+
+            if (!string.IsNullOrWhiteSpace(updateProfileDto.CitizenId))
+            {
+                var newCitizenId = updateProfileDto.CitizenId.Trim();
+                var taken = await _userRepository.CitizenIdExistsAsync(newCitizenId, excludeUserId: userId);
+                if (taken)
+                {
+                    throw new InvalidOperationException(
+                        "Số CCCD này đã được xác thực bởi tài khoản đang hoạt động khác.");
+                }
+                user.CitizenId = newCitizenId;
+            }
         }
 
+        user.UpdatedAt = DateTime.UtcNow;
         await _userRepository.UpdateAsync(user);
 
         return new UserProfileDto
@@ -174,14 +200,60 @@ public class UserService : IUserService
         // Revoke all refresh tokens
         await _refreshTokenRepository.RevokeAllUserTokensAsync(userId);
 
-        // Soft delete: Set status to Inactive instead of hard delete
+        // Soft delete: giải phóng CCCD + email để eKYC/đăng ký lại trên tài khoản Active mới.
+        // Email unique index → đổi sang alias không trùng.
+        var originalEmail = user.Email;
         user.Status = "Deleted";
+        user.CitizenId = null;
+        user.GoogleId = null;
+        user.Email = $"deleted+{userId:N}@{SanitizeEmailDomain(originalEmail)}";
         user.UpdatedAt = DateTime.UtcNow;
-        await _userRepository.UpdateAsync(user);
 
-        // TODO: Log deletion reason for audit
-        // await _auditLogService.LogAccountDeletion(userId, reason);
+        // Hủy hồ sơ còn mở (không đụng DEPOSIT_PAID / APPROVED đã hỗ trợ — Đ38.1.đ vẫn dựa CitizenId trên hồ sơ)
+        var openStatuses = new[]
+        {
+            ApplicationStatusConstants.Draft,
+            ApplicationStatusConstants.Submitted,
+            ApplicationStatusConstants.Reviewing,
+            ApplicationStatusConstants.NeedMoreDocuments,
+            ApplicationStatusConstants.PendingSxdReview,
+            ApplicationStatusConstants.Approved
+        };
+
+        var openApps = await _db.HousingApplications
+            .Where(a => a.ApplicantId == userId && openStatuses.Contains(a.ApplicationStatus))
+            .ToListAsync();
+
+        var now = DateTime.UtcNow;
+        foreach (var app in openApps)
+        {
+            var oldStatus = app.ApplicationStatus;
+            app.ApplicationStatus = ApplicationStatusConstants.Canceled;
+            app.UpdatedAt = now;
+            _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+            {
+                HistoryId = Guid.NewGuid(),
+                ApplicationId = app.ApplicationId,
+                ChangedBy = userId,
+                Action = ReviewActionConstants.Cancel,
+                OldStatus = oldStatus,
+                NewStatus = ApplicationStatusConstants.Canceled,
+                Note = "Tự động hủy do người dùng xóa tài khoản.",
+                ChangedAt = now
+            });
+        }
+
+        await _userRepository.UpdateAsync(user);
+        await _db.SaveChangesAsync();
 
         return true;
+    }
+
+    private static string SanitizeEmailDomain(string email)
+    {
+        var at = email.LastIndexOf('@');
+        return at >= 0 && at < email.Length - 1
+            ? email[(at + 1)..]
+            : "deleted.local";
     }
 }

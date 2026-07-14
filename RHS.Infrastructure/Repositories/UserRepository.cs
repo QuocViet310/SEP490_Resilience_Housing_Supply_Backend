@@ -51,15 +51,19 @@ public class UserRepository : IUserRepository
 
     public async Task<bool> EmailExistsAsync(string email)
     {
+        // Chỉ tính tài khoản đang hoạt động — soft-delete (Deleted) không chiếm email.
         return await _context.Users
-            .AnyAsync(u => u.Email.ToLower() == email.ToLower());
+            .AnyAsync(u => u.Email.ToLower() == email.ToLower()
+                           && u.Status == "Active");
     }
 
     public async Task<bool> CitizenIdExistsAsync(string citizenId, Guid? excludeUserId = null)
     {
+        // Chỉ chặn nếu CCCD đang gắn tài khoản Active.
+        // User Status=Deleted (xóa mềm) không được tính — cho phép eKYC/đăng ký lại.
         var query = _context.Users
             .AsNoTracking()
-            .Where(u => u.CitizenId == citizenId);
+            .Where(u => u.CitizenId == citizenId && u.Status == "Active");
 
         // Loại trừ chính user đang thực hiện (cho phép xác thực lại CCCD của mình)
         if (excludeUserId.HasValue)

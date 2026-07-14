@@ -43,6 +43,7 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
 
 // Dependency Injection - Repositories
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -71,6 +72,10 @@ builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IIssueReportService, IssueReportService>();
 builder.Services.AddScoped<IWishlistService, WishlistService>();
+builder.Services.AddScoped<IPolicyService, PolicyService>();
+builder.Services.AddScoped<IEligibilityRuleEngine, EligibilityRuleEngine>();
+builder.Services.AddScoped<ILotteryService, LotteryService>();
+builder.Services.AddScoped<IBeneficiaryPublishService, BeneficiaryPublishService>();
 
 // Dependency Injection - VNPay Payment
 builder.Services.AddScoped<IVnPayService, VnPayService>();
@@ -211,6 +216,36 @@ using (var scope = app.Services.CreateScope())
             dbContext.HousingProjectStatuses.AddRange(statuses);
             dbContext.SaveChanges();
             Console.WriteLine("✅ Seeded project statuses!");
+        }
+
+        // Seed PolicyConfig defaults (NOXH decree parameters)
+        try
+        {
+            var policyService = scope.ServiceProvider.GetRequiredService<IPolicyService>();
+            policyService.EnsureDefaultsSeededAsync(RHS.Domain.Constants.RoleConstants.SystemAdministratorId)
+                .GetAwaiter().GetResult();
+            Console.WriteLine("✅ PolicyConfig defaults ensured!");
+        }
+        catch (Exception seedEx)
+        {
+            Console.WriteLine($"⚠️ PolicyConfig seed skipped: {seedEx.Message}");
+        }
+
+        // Seed demo staff + housing projects (idempotent)
+        try
+        {
+            var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+            var demoLogger = loggerFactory.CreateLogger("DemoDataSeeder");
+            RHS.Infrastructure.Seed.DemoDataSeeder
+                .EnsureSeededAsync(dbContext, demoLogger)
+                .GetAwaiter().GetResult();
+            Console.WriteLine("✅ Demo data (CĐT/SXD + dự án) ensured!");
+            Console.WriteLine($"   CĐT: {RHS.Infrastructure.Seed.DemoDataSeeder.DemoDeveloperEmail} / {RHS.Infrastructure.Seed.DemoDataSeeder.DemoPassword}");
+            Console.WriteLine($"   SXD: {RHS.Infrastructure.Seed.DemoDataSeeder.DemoSxdEmail} / {RHS.Infrastructure.Seed.DemoDataSeeder.DemoPassword}");
+        }
+        catch (Exception demoEx)
+        {
+            Console.WriteLine($"⚠️ Demo data seed skipped: {demoEx.Message}");
         }
     }
     catch (Exception ex)

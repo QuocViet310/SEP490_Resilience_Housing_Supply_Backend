@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using RHS.Application.DTOs.DocumentVerification;
 using RHS.Application.Interfaces;
+using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Configurations;
 using RHS.Infrastructure.Data;
@@ -53,9 +54,10 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
     {
         _logger.LogInformation("Bắt đầu AI verification cho tài liệu {DocumentId}", documentId);
 
-        // 1. Load ApplicationDocument kèm theo User profile
+        // 1. Load ApplicationDocument kèm User + hồ sơ (để biết DocumentType / HousingStatus)
         var document = await _dbContext.ApplicationDocuments
             .Include(d => d.UploadedByUser)
+            .Include(d => d.HousingApplication)
             .FirstOrDefaultAsync(d => d.DocumentId == documentId, cancellationToken);
 
         if (document == null)
@@ -92,27 +94,20 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
 
             string base64Pdf = Convert.ToBase64String(pdfBytes);
 
-            // 3. Chuẩn bị prompt đối chiếu thông tin
+            // 3. Chuẩn bị prompt đối chiếu theo loại giấy tờ + thực trạng nhà ở đã khai
             string userDobFormatted = user.DateOfBirth?.ToString("yyyy-MM-dd") ?? "Không có thông tin";
-            string prompt = $@"
-Đọc tài liệu PDF đính kèm (là Giấy xác nhận điều kiện nhà ở hoặc Giấy chứng nhận hộ nghèo). 
-Hãy trích xuất các thông tin sau từ tài liệu và đối chiếu chúng với thông tin Profile của User:
-
-[Thông tin Profile của User]
-- Họ và tên (FullName): {user.FullName}
-- Số CCCD/CMND (CitizenId): {user.CitizenId ?? "Không có thông tin"}
-- Ngày sinh (DateOfBirth): {userDobFormatted}
-- Địa chỉ (Address): {user.Address ?? "Không có thông tin"}
-
-[Quy tắc so khớp]:
-1. Số CCCD/CMND (citizenIdMatch): Yêu cầu khớp chính xác tuyệt đối (độ dài 9 hoặc 12 số). Nếu trên tài liệu không có CCCD hoặc bị sai lệch số thì coi là không khớp.
-2. Ngày sinh (dateOfBirthMatch): Yêu cầu khớp chính xác ngày, tháng, năm. Định dạng trên tài liệu có thể là dd/MM/yyyy hoặc dd-MM-yyyy, hãy chuẩn hóa về yyyy-MM-dd để so sánh.
-3. Địa chỉ (addressMatch): Chấp nhận các lỗi viết tắt hoặc định dạng địa chỉ thông thường (ví dụ: 'Q.' = 'Quận', 'TP. HCM' = 'Thành phố Hồ Chí Minh', 'P.' = 'Phường'). Nếu địa chỉ trên giấy tờ khớp phần lớn hoặc chỉ khác cách viết tắt thì vẫn coi là khớp.
-4. Họ tên (fullNameMatch): Chấp nhận viết tắt nhẹ hoặc không dấu.
-
-Kết quả tổng quan 'isMatch' sẽ là true nếu cả 3 thông tin quan trọng (CCCD, Ngày sinh, Địa chỉ) đều trùng khớp với Profile của User. 
-Nếu có bất kỳ thông tin nào trong 3 thông tin này bị lệch (mismatch) hoặc thiếu (missing - không trích xuất được từ giấy tờ), đặt 'isMatch' là false và ghi rõ chi tiết trường nào bị thiếu/sai lệch và nội dung sai lệch vào 'mismatchDetails' bằng tiếng Việt để báo lại cho người dùng sửa.
-";
+            var housingStatus = document.HousingApplication?.HousingStatus ?? "";
+            var priorityGroup = document.HousingApplication?.PriorityGroup ?? "";
+            var averageArea = document.HousingApplication?.AverageHousingAreaPerPerson;
+            string prompt = BuildVerificationPrompt(
+                document.DocumentType,
+                housingStatus,
+                priorityGroup,
+                averageArea,
+                user.FullName ?? "",
+                user.CitizenId,
+                userDobFormatted,
+                user.Address);
 
             // 4. Xây dựng payload request gửi sang Gemini API
             var payload = new
@@ -241,6 +236,87 @@ Nếu có bất kỳ thông tin nào trong 3 thông tin này bị lệch (mismat
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return resultDto;
+    }
+
+    private static string BuildVerificationPrompt(
+        string documentType,
+        string housingStatus,
+        string priorityGroup,
+        decimal? averageAreaPerPerson,
+        string fullName,
+        string? citizenId,
+        string dateOfBirth,
+        string? address)
+    {
+        var profileBlock = $@"
+[Thông tin Profile của User — đã eKYC]
+- Họ và tên (FullName): {fullName}
+- Số CCCD/CMND (CitizenId): {citizenId ?? "Không có thông tin"}
+- Ngày sinh (DateOfBirth): {dateOfBirth}
+- Địa chỉ (Address): {address ?? "Không có thông tin"}
+";
+
+        var identityRules = @"
+[Quy tắc so khớp danh tính]
+1. CCCD/CMND: khớp chính xác tuyệt đối (9 hoặc 12 số). Thiếu hoặc sai → không khớp.
+2. Ngày sinh: khớp ngày/tháng/năm (chuẩn hóa về yyyy-MM-dd).
+3. Địa chỉ: chấp nhận viết tắt thông thường (Q./Quận, P./Phường, TP./Thành phố...).
+4. Họ tên: chấp nhận không dấu / viết tắt nhẹ.
+
+isMatch = true chỉ khi CCCD + Ngày sinh + Địa chỉ đều khớp (hoặc giấy không ghi DOB thì CCCD + Địa chỉ + Họ tên phải khớp).
+Nếu lệch/thiếu: isMatch = false và ghi rõ bằng tiếng Việt vào mismatchDetails.
+";
+
+        if (string.Equals(documentType, DocumentTypeConstants.PovertyHouseholdCertificate, StringComparison.OrdinalIgnoreCase))
+        {
+            var expectedPoverty = priorityGroup switch
+            {
+                PriorityGroupConstants.UrbanPoor => "hộ nghèo (đô thị)",
+                PriorityGroupConstants.UrbanNearPoor => "hộ cận nghèo (đô thị)",
+                _ => "hộ nghèo hoặc hộ cận nghèo"
+            };
+
+            return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY CHỨNG NHẬN HỘ NGHÈO / HỘ CẬN NGHÈO do địa phương cấp.
+Người nộp đã khai đối tượng: {expectedPoverty}.
+
+Nhiệm vụ:
+1) Xác nhận giấy có nội dung chứng nhận hộ nghèo hoặc hộ cận nghèo (không phải giấy tờ khác).
+2) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ (nếu có trên giấy).
+3) Đối chiếu danh tính với Profile User bên dưới.
+4) Nếu giấy không phải chứng nhận hộ nghèo/cận nghèo, hoặc nội dung mâu thuẫn đối tượng đã khai → isMatch = false.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // HOUSING_CONDITION_PROOF
+        var housingExpectation = housingStatus switch
+        {
+            HousingStatusConstants.NoHouse =>
+                "Người nộp khai CHƯA CÓ nhà ở thuộc sở hữu (NO_HOUSE). Giấy phải xác nhận chưa có nhà/không có nhà thuộc sở hữu.",
+            HousingStatusConstants.SmallHouse =>
+                $"Người nộp khai CÓ nhà nhưng diện tích bình quân < 15 m²/người (SMALL_HOUSE). " +
+                $"Diện tích đã khai trên hồ sơ: {(averageAreaPerPerson.HasValue ? $"{averageAreaPerPerson.Value:0.##} m²/người" : "chưa ghi số")}. " +
+                "Giấy phải xác nhận còn nhà với diện tích bình quân đầu người dưới 15 m².",
+            _ => "Giấy xác nhận nhà ở theo Đ29: chưa có nhà, hoặc có nhà dưới 15 m²/người."
+        };
+
+        return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY XÁC NHẬN NHÀ Ở / xác nhận thực trạng nhà ở.
+{housingExpectation}
+
+Nhiệm vụ:
+1) Xác nhận đúng loại giấy xác nhận nhà ở (không nhầm với giấy hộ nghèo).
+2) Kiểm tra nội dung giấy có khớp với thực trạng đã khai ở trên (chưa có nhà HOẶC có nhà < 15 m²/người).
+3) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ (nếu có).
+4) Đối chiếu danh tính với Profile User.
+5) Nếu loại giấy sai, hoặc nội dung mâu thuẫn thực trạng đã khai → isMatch = false.
+
+{profileBlock}
+{identityRules}
+";
     }
 
     #region Helper Classes for API Parsing

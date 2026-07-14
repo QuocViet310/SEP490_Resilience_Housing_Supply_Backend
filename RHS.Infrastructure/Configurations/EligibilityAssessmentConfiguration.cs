@@ -15,14 +15,23 @@ public class EligibilityAssessmentConfiguration : IEntityTypeConfiguration<Eligi
         builder.Property(x => x.EstimatedScore)
             .HasPrecision(18, 2);
 
+        builder.Property(x => x.ReasonsJson)
+            .HasMaxLength(4000);
+
         // Relationships
         builder.HasOne(x => x.User)
             .WithMany(u => u.EligibilityAssessments)
             .HasForeignKey(x => x.UserId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.Application)
+            .WithMany()
+            .HasForeignKey(x => x.ApplicationId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         // Indexes
         builder.HasIndex(x => x.UserId);
+        builder.HasIndex(x => x.ApplicationId);
         builder.HasIndex(x => x.AssessmentDate);
     }
 }

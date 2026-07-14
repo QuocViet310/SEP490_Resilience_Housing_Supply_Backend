@@ -19,6 +19,15 @@ public interface IHousingApplicationService
         CreateApplicationRequestDto request);
 
     /// <summary>
+    /// Cập nhật thông tin form của hồ sơ (chỉ DRAFT / NEED_MORE_DOCUMENTS, chỉ owner).
+    /// Không cho phép đổi ProjectId.
+    /// </summary>
+    Task<ApplicationDetailResponseDto> UpdateApplicationAsync(
+        Guid applicantId,
+        Guid applicationId,
+        UpdateApplicationRequestDto request);
+
+    /// <summary>
     /// Lấy chi tiết một hồ sơ theo ID.
     /// Bao gồm: thông tin form, danh sách tài liệu, lịch sử xét duyệt.
     /// </summary>

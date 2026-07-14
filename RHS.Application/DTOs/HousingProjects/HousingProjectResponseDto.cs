@@ -29,6 +29,7 @@ public class HousingProjectResponseDto
     public DateTime? ApplicationOpenDate { get; set; }
     public DateTime? ApplicationCloseDate { get; set; }
     public string? RejectReason { get; set; }
+    public DateTime? PublicAnnounceAt { get; set; }
     
     public List<ProjectImageResponseDto> Images { get; set; } = new List<ProjectImageResponseDto>();
 }

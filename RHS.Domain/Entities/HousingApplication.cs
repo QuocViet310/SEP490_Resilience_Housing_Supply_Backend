@@ -69,6 +69,20 @@ public class HousingApplication
     public string? PriorityGroup { get; set; }
     public string? ReceiptUrl { get; set; }
 
+    /// <summary>Thu nhập tháng thực nhận của người đứng đơn (Đ30).</summary>
+    public decimal? MonthlyIncome { get; set; }
+
+    /// <summary>Thu nhập tháng của vợ/chồng (nếu đã kết hôn).</summary>
+    public decimal? SpouseMonthlyIncome { get; set; }
+
+    /// <summary>Diện tích nhà ở bình quân đầu người (m²) — dùng khi SMALL_HOUSE (Đ29.2).</summary>
+    public decimal? AverageHousingAreaPerPerson { get; set; }
+
+    /// <summary>Kết quả bốc thăm: PENDING / WON / LOST / PRIORITY_WON.</summary>
+    public string? LotteryResult { get; set; }
+
+    public Guid? LatestAssessmentId { get; set; }
+
     // ─────────────────────────────────────────────────────────────
     // Navigation properties
     // ─────────────────────────────────────────────────────────────

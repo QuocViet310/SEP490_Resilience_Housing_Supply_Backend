@@ -8,6 +8,15 @@
 
 ---
 
+## 📖 Tài liệu nghiệp vụ
+
+Chi tiết luồng hồ sơ, Hướng A (`AvailableUnits`), AI trợ lý CĐT, Đ29–30 / Đ38 / Đ44:
+
+→ **[`BUSINESS_FLOW.md`](./BUSINESS_FLOW.md)**  
+→ Tổng quan entity: [`Entity.md`](./Entity.md)
+
+---
+
 ## 📖 Giới Thiệu
 
 **Resilience Housing Supply (RHS)** là nền tảng công nghệ chuyên biệt phát triển hạ tầng số cho công bằng xã hội. Chúng tôi tạo ra "Nền tảng Điều phối & Thẩm định Nhà ở Xã hội Thông minh" kết nối cơ quan quản lý nhà ở, nhà phát triển tư nhân và công dân có thu nhập thấp.
