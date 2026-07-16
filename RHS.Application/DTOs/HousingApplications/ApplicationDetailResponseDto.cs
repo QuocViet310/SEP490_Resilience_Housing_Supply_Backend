@@ -1,3 +1,5 @@
+using RHS.Application.DTOs.Eligibility;
+
 namespace RHS.Application.DTOs.HousingApplications;
 
 /// <summary>
@@ -32,6 +34,14 @@ public class ApplicationDetailResponseDto
     public int HouseholdMembersCount { get; set; }
     public string? PriorityGroup { get; set; }
     public string? ReceiptUrl { get; set; }
+    public string? SlotCode { get; set; }
+    public string? LotteryResult { get; set; }
+    public decimal? MonthlyIncome { get; set; }
+    public decimal? SpouseMonthlyIncome { get; set; }
+    public decimal? AverageHousingAreaPerPerson { get; set; }
+
+    /// <summary>Kết quả thẩm định điều kiện Đ29–30 gần nhất.</summary>
+    public EligibilityResultDto? Eligibility { get; set; }
 
     // ── Cán bộ thẩm định ──────────────────────────────────────────
     public Guid? OfficerId { get; set; }

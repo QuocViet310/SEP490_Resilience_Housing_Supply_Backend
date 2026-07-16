@@ -79,6 +79,7 @@ public class HousingProjectService : IHousingProjectService
             IsConfirmed = request.IsConfirmed,
             ApplicationOpenDate = request.ApplicationOpenDate,
             ApplicationCloseDate = request.ApplicationCloseDate,
+            PublicAnnounceAt = request.IsConfirmed ? DateTime.UtcNow : null,
             DeveloperId = developerId
         };
 
@@ -378,6 +379,7 @@ public class HousingProjectService : IHousingProjectService
             ApplicationOpenDate = project.ApplicationOpenDate,
             ApplicationCloseDate = project.ApplicationCloseDate,
             RejectReason = project.RejectReason,
+            PublicAnnounceAt = project.PublicAnnounceAt,
             Images = project.ProjectImages
                 .OrderBy(x => x.DisplayOrder)
                 .Select(x => new ProjectImageResponseDto
@@ -415,6 +417,8 @@ public class HousingProjectService : IHousingProjectService
             project.HousingProjectStatus = upcomingStatus;
             project.RejectReason = null;
             project.ApprovalDate = DateTime.UtcNow;
+            project.PublicAnnounceAt ??= DateTime.UtcNow;
+            project.IsConfirmed = true;
         }
         else if (action.Equals("REJECT", StringComparison.OrdinalIgnoreCase))
         {

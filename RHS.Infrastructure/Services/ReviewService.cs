@@ -21,7 +21,8 @@ namespace RHS.Infrastructure.Services;
 ///   WM (Checker): PROPOSED → (approve/reject/request docs) → APPROVED / REJECTED / NEED_MORE_DOCUMENTS
 ///                UNDER_REVIEW → (approve/reject/request docs) → APPROVED / REJECTED / NEED_MORE_DOCUMENTS
 ///
-/// Chỉ WM mới được chốt duyệt/từ chối cuối cùng và trigger thay đổi AvailableUnits.
+/// Chỉ SXD (WM) mới được chốt duyệt/từ chối cuối cùng.
+/// AvailableUnits không trừ khi APPROVED — chỉ phân bổ/trừ khi bốc thăm (Đ38.2).
 /// MỌI hành động đều ghi vào bảng ApplicationStatusHistory.
 /// </summary>
 public class ReviewService : IReviewService
@@ -33,6 +34,8 @@ public class ReviewService : IReviewService
     private readonly IUserRepository _userRepo;
     private readonly INotificationService _notificationService;
     private readonly IPdfReceiptService _pdfReceiptService;
+    private readonly IEligibilityRuleEngine _eligibilityEngine;
+    private readonly IPolicyService _policyService;
     private readonly AppDbContext _context;
     private readonly ILogger<ReviewService> _logger;
 
@@ -44,6 +47,8 @@ public class ReviewService : IReviewService
         IUserRepository userRepo,
         INotificationService notificationService,
         IPdfReceiptService pdfReceiptService,
+        IEligibilityRuleEngine eligibilityEngine,
+        IPolicyService policyService,
         AppDbContext context,
         ILogger<ReviewService> logger)
     {
@@ -54,6 +59,8 @@ public class ReviewService : IReviewService
         _userRepo           = userRepo;
         _notificationService = notificationService;
         _pdfReceiptService   = pdfReceiptService;
+        _eligibilityEngine   = eligibilityEngine;
+        _policyService       = policyService;
         _context            = context;
         _logger             = logger;
     }
@@ -83,13 +90,28 @@ public class ReviewService : IReviewService
             allowedTargets: new[] { ApplicationStatusConstants.Submitted },
             validSources: new[] { ApplicationStatusConstants.Draft, ApplicationStatusConstants.NeedMoreDocuments });
 
-        // Nghiệp vụ: phải có ít nhất 1 tài liệu trước khi nộp
+        // Nghiệp vụ: bắt buộc đủ 2 loại giấy tờ
+        // 1) Giấy chứng nhận hộ nghèo/cận nghèo
+        // 2) Giấy xác nhận nhà ở (NO_HOUSE hoặc SMALL_HOUSE < 15m²/người)
         var documents = await _documentRepo.GetByApplicationIdAsync(applicationId);
-        if (!documents.Any())
+        var uploadedTypes = documents.Select(d => d.DocumentType).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missingTypes = DocumentTypeConstants.RequiredForSubmit
+            .Where(t => !uploadedTypes.Contains(t))
+            .ToList();
+
+        if (missingTypes.Count > 0)
         {
+            var missingLabels = missingTypes.Select(t => t switch
+            {
+                DocumentTypeConstants.HousingConditionProof
+                    => "Giấy xác nhận nhà ở (chưa có nhà hoặc diện tích < 15 m²/người)",
+                DocumentTypeConstants.PovertyHouseholdCertificate
+                    => "Giấy chứng nhận hộ nghèo/cận nghèo",
+                _ => t
+            });
+
             throw new ApplicationNotReadyToSubmitException(applicationId,
-                "Hồ sơ chưa có tài liệu đính kèm. " +
-                "Vui lòng upload ít nhất 1 loại giấy tờ chứng minh trước khi nộp.");
+                "Hồ sơ thiếu giấy tờ bắt buộc: " + string.Join("; ", missingLabels) + ".");
         }
 
         // Nghiệp vụ: CCCD phải là duy nhất trong cùng một dự án
@@ -108,6 +130,38 @@ public class ReviewService : IReviewService
             throw new DuplicateCitizenIdInProjectException(
                 application.CitizenId,
                 application.ProjectId);
+        }
+
+        // Đ38.1.e — mỗi người chỉ nộp tại một dự án (active)
+        var oneAppOnly = await _policyService.GetValueAsync(PolicyKeys.OneApplicationPerApplicant, true);
+        if (oneAppOnly)
+        {
+            var closedStatuses = new[]
+            {
+                ApplicationStatusConstants.Rejected,
+                ApplicationStatusConstants.Canceled,
+                ApplicationStatusConstants.Expired
+            };
+
+            var otherActive = await _context.HousingApplications
+                .AnyAsync(a => a.ApplicantId == applicantId
+                               && a.ApplicationId != applicationId
+                               && !closedStatuses.Contains(a.ApplicationStatus));
+
+            if (otherActive)
+            {
+                throw new InvalidOperationException(
+                    "Theo quy định Đ38.1.e, mỗi hộ gia đình/cá nhân chỉ được nộp hồ sơ tại một dự án tại một thời điểm.");
+            }
+        }
+
+        // Đ29–30: chạy rule engine trước khi submit
+        var eligibility = await _eligibilityEngine.AssessAsync(application);
+        if (!eligibility.Eligible)
+        {
+            throw new InvalidOperationException(
+                "Hồ sơ chưa đủ điều kiện hưởng chính sách NOXH (Đ29–30): "
+                + string.Join(" ", eligibility.Reasons));
         }
 
         var oldStatus = application.ApplicationStatus;
@@ -308,21 +362,26 @@ public class ReviewService : IReviewService
         using var dbTransaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            // Chỉ SXD mới trigger thay đổi AvailableUnits khi phê duyệt
+            // APPROVED: chỉ đối soát chéo Đ38.1.đ — không trừ AvailableUnits (giữ suất đến khi bốc thăm).
             if (targetStatus == ApplicationStatusConstants.Approved)
             {
-                var project = await _context.HousingProjects.FirstOrDefaultAsync(p => p.Id == application.ProjectId);
-                if (project == null)
+                var blockedStatuses = new[]
                 {
-                    throw new InvalidOperationException("Không tìm thấy dự án tương ứng với hồ sơ.");
-                }
-                if (project.AvailableUnits <= 0)
+                    ApplicationStatusConstants.Approved,
+                    ApplicationStatusConstants.DepositPaid
+                };
+
+                var alreadySupported = await _context.HousingApplications
+                    .Include(a => a.HousingProject)
+                    .AnyAsync(a => a.ApplicationId != application.ApplicationId
+                                   && a.CitizenId == application.CitizenId
+                                   && blockedStatuses.Contains(a.ApplicationStatus));
+
+                if (alreadySupported)
                 {
-                    throw new InvalidOperationException("Dự án đã hết căn hộ trống để giữ chỗ.");
+                    throw new InvalidOperationException(
+                        "Đối tượng đã được mua/đặt cọc nhà ở xã hội hoặc đã được hỗ trợ nhà ở tại dự án khác (Đ38.1.đ). Không thể phê duyệt.");
                 }
-                project.AvailableUnits -= 1;
-                project.UpdatedAt = now;
-                _context.HousingProjects.Update(project);
             }
 
             application.ApplicationStatus = targetStatus;
@@ -555,7 +614,7 @@ public class ReviewService : IReviewService
         {
             ApplicationStatusConstants.Approved => (
                 "Hồ sơ đã được phê duyệt",
-                "Hồ sơ của bạn đã được Sở Xây Dựng phê duyệt. Vui lòng thanh toán đặt cọc trong vòng 24 giờ để giữ suất.",
+                "Hồ sơ của bạn đã được Sở Xây Dựng phê duyệt. Vui lòng thanh toán đặt cọc để đủ điều kiện tham gia bốc thăm.",
                 NotificationTypeConstants.ApplicationApproved),
 
             ApplicationStatusConstants.Rejected => (
@@ -612,22 +671,8 @@ public class ReviewService : IReviewService
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            // Nếu hủy ở bước APPROVED → hoàn lại 1 suất cho dự án
-            if (oldStatus == ApplicationStatusConstants.Approved)
-            {
-                var project = await _context.HousingProjects
-                    .FirstOrDefaultAsync(p => p.Id == application.ProjectId);
-                if (project != null)
-                {
-                    project.AvailableUnits += 1;
-                    project.UpdatedAt = now;
-                    _context.HousingProjects.Update(project);
-
-                    _logger.LogInformation(
-                        "Restored 1 unit for project {ProjectId}. AvailableUnits = {Units}.",
-                        project.Id, project.AvailableUnits);
-                }
-            }
+            // Hướng A: APPROVED không giữ suất vật lý → hủy APPROVED không hoàn AvailableUnits.
+            // Suất chỉ trừ khi WON/PRIORITY_WON; hồ sơ DEPOSIT_PAID thuộc ClosedStatuses nên không hủy qua API này.
 
             application.ApplicationStatus = ApplicationStatusConstants.Canceled;
             application.UpdatedAt = now;

@@ -102,6 +102,9 @@ public class HousingProjectConfiguration : IEntityTypeConfiguration<HousingProje
             .IsRequired(false)
             .HasMaxLength(1000);
 
+        builder.Property(x => x.PublicAnnounceAt)
+            .IsRequired(false);
+
         builder.HasOne(x => x.Developer)
             .WithMany()
             .HasForeignKey(x => x.DeveloperId)

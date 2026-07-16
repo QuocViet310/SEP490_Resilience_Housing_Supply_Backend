@@ -77,7 +77,7 @@ public class EKycController : ControllerBase
                 return Conflict(new
                 {
                     success = false,
-                    message = "Số CCCD này đã được xác thực bởi tài khoản khác trong hệ thống. Không thể tiếp tục xác minh danh tính.",
+                    message = "Số CCCD này đã được xác thực bởi tài khoản đang hoạt động khác. Không thể tiếp tục xác minh danh tính.",
                     citizenId
                 });
 

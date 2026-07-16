@@ -49,6 +49,9 @@ public class HousingProject
     public DateTime? ApplicationOpenDate { get; set; }
     public DateTime? ApplicationCloseDate { get; set; }
     public string? RejectReason { get; set; }
+
+    /// <summary>Thời điểm công bố công khai thông tin dự án (Đ38.1.b).</summary>
+    public DateTime? PublicAnnounceAt { get; set; }
     
     public Guid? DeveloperId { get; set; }
     public User? Developer { get; set; }
@@ -59,4 +62,5 @@ public class HousingProject
     public ICollection<ProjectImage> ProjectImages { get; set; } = new List<ProjectImage>();
     public ICollection<HousingQuota> HousingQuotas { get; set; } = new List<HousingQuota>();
     public ICollection<Wishlist> Wishlists { get; set; } = new List<Wishlist>();
+    public ICollection<LotteryDraw> LotteryDraws { get; set; } = new List<LotteryDraw>();
 }

@@ -6,10 +6,6 @@ using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 using RHS.Application.Interfaces;
 using RHS.Infrastructure.Data;
-using System;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace RHS.API.BackgroundServices;
 
@@ -17,7 +13,7 @@ public class PaymentTimeoutWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<PaymentTimeoutWorker> _logger;
-    private readonly TimeSpan _period = TimeSpan.FromMinutes(10); // Check every 10 minutes
+    private readonly TimeSpan _period = TimeSpan.FromMinutes(10);
 
     public PaymentTimeoutWorker(
         IServiceScopeFactory scopeFactory,
@@ -50,27 +46,26 @@ public class PaymentTimeoutWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+        var policyService = scope.ServiceProvider.GetRequiredService<IPolicyService>();
 
-        var cutoffTime = DateTime.UtcNow.AddHours(-24); // 24-hour payment deadline
+        var depositHours = await policyService.GetValueAsync(PolicyKeys.DepositPaymentHours, 24, stoppingToken);
+        var cutoffTime = DateTime.UtcNow.AddHours(-depositHours);
 
-        // Get all APPROVED applications that were approved before cutoffTime
-        // Skip DEPOSIT_PAID (already paid successfully)
         var expiredApplications = await context.HousingApplications
-            .Where(x => x.ApplicationStatus == ApplicationStatusConstants.Approved 
-                     && x.FinalDecisionDate.HasValue 
+            .Where(x => x.ApplicationStatus == ApplicationStatusConstants.Approved
+                     && x.FinalDecisionDate.HasValue
                      && x.FinalDecisionDate.Value < cutoffTime)
             .ToListAsync(stoppingToken);
 
         if (!expiredApplications.Any())
-        {
             return;
-        }
 
-        _logger.LogInformation("Found {Count} potentially expired approved applications.", expiredApplications.Count);
+        _logger.LogInformation(
+            "Found {Count} potentially expired approved applications (deadline={Hours}h).",
+            expiredApplications.Count, depositHours);
 
         foreach (var app in expiredApplications)
         {
-            // Check if there is any successful payment linked directly to this application
             var isPaid = await context.Payments.AnyAsync(p =>
                 p.ApplicationId == app.ApplicationId &&
                 p.Status == "Success",
@@ -78,52 +73,40 @@ public class PaymentTimeoutWorker : BackgroundService
 
             if (!isPaid)
             {
-                _logger.LogInformation("Application {AppId} unpaid after 24h. Expiring and releasing unit.", app.ApplicationId);
+                _logger.LogInformation(
+                    "Application {AppId} unpaid after {Hours}h. Expiring (no unit hold to release — Hướng A).",
+                    app.ApplicationId, depositHours);
 
                 using var transaction = await context.Database.BeginTransactionAsync(stoppingToken);
                 try
                 {
-                    // Reload project tracking to avoid tracking issues
-                    var project = await context.HousingProjects.FirstOrDefaultAsync(p => p.Id == app.ProjectId, stoppingToken);
-                    if (project != null)
-                    {
-                        project.AvailableUnits += 1;
-                        project.UpdatedAt = DateTime.UtcNow;
-                        context.HousingProjects.Update(project);
-                    }
-
-                    // Update application status to EXPIRED
                     var oldStatus = app.ApplicationStatus;
                     app.ApplicationStatus = ApplicationStatusConstants.Expired;
                     app.UpdatedAt = DateTime.UtcNow;
                     context.HousingApplications.Update(app);
 
-                    // Append status history
                     var history = new ApplicationStatusHistory
                     {
                         HistoryId = Guid.NewGuid(),
                         ApplicationId = app.ApplicationId,
-                        ChangedBy = app.ApplicantId, // Fallback to applicant ID (or system user if one existed)
+                        ChangedBy = app.ApplicantId,
                         Action = ReviewActionConstants.PaymentTimeout,
                         OldStatus = oldStatus,
                         NewStatus = ApplicationStatusConstants.Expired,
-                        Note = "Tự động hủy do quá hạn thanh toán đặt cọc (24 giờ).",
+                        Note = $"Tự động hủy do quá hạn thanh toán đặt cọc ({depositHours} giờ — PolicyConfig DEPOSIT_PAYMENT_HOURS).",
                         ChangedAt = DateTime.UtcNow
                     };
                     context.ApplicationStatusHistories.Add(history);
 
                     await context.SaveChangesAsync(stoppingToken);
                     await transaction.CommitAsync(stoppingToken);
-                    
-                    _logger.LogInformation("Successfully expired application {AppId} and released 1 unit for project {ProjectId}.", app.ApplicationId, app.ProjectId);
 
-                    // Gửi thông báo cho Applicant
                     try
                     {
                         await notificationService.SendAsync(
                             app.ApplicantId,
                             "Hồ sơ đã hết hạn thanh toán",
-                            "Hồ sơ của bạn đã bị hủy do không thanh toán đặt cọc trong vòng 24 giờ.",
+                            $"Hồ sơ của bạn đã bị hủy do không thanh toán đặt cọc trong vòng {depositHours} giờ.",
                             NotificationTypeConstants.ApplicationExpired);
                     }
                     catch (Exception notifEx)

@@ -2,8 +2,8 @@ namespace RHS.Domain.Entities;
 
 /// <summary>
 /// Tài liệu đính kèm trong hồ sơ đăng ký nhà ở xã hội.
-/// Chỉ chấp nhận file PDF. Applicant chỉ được upload 1 trong 2 loại:
-/// HOUSING_CONDITION_PROOF hoặc POVERTY_HOUSEHOLD_CERTIFICATE.
+/// Chỉ chấp nhận file PDF. Applicant phải nộp đủ 2 loại:
+/// HOUSING_CONDITION_PROOF và POVERTY_HOUSEHOLD_CERTIFICATE.
 /// </summary>
 public class ApplicationDocument
 {

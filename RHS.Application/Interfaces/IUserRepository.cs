@@ -12,14 +12,13 @@ public interface IUserRepository
     Task<bool> EmailExistsAsync(string email);
 
     /// <summary>
-    /// Kiểm tra xem một số CCCD đã được đăng ký bởi user nào đó trong hệ thống chưa.
+    /// Kiểm tra CCCD đã gắn với tài khoản <c>Active</c> khác chưa.
+    /// Tài khoản soft-delete (Status=Deleted) không được tính.
     /// </summary>
     /// <param name="citizenId">Số CCCD cần kiểm tra.</param>
     /// <param name="excludeUserId">
-    /// Nếu cung cấp, sẽ bỏ qua user này khi tìm kiếm.
-    /// Dùng để cho phép user xác thực lại CCCD của chính mình.
+    /// Nếu cung cấp, bỏ qua user này (cho phép xác thực lại CCCD của chính mình).
     /// </param>
-    /// <returns><c>true</c> nếu CCCD đã thuộc user khác; <c>false</c> nếu chưa có ai dùng.</returns>
     Task<bool> CitizenIdExistsAsync(string citizenId, Guid? excludeUserId = null);
 
     // New methods for staff management

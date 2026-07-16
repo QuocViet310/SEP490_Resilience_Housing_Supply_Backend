@@ -163,13 +163,13 @@ public class PdfContractService : IPdfContractService
                     col.Item().Text("ĐIỀU 1: ĐỐI TƯỢNG HỢP ĐỒNG").Bold();
                     col.Item().PaddingLeft(15).Text(t =>
                     {
-                        t.Span("Bên A xác nhận Bên B đủ điều kiện sở hữu một (01) suất mua/thuê căn hộ thuộc Dự án Nhà ở xã hội ");
+                        t.Span("Bên A xác nhận Bên B đủ điều kiện tham gia phân suất mua căn hộ thuộc Dự án Nhà ở xã hội ");
                         t.Span(project.ProjectName).Bold();
-                        t.Span(".");
+                        t.Span(" theo hình thức bốc thăm (không đồng nghĩa với việc đã được phân căn).");
                     });
                     col.Item().PaddingLeft(15).Text(t =>
                     {
-                        t.Span("Mã định danh suất mua: ").SemiBold();
+                        t.Span("Mã tham dự bốc thăm: ").SemiBold();
                         t.Span(slotCode).Bold().FontColor(Colors.Blue.Darken2);
                     });
 
@@ -181,7 +181,7 @@ public class PdfContractService : IPdfContractService
                     {
                         sub.Item().Text(t =>
                         {
-                            t.Span("1. Bên B đã hoàn tất thanh toán số tiền: ");
+                            t.Span("1. Bên B đã hoàn tất thanh toán tiền đặt cọc để đủ điều kiện tham gia bốc thăm, số tiền: ");
                             t.Span($"{amountFormatted} VNĐ").Bold();
                             t.Span(".");
                         });
@@ -201,26 +201,28 @@ public class PdfContractService : IPdfContractService
                             t.Span("Mã giao dịch: ").SemiBold();
                             t.Span(vnpTransactionNo ?? "N/A");
                         });
+                        sub.Item().Text("3. Khoản đặt cọc không phải thanh toán giá mua nhà đầy đủ và không bảo đảm Bên B chắc chắn được phân căn.");
                     });
 
                     col.Item().Height(10);
 
                     // ── ĐIỀU 3 ──────────────────────────────────────────────
-                    col.Item().Text("ĐIỀU 3: BỐC THĂM VỊ TRÍ CĂN HỘ").Bold();
+                    col.Item().Text("ĐIỀU 3: BỐC THĂM PHÂN SUẤT").Bold();
                     col.Item().PaddingLeft(15).Column(sub =>
                     {
-                        sub.Item().Text("1. Bên B sẽ tham gia buổi bốc thăm để nhận mã số căn hộ cụ thể (Số phòng, Tầng, Tòa).");
+                        sub.Item().Text("1. Bên B được đưa vào danh sách tham gia bốc thăm phân suất theo quy định. Kết quả có thể là trúng hoặc không trúng.");
+                        sub.Item().Text("2. Chỉ khi trúng bốc thăm, Bên B mới được phân suất và hai bên tiến hành ký Hợp đồng mua bán chính thức.");
+                        sub.Item().Text("3. Nếu không trúng, Hợp đồng nguyên tắc này chấm dứt hiệu lực phân suất; việc xử lý tiền đặt cọc thực hiện theo quy định áp dụng.");
                         sub.Item().PaddingLeft(10).Text(t =>
                         {
-                            t.Span("Thời gian tổ chức: ").SemiBold();
+                            t.Span("Thời gian tổ chức (dự kiến): ").SemiBold();
                             t.Span($"{lotteryTimeStr}, ngày {lotteryDateStr}");
                         });
                         sub.Item().PaddingLeft(10).Text(t =>
                         {
-                            t.Span("Địa điểm tổ chức: ").SemiBold();
+                            t.Span("Địa điểm tổ chức (dự kiến): ").SemiBold();
                             t.Span(lotteryLocation);
                         });
-                        sub.Item().Text("2. Sau bốc thăm, hai bên tiến hành ký Hợp đồng Mua bán chính thức.");
                     });
 
                     col.Item().Height(10);
@@ -229,8 +231,9 @@ public class PdfContractService : IPdfContractService
                     col.Item().Text("ĐIỀU 4: ĐIỀU KHOẢN CHUNG").Bold();
                     col.Item().PaddingLeft(15).Column(sub =>
                     {
-                        sub.Item().Text("1. Hợp đồng có hiệu lực kể từ thời điểm hệ thống ghi nhận thanh toán thành công.");
+                        sub.Item().Text("1. Hợp đồng có hiệu lực kể từ thời điểm hệ thống ghi nhận thanh toán đặt cọc thành công.");
                         sub.Item().Text("2. Hợp đồng được tạo lập dưới dạng chứng từ điện tử trên Hệ thống Quản lý, có giá trị pháp lý tương đương bản giấy.");
+                        sub.Item().Text("3. Hợp đồng nguyên tắc này không thay thế Hợp đồng mua bán nhà ở xã hội.");
                     });
 
                     col.Item().Height(35);

@@ -64,7 +64,20 @@ public class CreateApplicationRequestDto
     [Range(1, 100, ErrorMessage = "Số thành viên hộ gia đình phải từ 1 trở lên.")]
     public int HouseholdMembersCount { get; set; }
 
-    /// <summary>Nhóm đối tượng ưu tiên</summary>
-    [MaxLength(100, ErrorMessage = "Nhóm đối tượng ưu tiên không được quá 100 ký tự.")]
-    public string? PriorityGroup { get; set; }
+    /// <summary>Thuộc đối tượng (Mẫu số 01 mục 8): hộ nghèo / cận nghèo đô thị</summary>
+    [Required(ErrorMessage = "Đối tượng thụ hưởng là bắt buộc.")]
+    [MaxLength(100, ErrorMessage = "Đối tượng không được quá 100 ký tự.")]
+    public string PriorityGroup { get; set; } = string.Empty;
+
+    /// <summary>Thu nhập (không bắt buộc — hộ nghèo/cận nghèo dùng chuẩn nghèo Đ30.3).</summary>
+    [Range(0, 1_000_000_000, ErrorMessage = "Thu nhập không hợp lệ.")]
+    public decimal? MonthlyIncome { get; set; }
+
+    /// <summary>Thu nhập tháng của vợ/chồng (nếu có)</summary>
+    [Range(0, 1_000_000_000, ErrorMessage = "Thu nhập vợ/chồng không hợp lệ.")]
+    public decimal? SpouseMonthlyIncome { get; set; }
+
+    /// <summary>Diện tích nhà ở bình quân đầu người (m²) — bắt buộc khi SMALL_HOUSE</summary>
+    [Range(0, 1000, ErrorMessage = "Diện tích bình quân không hợp lệ.")]
+    public decimal? AverageHousingAreaPerPerson { get; set; }
 }
