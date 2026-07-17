@@ -80,7 +80,18 @@ public sealed class VnptEKycService : IEKycService
         var fileHash = await UploadFileAsync(request.Image, "OCR", cancellationToken);
 
         // Bước 3: Gọi VNPT OCR endpoint
-        var ocrRequestBody = new { file_hash = fileHash, token = Guid.NewGuid().ToString() };
+        // Theo tài liệu VNPT API #6:
+        //   type: -1 = CMND/CCCD, 5 = Hộ chiếu, 6 = Bằng lái xe, 7 = CM quân đội
+        //   crop_param: bắt buộc, tỉ lệ crop ảnh (VD: "0,0" = không crop)
+        var ocrRequestBody = new
+        {
+            img_front      = fileHash,
+            img_back       = (string?)null,  // Không yêu cầu ảnh mặt sau
+            client_session = Guid.NewGuid().ToString(),
+            type           = -1,             // -1 = CMND cũ/mới, CCCD
+            crop_param     = "0,0",          // Không crop ảnh
+            token          = Guid.NewGuid().ToString()
+        };
         var rawResponse = await PostJsonToVnptAsync<VnptOcrRawResponse>(
             endpoint:      _options.OcrEndpoint,
             requestBody:   ocrRequestBody,
@@ -102,7 +113,7 @@ public sealed class VnptEKycService : IEKycService
         // Bước 5: Map raw response → application DTO
         _logger.LogInformation(
             "VNPT OCR thành công. CCCD ID='{Id}', Họ tên='{Name}'.",
-            rawResponse.Object?.IdNumber, rawResponse.Object?.FullName);
+            rawResponse.Object?.Id, rawResponse.Object?.Name);
 
         return MapToOcrResponse(rawResponse);
     }
@@ -129,11 +140,13 @@ public sealed class VnptEKycService : IEKycService
         var hashId   = await UploadFileAsync(request.IdCardImage, "FaceCompare-CCCD",   cancellationToken);
 
         // Bước 3: Gọi VNPT Face Compare endpoint
+        // Theo tài liệu VNPT API #7: img_front = hash ảnh CCCD, img_face = hash ảnh selfie
         var compareRequestBody = new
         {
-            file_hash_1 = hashFace,
-            file_hash_2 = hashId,
-            token       = Guid.NewGuid().ToString()
+            img_front      = hashId,
+            img_face       = hashFace,
+            client_session = Guid.NewGuid().ToString(),
+            token          = Guid.NewGuid().ToString()
         };
 
         var rawResponse = await PostJsonToVnptAsync<VnptFaceCompareRawResponse>(
@@ -196,6 +209,10 @@ public sealed class VnptEKycService : IEKycService
         var streamContent = new StreamContent(memoryStream);
         streamContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
         formData.Add(streamContent, "file", file.FileName);
+
+        // VNPT Upload API yêu cầu thêm title và description (theo tài liệu API #1)
+        formData.Add(new StringContent(operationName), "title");
+        formData.Add(new StringContent($"eKYC {operationName} upload"), "description");
 
         // Gọi upload endpoint
         var httpClient = _httpClientFactory.CreateClient(HttpClientName);
@@ -297,10 +314,17 @@ public sealed class VnptEKycService : IEKycService
             Encoding.UTF8,
             "application/json");
 
+        // VNPT OCR/FaceCompare yêu cầu header mac-address (theo tài liệu API #6, #7)
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = jsonContent
+        };
+        request.Headers.Add("mac-address", _options.MacAddress);
+
         HttpResponseMessage httpResponse;
         try
         {
-            httpResponse = await httpClient.PostAsync(endpoint, jsonContent, cancellationToken);
+            httpResponse = await httpClient.SendAsync(request, cancellationToken);
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -408,18 +432,18 @@ public sealed class VnptEKycService : IEKycService
             ErrorMessage = raw.Message ?? string.Empty,
             Data         = obj is null ? null : new OcrIdCardData
             {
-                Id           = obj.IdNumber      ?? string.Empty,
-                Name         = obj.FullName       ?? string.Empty,
-                Dob          = obj.Dob            ?? string.Empty,
-                Sex          = obj.Gender         ?? string.Empty,
-                Nationality  = obj.Nationality    ?? string.Empty,
-                Home         = obj.PlaceOfOrigin  ?? string.Empty,
-                Address      = obj.Address        ?? string.Empty,
-                Doe          = obj.ExpiredDate     ?? string.Empty,
-                IssueDate    = obj.IssueDate       ?? string.Empty,
-                IssueLoc     = obj.IssuePlace      ?? string.Empty,
-                Type         = obj.Type           ?? string.Empty,
-                OverallScore = 1.0  // VNPT không trả về confidence score cho OCR
+                Id           = obj.Id              ?? string.Empty,
+                Name         = obj.Name            ?? string.Empty,
+                Dob          = obj.BirthDay         ?? string.Empty,
+                Sex          = obj.Gender           ?? string.Empty,
+                Nationality  = obj.Nationality      ?? string.Empty,
+                Home         = obj.OriginLocation   ?? string.Empty,
+                Address      = obj.RecentLocation   ?? string.Empty,
+                Doe          = obj.ValidDate         ?? string.Empty,
+                IssueDate    = obj.IssueDate         ?? string.Empty,
+                IssueLoc     = obj.IssuePlace        ?? string.Empty,
+                Type         = obj.CardType          ?? string.Empty,
+                OverallScore = obj.NameProb ?? 1.0  // Dùng name_prob như confidence proxy
             }
         };
     }
@@ -427,16 +451,17 @@ public sealed class VnptEKycService : IEKycService
     /// <summary>Map VNPT Face Compare response → application DTO.</summary>
     private static FaceMatchResponse MapToFaceMatchResponse(VnptFaceCompareRawResponse raw)
     {
-        var similarity = raw.Object?.Similarity ?? raw.Object?.Score ?? 0;
-        var isMatch    = raw.Object?.IsMatch ?? (similarity >= 85.0);
+        // VNPT trả về: object.prob = % similarity, object.msg = "MATCH" hoặc "NOMATCH"
+        var similarity = raw.Object?.Prob ?? 0;
+        var isMatch    = string.Equals(raw.Object?.Msg, "MATCH", StringComparison.OrdinalIgnoreCase);
 
         return new FaceMatchResponse
         {
-            Code            = raw.Code ?? string.Empty,
+            Code            = string.Empty,
             IsMatch         = isMatch,
             Similarity      = similarity,
-            IsBothImgIdCard = false,  // VNPT không trả về field này
-            ProviderMessage = raw.Message ?? string.Empty
+            IsBothImgIdCard = false,
+            ProviderMessage = raw.Object?.Result ?? raw.Message ?? string.Empty
         };
     }
 
@@ -455,12 +480,20 @@ public sealed class VnptEKycService : IEKycService
     {
         [JsonPropertyName("hash")]         public string? Hash         { get; init; }
         [JsonPropertyName("fileName")]     public string? FileName     { get; init; }
+        [JsonPropertyName("title")]        public string? Title        { get; init; }
+        [JsonPropertyName("description")]  public string? Description  { get; init; }
         [JsonPropertyName("tokenId")]      public string? TokenId      { get; init; }
         [JsonPropertyName("fileType")]     public string? FileType     { get; init; }
         [JsonPropertyName("uploadedDate")] public string? UploadedDate { get; init; }
+        [JsonPropertyName("storageType")]  public string? StorageType  { get; init; }
     }
 
-    /// <summary>Response từ VNPT OCR API.</summary>
+    /// <summary>
+    /// Response từ VNPT OCR API (/ai/v1/ocr/id).
+    /// Field names theo tài liệu VNPT: id, name, birth_day, gender,
+    /// nationality, origin_location, recent_location, valid_date,
+    /// issue_date, issue_place, card_type, etc.
+    /// </summary>
     private sealed record VnptOcrRawResponse
     {
         [JsonPropertyName("message")] public string?        Message { get; init; }
@@ -469,32 +502,72 @@ public sealed class VnptEKycService : IEKycService
 
     private sealed record VnptOcrObject
     {
-        [JsonPropertyName("idNumber")]      public string? IdNumber      { get; init; }
-        [JsonPropertyName("fullName")]      public string? FullName      { get; init; }
-        [JsonPropertyName("dob")]           public string? Dob           { get; init; }
-        [JsonPropertyName("gender")]        public string? Gender        { get; init; }
-        [JsonPropertyName("nationality")]   public string? Nationality   { get; init; }
-        [JsonPropertyName("placeOfOrigin")] public string? PlaceOfOrigin { get; init; }
-        [JsonPropertyName("address")]       public string? Address       { get; init; }
-        [JsonPropertyName("expiredDate")]   public string? ExpiredDate   { get; init; }
-        [JsonPropertyName("issueDate")]     public string? IssueDate     { get; init; }
-        [JsonPropertyName("issuePlace")]    public string? IssuePlace    { get; init; }
-        [JsonPropertyName("type")]          public string? Type          { get; init; }
+        // ── Thông tin chính ────────────────────────────────────────
+        [JsonPropertyName("id")]                public string? Id              { get; init; }
+        [JsonPropertyName("name")]              public string? Name            { get; init; }
+        [JsonPropertyName("birth_day")]         public string? BirthDay        { get; init; }
+        [JsonPropertyName("gender")]            public string? Gender          { get; init; }
+        [JsonPropertyName("nationality")]       public string? Nationality     { get; init; }
+        [JsonPropertyName("origin_location")]   public string? OriginLocation  { get; init; }
+        [JsonPropertyName("recent_location")]   public string? RecentLocation  { get; init; }
+        [JsonPropertyName("valid_date")]        public string? ValidDate       { get; init; }
+        [JsonPropertyName("issue_date")]        public string? IssueDate       { get; init; }
+        [JsonPropertyName("issue_place")]       public string? IssuePlace      { get; init; }
+        [JsonPropertyName("card_type")]         public string? CardType        { get; init; }
+        [JsonPropertyName("citizen_id")]        public string? CitizenId       { get; init; }
+
+        // ── Label fields ───────────────────────────────────────────
+        [JsonPropertyName("name_label")]             public string? NameLabel            { get; init; }
+        [JsonPropertyName("birth_day_label")]         public string? BirthDayLabel        { get; init; }
+        [JsonPropertyName("origin_location_label")]   public string? OriginLocationLabel  { get; init; }
+        [JsonPropertyName("recent_location_label")]   public string? RecentLocationLabel  { get; init; }
+
+        // ── Probability / confidence scores ────────────────────────
+        [JsonPropertyName("name_prob")]              public double? NameProb           { get; init; }
+        [JsonPropertyName("birth_day_prob")]          public double? BirthDayProb       { get; init; }
+        [JsonPropertyName("origin_location_prob")]    public double? OriginLocationProb { get; init; }
+        [JsonPropertyName("recent_location_prob")]    public double? RecentLocationProb { get; init; }
+        [JsonPropertyName("valid_date_prob")]         public double? ValidDateProb      { get; init; }
+        [JsonPropertyName("issue_date_prob")]         public double? IssueDateProb      { get; init; }
+        [JsonPropertyName("issue_place_prob")]        public double? IssuePlaceProb     { get; init; }
+        [JsonPropertyName("gender_prob")]             public double? GenderProb         { get; init; }
+        [JsonPropertyName("nationality_prob")]        public double? NationalityProb    { get; init; }
+        [JsonPropertyName("citizen_id_prob")]         public double? CitizenIdProb      { get; init; }
+        [JsonPropertyName("id_fake_prob")]            public double? IdFakeProb         { get; init; }
+
+        // ── Metadata ───────────────────────────────────────────────
+        [JsonPropertyName("type_id")]            public int?    TypeId          { get; init; }
+        [JsonPropertyName("back_type_id")]       public int?    BackTypeId      { get; init; }
+        [JsonPropertyName("id_probs")]           public string? IdProbs         { get; init; }
+        [JsonPropertyName("id_fake_warning")]    public string? IdFakeWarning   { get; init; }
+        [JsonPropertyName("expire_warning")]     public string? ExpireWarning   { get; init; }
+        [JsonPropertyName("back_expire_warning")] public string? BackExpireWarning { get; init; }
+        [JsonPropertyName("msg")]                public string? Msg             { get; init; }
+        [JsonPropertyName("msg_back")]           public string? MsgBack         { get; init; }
+        [JsonPropertyName("nation_policy")]      public string? NationPolicy    { get; init; }
+        [JsonPropertyName("nation_slogan")]      public string? NationSlogan    { get; init; }
     }
 
-    /// <summary>Response từ VNPT Face Compare API.</summary>
+    /// <summary>
+    /// Response từ VNPT Face Compare API (/ai/v1/face/compare).
+    /// Field names: object.result, object.msg ("MATCH"/"NOMATCH"), object.prob (%).
+    /// </summary>
     private sealed record VnptFaceCompareRawResponse
     {
-        [JsonPropertyName("code")]    public string?                Code    { get; init; }
-        [JsonPropertyName("message")] public string?                Message { get; init; }
-        [JsonPropertyName("object")]  public VnptFaceCompareObject? Object { get; init; }
+        [JsonPropertyName("message")]        public string?                Message       { get; init; }
+        [JsonPropertyName("server_version")] public string?                ServerVersion { get; init; }
+        [JsonPropertyName("object")]         public VnptFaceCompareObject? Object        { get; init; }
     }
 
     private sealed record VnptFaceCompareObject
     {
-        [JsonPropertyName("similarity")] public double? Similarity { get; init; }
-        [JsonPropertyName("score")]      public double? Score      { get; init; }  // alias
-        [JsonPropertyName("isMatch")]    public bool?   IsMatch    { get; init; }
-        [JsonPropertyName("msg")]        public string? Msg        { get; init; }
+        /// <summary>Text mô tả kết quả (VD: "Khuôn mặt khớp 99,7%").</summary>
+        [JsonPropertyName("result")] public string? Result { get; init; }
+
+        /// <summary>"MATCH" hoặc "NOMATCH".</summary>
+        [JsonPropertyName("msg")]    public string? Msg    { get; init; }
+
+        /// <summary>Phần trăm similarity (VD: 58.26).</summary>
+        [JsonPropertyName("prob")]   public double? Prob   { get; init; }
     }
 }

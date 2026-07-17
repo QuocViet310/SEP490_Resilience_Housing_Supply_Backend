@@ -64,11 +64,11 @@ public sealed class VnptEKycOptions
     /// <summary>Endpoint upload file để lấy hash. Mặc định: <c>/file-service/v1/addFile</c>.</summary>
     public string UploadEndpoint { get; init; } = "/file-service/v1/addFile";
 
-    /// <summary>Endpoint OCR nhận dạng Căn cước công dân. Mặc định: <c>/ai-service/v1/ocr/id-card</c>.</summary>
-    public string OcrEndpoint { get; init; } = "/ai-service/v1/ocr/id-card";
+    /// <summary>Endpoint OCR bóc tách thông tin giấy tờ. Mặc định: <c>/ai/v1/ocr/id</c>.</summary>
+    public string OcrEndpoint { get; init; } = "/ai/v1/ocr/id";
 
-    /// <summary>Endpoint so khớp khuôn mặt. Mặc định: <c>/ai-service/v1/face/compare</c>.</summary>
-    public string FaceCompareEndpoint { get; init; } = "/ai-service/v1/face/compare";
+    /// <summary>Endpoint so khớp khuôn mặt. Mặc định: <c>/ai/v1/face/compare</c>.</summary>
+    public string FaceCompareEndpoint { get; init; } = "/ai/v1/face/compare";
 
     // ── Thresholds & limits ─────────────────────────────────────────────
 
@@ -84,4 +84,10 @@ public sealed class VnptEKycOptions
 
     /// <summary>Giới hạn kích thước file ảnh tải lên (bytes). Mặc định 5 MB.</summary>
     public long MaxFileSizeBytes { get; init; } = 5_242_880; // 5 MB
+
+    /// <summary>
+    /// Giá trị header <c>mac-address</c> yêu cầu bởi VNPT cho các API OCR và Face Compare.
+    /// Mặc định: <c>TEST1</c> (dùng cho môi trường sandbox/testing).
+    /// </summary>
+    public string MacAddress { get; init; } = "TEST1";
 }
