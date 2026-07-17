@@ -19,6 +19,11 @@ public interface IHousingApplicationService
         CreateApplicationRequestDto request);
 
     /// <summary>
+    /// Kiểm tra người dùng hiện tại đã có hồ sơ nào đang hoạt động hoặc được duyệt ở dự án khác hay chưa.
+    /// </summary>
+    Task<bool> HasActiveApplicationAsync(Guid applicantId);
+
+    /// <summary>
     /// Cập nhật thông tin form của hồ sơ (chỉ DRAFT / NEED_MORE_DOCUMENTS, chỉ owner).
     /// Không cho phép đổi ProjectId.
     /// </summary>

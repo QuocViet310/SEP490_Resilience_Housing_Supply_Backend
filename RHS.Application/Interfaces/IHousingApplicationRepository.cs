@@ -45,6 +45,12 @@ public interface IHousingApplicationRepository
     Task<bool> ExistsByApplicantAndProjectAsync(Guid applicantId, Guid projectId);
 
     /// <summary>
+    /// Kiểm tra Applicant đã có hồ sơ đang hoạt động hoặc đã được phê duyệt ở dự án khác hay chưa.
+    /// Trạng thái hoạt động bao gồm: SUBMITTED, REVIEWING, NEED_MORE_DOCUMENTS, PENDING_SXD_REVIEW, APPROVED, DEPOSIT_PAID.
+    /// </summary>
+    Task<bool> HasActiveApplicationAsync(Guid applicantId);
+
+    /// <summary>
     /// Kiểm tra một số CCCD đã tồn tại trong hồ sơ KHÁC của cùng dự án hay chưa.
     /// Exclude các hồ sơ REJECTED/CANCELED để giải phóng CCCD.
     /// </summary>

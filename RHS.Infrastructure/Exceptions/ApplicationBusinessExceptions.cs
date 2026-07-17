@@ -83,3 +83,23 @@ public sealed class DuplicateCitizenIdInProjectException : HousingApplicationExc
         ProjectId = projectId;
     }
 }
+
+/// <summary>
+/// Ném ra khi Applicant cố tạo hồ sơ mới nhưng đang có một hồ sơ khác hoạt động (Submitted hoặc Approved).
+/// Quy định: mỗi người chỉ được phép đăng ký một hồ sơ hoạt động tại một thời điểm.
+/// Controller nên trả về HTTP 409 (Conflict).
+/// </summary>
+public sealed class ActiveApplicationExistsException : HousingApplicationException
+{
+    public const string CodeActiveExists = "APP_ACTIVE_EXISTS";
+
+    public Guid ApplicantId { get; }
+
+    public ActiveApplicationExistsException(Guid applicantId)
+        : base(CodeActiveExists,
+            "Bạn đang có hồ sơ khác ở trạng thái đã nộp hoặc đã được duyệt. " +
+            "Theo quy định, mỗi người chỉ được đăng ký một hồ sơ hoạt động tại một thời điểm.")
+    {
+        ApplicantId = applicantId;
+    }
+}

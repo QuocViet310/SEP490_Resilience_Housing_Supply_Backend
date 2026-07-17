@@ -74,6 +74,11 @@ public class HousingApplicationsController : ControllerBase
             _logger.LogWarning("Duplicate application: {Message}", ex.Message);
             return Conflict(new { errorCode = ex.ErrorCode, message = ex.Message });
         }
+        catch (ActiveApplicationExistsException ex)
+        {
+            _logger.LogWarning("Active application exists: {Message}", ex.Message);
+            return Conflict(new { errorCode = ex.ErrorCode, message = ex.Message });
+        }
         catch (ArgumentException ex)
         {
             _logger.LogWarning("Validation error creating application: {Message}", ex.Message);
@@ -136,6 +141,43 @@ public class HousingApplicationsController : ControllerBase
         {
             _logger.LogError(ex, "Error updating housing application {Id}.", id);
             return StatusCode(500, new { message = "Đã xảy ra lỗi khi cập nhật hồ sơ." });
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // APPLICANT: Kiểm tra hồ sơ đang hoạt động (Active App Check)
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// [Applicant] Kiểm tra xem người dùng hiện tại có hồ sơ nào đang hoạt động hoặc được duyệt hay chưa.
+    /// Trả về true nếu có, false nếu không.
+    /// </summary>
+    [HttpGet("active-check")]
+    [Authorize(Roles = RoleConstants.Applicant)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetActiveCheck()
+    {
+        var applicantId = GetCurrentUserId();
+        if (applicantId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
+
+        try
+        {
+            var hasActive = await _applicationService.HasActiveApplicationAsync(applicantId);
+            return Ok(new 
+            { 
+                hasActiveApplication = hasActive,
+                message = hasActive 
+                    ? "Bạn đang có hồ sơ khác ở trạng thái đã nộp hoặc đã được duyệt. Theo quy định, mỗi người chỉ được đăng ký một hồ sơ hoạt động tại một thời điểm."
+                    : "Bạn không có hồ sơ hoạt động nào khác. Có thể tạo hồ sơ nháp mới."
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking active application status for applicant {ApplicantId}.", applicantId);
+            return StatusCode(500, new { message = "Đã xảy ra lỗi khi kiểm tra hồ sơ hoạt động." });
         }
     }
 

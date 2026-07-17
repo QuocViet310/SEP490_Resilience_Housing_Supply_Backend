@@ -126,6 +126,24 @@ public class HousingApplicationRepository : IHousingApplicationRepository
                 && x.ApplicationStatus != ApplicationStatusConstants.Canceled);
     }
 
+    public async Task<bool> HasActiveApplicationAsync(Guid applicantId)
+    {
+        var activeStatuses = new[]
+        {
+            ApplicationStatusConstants.Submitted,
+            ApplicationStatusConstants.Reviewing,
+            ApplicationStatusConstants.NeedMoreDocuments,
+            ApplicationStatusConstants.PendingSxdReview,
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.DepositPaid
+        };
+
+        return await _context.HousingApplications
+            .AsNoTracking()
+            .AnyAsync(x => x.ApplicantId == applicantId 
+                && activeStatuses.Contains(x.ApplicationStatus));
+    }
+
     public async Task<bool> CitizenIdExistsInProjectAsync(
         string citizenId,
         Guid   projectId,

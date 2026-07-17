@@ -66,6 +66,16 @@ public class HousingApplicationService : IHousingApplicationService
             throw new DuplicateApplicationException(applicantId, request.ProjectId);
         }
 
+        // 2b. Active App Check: chống nộp nhiều nơi
+        var hasActiveApplication = await _applicationRepo.HasActiveApplicationAsync(applicantId);
+        if (hasActiveApplication)
+        {
+            _logger.LogWarning(
+                "Applicant {ApplicantId} đã có hồ sơ đang hoạt động ở một dự án khác. Không thể tạo đơn nháp mới.",
+                applicantId);
+            throw new ActiveApplicationExistsException(applicantId);
+        }
+
         // 3. Map DTO → Entity (trạng thái ban đầu = DRAFT)
         var now = DateTime.UtcNow;
         var application = new HousingApplication
@@ -110,6 +120,11 @@ public class HousingApplicationService : IHousingApplicationService
             Message           = "Hồ sơ đã được tạo thành công với trạng thái DRAFT. " +
                                 "Vui lòng upload giấy tờ và nộp hồ sơ."
         };
+    }
+
+    public async Task<bool> HasActiveApplicationAsync(Guid applicantId)
+    {
+        return await _applicationRepo.HasActiveApplicationAsync(applicantId);
     }
 
     // ─────────────────────────────────────────────────────────────
