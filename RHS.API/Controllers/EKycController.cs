@@ -1,17 +1,20 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using RHS.Application.DTOs.EKyc;
 using RHS.Application.Interfaces;
+using RHS.Infrastructure.Configurations;
 using RHS.Infrastructure.Exceptions;
+using System.Globalization;
 using System.Security.Claims;
 
 namespace RHS.API.Controllers;
 
 /// <summary>
 /// Controller xử lý các nghiệp vụ eKYC (Electronic Know Your Customer):
+/// - Xác minh danh tính toàn diện (OCR + Face Match + Auto-save Profile)
 /// - Trích xuất thông tin Căn cước công dân (OCR)
-/// - So khớp khuôn mặt selfie với ảnh trên CCCD (Face Match)
-/// - Kiểm tra liveness để chống giả mạo khuôn mặt (Liveness Detection)
+/// - So khớp khuôn mặt selfie với ảnh trên CCCD (Face Compare)
 /// - Kiểm tra CCCD đã tồn tại trong hệ thống chưa
 /// </summary>
 [ApiController]
@@ -21,11 +24,16 @@ public class EKycController : ControllerBase
 {
     private readonly IEKycService     _eKycService;
     private readonly IUserRepository  _userRepository;
+    private readonly double           _faceMatchThreshold;
 
-    public EKycController(IEKycService eKycService, IUserRepository userRepository)
+    public EKycController(
+        IEKycService              eKycService,
+        IUserRepository           userRepository,
+        IOptions<VnptEKycOptions>  vnptOptions)
     {
-        _eKycService    = eKycService;
-        _userRepository = userRepository;
+        _eKycService        = eKycService;
+        _userRepository     = userRepository;
+        _faceMatchThreshold = vnptOptions.Value.FaceMatchThreshold;
     }
 
     // ── Helper: lấy userId từ JWT claim ─────────────────────────────────
@@ -372,5 +380,193 @@ public class EKycController : ControllerBase
                 detail  = ex.Message
             });
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  Xác minh danh tính toàn diện (One-shot: OCR + Face Match + Auto-save)
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Xác minh danh tính toàn diện: OCR + Face Match + tự động lưu thông tin vào Profile.
+    /// </summary>
+    /// <remarks>
+    /// **Content-Type:** multipart/form-data
+    ///
+    /// **Form fields:**
+    /// - `idCardFrontImage` — ảnh mặt trước CCCD (JPEG/PNG, ≤ 5 MB)
+    /// - `selfieImage`      — ảnh selfie chụp trực tiếp (JPEG/PNG, ≤ 5 MB)
+    ///
+    /// **Luồng xử lý:**
+    /// 1. OCR — Trích xuất thông tin từ ảnh CCCD (họ tên, số CCCD, ngày sinh, địa chỉ)
+    /// 2. Kiểm tra CCCD trùng — Đảm bảo số CCCD chưa được xác thực bởi tài khoản khác
+    /// 3. Face Match — So khớp ảnh selfie với ảnh trên CCCD
+    /// 4. Auto-save — Nếu similarity ≥ ngưỡng (mặc định 85%), tự động lưu thông tin vào Profile
+    ///
+    /// **HTTP Responses:**
+    /// - `200` — Xác minh hoàn tất (kiểm tra `success` và `data.profileLocked`)
+    /// - `400` — Ảnh không hợp lệ hoặc OCR không đọc được thông tin
+    /// - `401` — Chưa đăng nhập
+    /// - `404` — Không tìm thấy tài khoản
+    /// - `409` — Số CCCD đã được xác thực bởi tài khoản khác
+    /// - `502` — eKYC API trả về lỗi hoặc không kết nối được
+    /// - `500` — Lỗi không xác định
+    /// </remarks>
+    [HttpPost("verify-identity")]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> VerifyIdentity(
+        IFormFile idCardFrontImage,
+        IFormFile selfieImage,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = GetCurrentUserId();
+        if (userId is null)
+            return Unauthorized(new { success = false, message = "Không xác định được tài khoản." });
+
+        try
+        {
+            // ── Bước 1: OCR — Trích xuất thông tin từ ảnh CCCD ──────────────
+            var ocrResult = await _eKycService.ExtractIdCardAsync(
+                new OcrIdCardRequest { Image = idCardFrontImage },
+                cancellationToken);
+
+            if (ocrResult.Data is null || string.IsNullOrWhiteSpace(ocrResult.Data.Id))
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "Không thể đọc thông tin từ ảnh CCCD. Vui lòng chụp lại ảnh rõ nét hơn."
+                });
+
+            var extractedCitizenId = ocrResult.Data.Id.Trim();
+
+            // ── Bước 2: Kiểm tra CCCD trùng ─────────────────────────────────
+            var citizenIdTaken = await _userRepository.CitizenIdExistsAsync(
+                extractedCitizenId, excludeUserId: userId);
+
+            if (citizenIdTaken)
+                return Conflict(new
+                {
+                    success   = false,
+                    message   = "Số CCCD này đã được xác thực bởi tài khoản khác. Không thể tiếp tục.",
+                    citizenId = extractedCitizenId
+                });
+
+            // ── Bước 3: Face Match — So khớp selfie với ảnh CCCD ─────────────
+            var faceResult = await _eKycService.MatchFaceAsync(
+                new FaceMatchRequest
+                {
+                    FaceImage   = selfieImage,
+                    IdCardImage = idCardFrontImage
+                },
+                cancellationToken);
+
+            // Nếu similarity < ngưỡng → trả về kết quả nhưng KHÔNG lưu Profile
+            if (faceResult.Similarity < _faceMatchThreshold)
+                return Ok(new
+                {
+                    success = false,
+                    message = $"Khuôn mặt không khớp với ảnh CCCD " +
+                              $"(similarity: {faceResult.Similarity:F1}%, yêu cầu ≥ {_faceMatchThreshold}%). " +
+                              "Vui lòng thử lại với ảnh selfie rõ nét hơn.",
+                    data = new
+                    {
+                        similarity    = faceResult.Similarity,
+                        isMatch       = false,
+                        threshold     = _faceMatchThreshold,
+                        profileLocked = false
+                    }
+                });
+
+            // ── Bước 4: Auto-save Profile ────────────────────────────────────
+            // Similarity ≥ ngưỡng → tự động lưu thông tin CCCD vào User Profile
+            var user = await _userRepository.GetByIdAsync(userId.Value);
+            if (user is null)
+                return NotFound(new { success = false, message = "Không tìm thấy tài khoản." });
+
+            user.FullName    = ocrResult.Data.Name;
+            user.CitizenId   = extractedCitizenId;
+            user.DateOfBirth = ParseVietnameseDate(ocrResult.Data.Dob);
+            user.Address     = ocrResult.Data.Address;
+            user.UpdatedAt   = DateTime.UtcNow;
+
+            await _userRepository.UpdateAsync(user);
+
+            return Ok(new
+            {
+                success = true,
+                message = "Xác minh danh tính thành công. Thông tin CCCD đã được lưu vào hồ sơ.",
+                data = new
+                {
+                    similarity    = faceResult.Similarity,
+                    isMatch       = true,
+                    threshold     = _faceMatchThreshold,
+                    profileLocked = true,
+                    citizenId     = user.CitizenId,
+                    fullName      = user.FullName,
+                    dateOfBirth   = user.DateOfBirth?.ToString("dd/MM/yyyy"),
+                    address       = user.Address
+                }
+            });
+        }
+        catch (EKycValidationException ex)
+        {
+            return BadRequest(new
+            {
+                success   = false,
+                message   = ex.Message,
+                errorCode = ex.ErrorCode,
+                field     = ex.FieldName
+            });
+        }
+        catch (EKycIntegrationException ex)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new
+            {
+                success   = false,
+                message   = "Không thể kết nối hoặc xử lý phản hồi từ eKYC API.",
+                errorCode = ex.ErrorCode,
+                detail    = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                success = false,
+                message = "Đã xảy ra lỗi không mong đợi trong quá trình xác minh danh tính.",
+                detail  = ex.Message
+            });
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  Private helpers
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Parse ngày sinh từ chuỗi định dạng Việt Nam (dd/MM/yyyy) trả về từ OCR.
+    /// Trả về null nếu chuỗi không hợp lệ.
+    /// </summary>
+    private static DateTime? ParseVietnameseDate(string? dateStr)
+    {
+        if (string.IsNullOrWhiteSpace(dateStr))
+            return null;
+
+        // Thử nhiều format vì OCR có thể trả về dd/MM/yyyy hoặc dd-MM-yyyy
+        string[] formats = { "dd/MM/yyyy", "dd-MM-yyyy", "yyyy-MM-dd" };
+
+        return DateTime.TryParseExact(
+            dateStr.Trim(), formats,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var result)
+            ? result
+            : null;
     }
 }
