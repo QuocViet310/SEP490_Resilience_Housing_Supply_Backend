@@ -422,3 +422,8 @@ secrets.json
 *.db
 *.sqlite
 *.sqlite3
+
+# Environment variables (secrets — NEVER commit!)
+.env
+.env.*
+!.env.example

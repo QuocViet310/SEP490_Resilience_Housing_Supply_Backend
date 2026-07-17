@@ -11,6 +11,17 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ── Load .env file (nếu tồn tại) ───────────────────────────────────────
+// File .env chứa secrets (API keys, connection strings) cho môi trường local.
+// Copy .env.example → .env và điền giá trị thật. File .env đã được gitignore.
+var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
+if (File.Exists(envPath))
+{
+    DotNetEnv.Env.Load(envPath);
+    // Nạp các biến từ .env vào Configuration để IOptions<T> đọc được
+    builder.Configuration.AddEnvironmentVariables();
+}
+
 // Add services to the container.
 
 // Database Configuration
