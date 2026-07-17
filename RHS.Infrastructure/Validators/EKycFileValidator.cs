@@ -6,9 +6,8 @@ using RHS.Infrastructure.Exceptions;
 namespace RHS.Infrastructure.Validators;
 
 /// <summary>
-/// Validator chuyên biệt cho file ảnh/video eKYC trước khi gửi lên FPT AI API.
+/// Validator chuyên biệt cho file ảnh eKYC trước khi gửi lên VNPT eKYC API.
 /// - Ảnh (OCR, FaceMatch): kiểm tra MIME type, extension, magic bytes.
-/// - Video (Liveness): kiểm tra MIME type và extension (magic bytes không check do phức tạp).
 /// </summary>
 /// <remarks>
 /// Class này được đăng ký là Singleton qua DI và tái sử dụng giữa các request.
@@ -31,7 +30,7 @@ public sealed class EKycFileValidator
         ".png"
     };
 
-    // ── Danh sách MIME type video được chấp nhận (FPT AI Liveness) ───────
+    // ── Danh sách MIME type video được chấp nhận (Liveness Detection) ────
     private static readonly HashSet<string> AllowedVideoContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "video/mp4",
@@ -59,10 +58,10 @@ public sealed class EKycFileValidator
     private readonly long _maxFileSizeBytes;
     private readonly long _maxVideoFileSizeBytes;
 
-    public EKycFileValidator(IOptions<FptAiOptions> options)
+    public EKycFileValidator(IOptions<VnptEKycOptions> options)
     {
         _maxFileSizeBytes       = options.Value.MaxFileSizeBytes;
-        _maxVideoFileSizeBytes  = options.Value.MaxVideoFileSizeBytes;
+        _maxVideoFileSizeBytes  = options.Value.MaxFileSizeBytes; // VNPT không hỗ trợ Liveness video qua REST API
     }
 
     /// <summary>
@@ -78,7 +77,7 @@ public sealed class EKycFileValidator
     }
 
     /// <summary>
-    /// Kiểm tra file VIDEO (mp4/avi/mov) cho FPT AI Liveness Detection API.
+    /// Kiểm tra file VIDEO (mp4/avi/mov) cho Liveness Detection API.
     /// Giới hạn 10 MB (lớn hơn ảnh thông thường).
     /// Chỉ kiểm tra MIME type và extension (không check magic bytes vì cấu trúc video phức tạp).
     /// </summary>

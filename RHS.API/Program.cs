@@ -102,7 +102,7 @@ builder.Services.AddScoped<IPrincipleAgreementRepository, PrincipleAgreementRepo
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 
-// Dependency Injection - FPT AI eKYC
+// Dependency Injection - VNPT eKYC
 builder.Services.AddEKycServices(builder.Configuration);
 
 // Dependency Injection - Gemini Document Verification

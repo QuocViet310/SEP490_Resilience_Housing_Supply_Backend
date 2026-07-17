@@ -105,7 +105,7 @@ public class EKycController : ControllerBase
     // ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Trích xuất thông tin từ ảnh Căn cước công dân bằng FPT AI OCR.
+    /// Trích xuất thông tin từ ảnh Căn cước công dân bằng VNPT eKYC OCR.
     /// Chấp nhận ảnh mặt trước hoặc mặt sau của CCCD gắn chip.
     /// </summary>
     /// <remarks>
@@ -117,7 +117,7 @@ public class EKycController : ControllerBase
     /// - `200` — Trích xuất thành công, trả về thông tin CCCD
     /// - `400` — File ảnh không hợp lệ (rỗng, sai định dạng, quá dung lượng)
     /// - `401` — Chưa đăng nhập
-    /// - `502` — FPT AI API trả về lỗi hoặc không kết nối được
+    /// - `502` — eKYC API trả về lỗi hoặc không kết nối được
     /// - `500` — Lỗi không xác định từ server
     /// </remarks>
     [HttpPost("ocr")]
@@ -170,11 +170,11 @@ public class EKycController : ControllerBase
         }
         catch (EKycIntegrationException ex)
         {
-            // Lỗi do FPT AI API (timeout, HTTP error, parse lỗi) → 502 Bad Gateway
+            // Lỗi do eKYC API (timeout, HTTP error, parse lỗi) → 502 Bad Gateway
             return StatusCode(StatusCodes.Status502BadGateway, new
             {
                 success   = false,
-                message   = "Không thể kết nối hoặc xử lý phản hồi từ FPT AI OCR API.",
+                message   = "Không thể kết nối hoặc xử lý phản hồi từ eKYC OCR API.",
                 errorCode = ex.ErrorCode,
                 detail    = ex.Message
             });
@@ -192,7 +192,7 @@ public class EKycController : ControllerBase
     }
 
     /// <summary>
-    /// So khớp khuôn mặt selfie với ảnh trên Căn cước công dân bằng FPT AI Face Match.
+    /// So khớp khuôn mặt selfie với ảnh trên Căn cước công dân bằng VNPT eKYC Face Compare.
     /// Trả về kết quả khớp và điểm độ tương đồng.
     /// </summary>
     /// <remarks>
@@ -206,7 +206,7 @@ public class EKycController : ControllerBase
     /// - `200` — So khớp hoàn tất (kiểm tra `isMatch` và `similarity` trong response body)
     /// - `400` — File ảnh không hợp lệ
     /// - `401` — Chưa đăng nhập
-    /// - `502` — FPT AI API trả về lỗi hoặc không kết nối được
+    /// - `502` — eKYC API trả về lỗi hoặc không kết nối được
     /// - `500` — Lỗi không xác định từ server
     /// </remarks>
     [HttpPost("face-match")]
@@ -241,8 +241,8 @@ public class EKycController : ControllerBase
                 {
                     isMatch         = result.IsMatch,
                     similarity      = result.Similarity,
-                    isBothImgIdCard = result.IsBothImgIdCard,   // FPT AI: isBothImgIDCard
-                    fptMessage      = result.FptMessage          // FPT AI: "request successful."
+                    isBothImgIdCard = result.IsBothImgIdCard,
+                    providerMessage = result.ProviderMessage
                 }
             });
         }
@@ -259,11 +259,11 @@ public class EKycController : ControllerBase
         }
         catch (EKycIntegrationException ex)
         {
-            // Lỗi do FPT AI API → 502 Bad Gateway
+            // Lỗi do eKYC API → 502 Bad Gateway
             return StatusCode(StatusCodes.Status502BadGateway, new
             {
                 success   = false,
-                message   = "Không thể kết nối hoặc xử lý phản hồi từ FPT AI Face Match API.",
+                message   = "Không thể kết nối hoặc xử lý phản hồi từ eKYC Face Compare API.",
                 errorCode = ex.ErrorCode,
                 detail    = ex.Message
             });
@@ -281,8 +281,8 @@ public class EKycController : ControllerBase
     }
 
     /// <summary>
-    /// Xác minh thực thể sống qua video selfie + ảnh khuôn mặt (Liveness Detection v3).
-    /// Phát hiện các hành vi giả mạo: dùng ảnh in, màn hình, mặt nạ, video deepfake.
+    /// Xác minh thực thể sống qua video selfie + ảnh khuôn mặt (Liveness Detection).
+    /// ⚠️ VNPT eKYC không hỗ trợ Liveness qua REST API — endpoint này sẽ trả về lỗi.
     /// </summary>
     /// <remarks>
     /// **Content-Type:** multipart/form-data
@@ -291,13 +291,13 @@ public class EKycController : ControllerBase
     /// - `videoFile` — video selfie quay trực tiếp từ camera (MP4/AVI/MOV, 3–5 giây)
     /// - `cmndImage` — ảnh khuôn mặt selfie của người dùng (JPEG/PNG)
     ///
-    /// FPT AI Liveness v3 yêu cầu cả VIDEO + ảnh khuôn mặt (cmnd).
+    /// ⚠️ Liveness Detection yêu cầu tích hợp VNPT eKYC SDK phía client.
     ///
     /// **HTTP Responses:**
     /// - `200` — Kiểm tra hoàn tất. Xem `isLive`: `true` = hợp lệ, `false` = giả mạo
     /// - `400` — File không hợp lệ (rỗng, sai định dạng, quá dung lượng)
     /// - `401` — Chưa đăng nhập
-    /// - `502` — FPT AI API trả về lỗi hoặc không kết nối được
+    /// - `502` — eKYC API trả về lỗi hoặc không kết nối được
     /// - `500` — Lỗi không xác định từ server
     /// </remarks>
     [HttpPost("liveness")]
@@ -336,7 +336,7 @@ public class EKycController : ControllerBase
                     warning          = result.Warning,
                     livenessCode     = result.LivenessCode,
                     livenessMessage  = result.LivenessMessage,
-                    fptMessage       = result.FptMessage
+                    providerMessage  = result.ProviderMessage
                 }
             });
         }
@@ -353,11 +353,11 @@ public class EKycController : ControllerBase
         }
         catch (EKycIntegrationException ex)
         {
-            // Lỗi do FPT AI API → 502 Bad Gateway
+            // Lỗi do eKYC API → 502 Bad Gateway
             return StatusCode(StatusCodes.Status502BadGateway, new
             {
                 success   = false,
-                message   = "Không thể kết nối hoặc xử lý phản hồi từ FPT AI Liveness API.",
+                message   = "Không thể kết nối hoặc xử lý phản hồi từ eKYC Liveness API.",
                 errorCode = ex.ErrorCode,
                 detail    = ex.Message
             });

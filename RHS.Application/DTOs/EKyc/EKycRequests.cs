@@ -28,21 +28,18 @@ public sealed record FaceMatchRequest
 
 /// <summary>
 /// Request gửi lên endpoint Liveness Detection để xác minh người thật qua video.
-/// FPT AI Liveness API v3 yêu cầu VIDEO + ảnh khuôn mặt (CMND) để chống spoofing/deepfake.
+/// ⚠️ VNPT eKYC không hỗ trợ Liveness qua REST API — chỉ qua SDK.
 /// </summary>
 public sealed record LivenessDetectionRequest
 {
     /// <summary>
     /// Video selfie của người dùng (quay trực tiếp từ camera).
     /// Định dạng hỗ trợ: MP4, AVI, MOV. Thời lượng khuyến nghị: 3–5 giây.
-    /// Field name gửi lên FPT AI: <c>video</c>.
     /// </summary>
     public required IFormFile VideoFile { get; init; }
 
     /// <summary>
     /// Ảnh khuôn mặt của người dùng (chụp từ camera/selfie).
-    /// Field name gửi lên FPT AI: <c>cmnd</c>.
     /// </summary>
     public required IFormFile CmndImage { get; init; }
 }
-

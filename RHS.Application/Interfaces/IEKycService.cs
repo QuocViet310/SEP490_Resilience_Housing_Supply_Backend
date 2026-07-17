@@ -3,13 +3,13 @@ using RHS.Application.DTOs.EKyc;
 namespace RHS.Application.Interfaces;
 
 /// <summary>
-/// Định nghĩa contract cho dịch vụ eKYC tích hợp FPT AI.
-/// Triển khai cụ thể nằm ở <c>RHS.Infrastructure.Services.FptEKycService</c>.
+/// Định nghĩa contract cho dịch vụ eKYC (Electronic Know Your Customer).
+/// Triển khai cụ thể: <c>RHS.Infrastructure.Services.VnptEKycService</c> (VNPT Cloud).
 /// </summary>
 public interface IEKycService
 {
     /// <summary>
-    /// Gọi FPT AI OCR API để trích xuất thông tin từ ảnh Căn cước công dân.
+    /// Gọi eKYC OCR API để trích xuất thông tin từ ảnh Căn cước công dân.
     /// </summary>
     /// <param name="request">
     /// Yêu cầu chứa file ảnh CCCD (mặt trước hoặc mặt sau).
@@ -23,14 +23,14 @@ public interface IEKycService
     /// Ném ra khi file ảnh không hợp lệ (sai định dạng, quá dung lượng...).
     /// </exception>
     /// <exception cref="RHS.Infrastructure.Exceptions.EKycIntegrationException">
-    /// Ném ra khi FPT AI API trả về lỗi hoặc không thể kết nối.
+    /// Ném ra khi eKYC API trả về lỗi hoặc không thể kết nối.
     /// </exception>
     Task<OcrIdCardResponse> ExtractIdCardAsync(
         OcrIdCardRequest request,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gọi FPT AI Face Match API để so sánh ảnh selfie với ảnh trên CCCD.
+    /// Gọi eKYC Face Match API để so sánh ảnh selfie với ảnh trên CCCD.
     /// </summary>
     /// <param name="request">
     /// Yêu cầu chứa ảnh selfie và ảnh chân dung trên thẻ CCCD.
@@ -44,29 +44,22 @@ public interface IEKycService
     /// Ném ra khi một trong hai file ảnh không hợp lệ.
     /// </exception>
     /// <exception cref="RHS.Infrastructure.Exceptions.EKycIntegrationException">
-    /// Ném ra khi FPT AI API trả về lỗi hoặc không thể kết nối.
+    /// Ném ra khi eKYC API trả về lỗi hoặc không thể kết nối.
     /// </exception>
     Task<FaceMatchResponse> MatchFaceAsync(
         FaceMatchRequest request,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gọi FPT AI Liveness Detection API để xác minh ảnh selfie có phải người thật không.
-    /// Phát hiện các hành vi giả mạo: dùng ảnh in, ảnh trên màn hình, hoặc mặt nạ.
+    /// Kiểm tra liveness detection — xác minh ảnh selfie có phải người thật không.
     /// </summary>
-    /// <param name="request">
-    /// Yêu cầu chứa file ảnh selfie (chụp trực tiếp từ camera).
-    /// File phải là JPEG/PNG và dung lượng ≤ 5 MB.
-    /// </param>
-    /// <param name="cancellationToken">Token hủy tác vụ bất đồng bộ.</param>
-    /// <returns>
-    /// <see cref="LivenessDetectionResponse"/> chứa kết quả <c>IsLive</c> và <c>LivenessScore</c>.
-    /// </returns>
-    /// <exception cref="RHS.Infrastructure.Exceptions.EKycValidationException">
-    /// Ném ra khi file ảnh không hợp lệ (sai định dạng, quá dung lượng...).
-    /// </exception>
-    /// <exception cref="RHS.Infrastructure.Exceptions.EKycIntegrationException">
-    /// Ném ra khi FPT AI API trả về lỗi hoặc không thể kết nối.
+    /// <remarks>
+    /// ⚠️ VNPT eKYC không hỗ trợ Liveness Detection qua REST API.
+    /// Tính năng này yêu cầu tích hợp VNPT eKYC SDK phía client (Mobile/Web).
+    /// Gọi method này sẽ throw <see cref="System.NotSupportedException"/>.
+    /// </remarks>
+    /// <exception cref="System.NotSupportedException">
+    /// Luôn ném ra vì VNPT Liveness yêu cầu SDK integration.
     /// </exception>
     Task<LivenessDetectionResponse> DetectLivenessAsync(
         LivenessDetectionRequest request,

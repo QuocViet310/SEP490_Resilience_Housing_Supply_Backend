@@ -9,7 +9,7 @@ namespace RHS.Infrastructure.Extensions;
 
 /// <summary>
 /// Extension methods cho <see cref="IServiceCollection"/> để đăng ký toàn bộ
-/// dịch vụ eKYC (FPT AI) vào DI container.
+/// dịch vụ eKYC (VNPT eKYC) vào DI container.
 /// </summary>
 /// <remarks>
 /// Cách dùng trong <c>Program.cs</c>:
@@ -22,39 +22,49 @@ public static class EKycServiceCollectionExtensions
     /// <summary>
     /// Đăng ký tất cả dependency cần thiết cho tính năng eKYC:
     /// <list type="number">
-    ///   <item>Bind <see cref="FptAiOptions"/> từ section "FptAi" trong appsettings.</item>
-    ///   <item>Đăng ký named <see cref="System.Net.Http.HttpClient"/> "FptAiHttpClient"
-    ///         với default header <c>api-key</c> và timeout.</item>
+    ///   <item>Bind <see cref="VnptEKycOptions"/> từ section "VnptEKyc" trong appsettings.</item>
+    ///   <item>Đăng ký named <see cref="System.Net.Http.HttpClient"/> "VnptEKycHttpClient"
+    ///         với BaseAddress, Authorization header, Token-id, Token-key, và timeout.</item>
     ///   <item>Đăng ký <see cref="EKycFileValidator"/> là Singleton (stateless, thread-safe).</item>
-    ///   <item>Đăng ký <see cref="IEKycService"/> → <see cref="FptEKycService"/> là Scoped.</item>
+    ///   <item>Đăng ký <see cref="IEKycService"/> → <see cref="VnptEKycService"/> là Scoped.</item>
     /// </list>
     /// </summary>
     /// <param name="services">DI container.</param>
-    /// <param name="configuration">Configuration root để đọc section "FptAi".</param>
+    /// <param name="configuration">Configuration root để đọc section "VnptEKyc".</param>
     /// <returns><paramref name="services"/> để hỗ trợ fluent chaining.</returns>
     public static IServiceCollection AddEKycServices(
         this IServiceCollection services,
         IConfiguration          configuration)
     {
         // ── Bước 1: Bind strongly-typed options ────────────────────────────
-        var fptAiSection = configuration.GetSection(FptAiOptions.SectionName);
-        services.Configure<FptAiOptions>(fptAiSection);
+        var vnptSection = configuration.GetSection(VnptEKycOptions.SectionName);
+        services.Configure<VnptEKycOptions>(vnptSection);
 
         // Đọc options ngay để cấu hình HttpClient bên dưới
-        var options = fptAiSection.Get<FptAiOptions>() ?? new FptAiOptions();
+        var options = vnptSection.Get<VnptEKycOptions>() ?? new VnptEKycOptions();
 
         // ── Bước 2: Đăng ký named HttpClient ──────────────────────────────
         services
-            .AddHttpClient(FptEKycService.HttpClientName, client =>
+            .AddHttpClient(VnptEKycService.HttpClientName, client =>
             {
                 // Đặt timeout cho toàn bộ request (bao gồm connection + send + receive)
                 client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
 
-                // Thêm API key vào mọi request mà không cần nhắc lại trong service
-                if (!string.IsNullOrWhiteSpace(options.ApiKey))
+                // Base URL cho VNPT eKYC API
+                client.BaseAddress = new Uri(options.BaseUrl);
+
+                // VNPT eKYC authentication headers
+                if (!string.IsNullOrWhiteSpace(options.AccessToken))
                 {
-                    client.DefaultRequestHeaders.Add("api-key", options.ApiKey);
+                    client.DefaultRequestHeaders.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", options.AccessToken);
                 }
+
+                if (!string.IsNullOrWhiteSpace(options.TokenId))
+                    client.DefaultRequestHeaders.Add("Token-id", options.TokenId);
+
+                if (!string.IsNullOrWhiteSpace(options.TokenKey))
+                    client.DefaultRequestHeaders.Add("Token-key", options.TokenKey);
             });
 
         // ── Bước 3: Đăng ký Validator ─────────────────────────────────────
@@ -63,7 +73,7 @@ public static class EKycServiceCollectionExtensions
 
         // ── Bước 4: Đăng ký Service ───────────────────────────────────────
         // Scoped để theo vòng đời của HTTP request, tránh rò rỉ HttpClient context.
-        services.AddScoped<IEKycService, FptEKycService>();
+        services.AddScoped<IEKycService, VnptEKycService>();
 
         return services;
     }

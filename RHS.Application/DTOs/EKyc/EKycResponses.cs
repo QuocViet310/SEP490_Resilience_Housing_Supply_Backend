@@ -5,15 +5,15 @@ namespace RHS.Application.DTOs.EKyc;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Kết quả trả về sau khi gọi API OCR của FPT AI.
+/// Kết quả trả về sau khi gọi API OCR (eKYC Provider).
 /// Chứa thông tin đã được trích xuất từ ảnh Căn cước công dân.
 /// </summary>
 public sealed record OcrIdCardResponse
 {
-    /// <summary>Mã lỗi từ FPT AI (0 = thành công).</summary>
+    /// <summary>Mã lỗi từ eKYC Provider (0 = thành công).</summary>
     public int ErrorCode { get; init; }
 
-    /// <summary>Mô tả lỗi từ FPT AI.</summary>
+    /// <summary>Mô tả lỗi từ eKYC Provider.</summary>
     public string ErrorMessage { get; init; } = string.Empty;
 
     /// <summary>Thông tin CCCD đã được trích xuất (null nếu xảy ra lỗi).</summary>
@@ -22,7 +22,6 @@ public sealed record OcrIdCardResponse
 
 /// <summary>
 /// Chi tiết thông tin được trích xuất từ Căn cước công dân.
-/// Ánh xạ 1-1 với phần tử đầu tiên trong mảng "data" từ FPT AI API.
 /// </summary>
 public sealed record OcrIdCardData
 {
@@ -73,28 +72,27 @@ public sealed record OcrIdCardData
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Kết quả trả về sau khi gọi API Face Match của FPT AI.
+/// Kết quả trả về sau khi gọi API Face Match (eKYC Provider).
 /// </summary>
 public sealed record FaceMatchResponse
 {
-    /// <summary>HTTP status code phản hồi từ FPT AI (ví dụ "200").</summary>
+    /// <summary>HTTP status code phản hồi từ eKYC Provider (ví dụ "200").</summary>
     public string Code { get; init; } = string.Empty;
 
     /// <summary>Hai ảnh có khớp nhau hay không (ngưỡng ≥ 80% similarity).</summary>
     public bool IsMatch { get; init; }
 
-    /// <summary>Độ tương đồng khuôn mặt (0.0 – 100.0). Ngưỡng thường dùng ≥ 80.</summary>
+    /// <summary>Độ tương đồng khuôn mặt (0.0 – 100.0). Ngưỡng thường dùng ≥ 85.</summary>
     public double Similarity { get; init; }
 
     /// <summary>
     /// Cả 2 ảnh upload đều là ảnh CCCD hay không.
     /// <c>true</c> = cả 2 ảnh đều là CCCD, <c>false</c> = ít nhất 1 ảnh không phải CCCD.
-    /// (Tương ứng field <c>isBothImgIDCard</c> trong FPT AI response.)
     /// </summary>
     public bool IsBothImgIdCard { get; init; }
 
-    /// <summary>Thông điệp từ FPT AI (ví dụ "request successful.").</summary>
-    public string FptMessage { get; init; } = string.Empty;
+    /// <summary>Thông điệp từ eKYC Provider (ví dụ "request successful.").</summary>
+    public string ProviderMessage { get; init; } = string.Empty;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,30 +100,28 @@ public sealed record FaceMatchResponse
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Kết quả trả về sau khi gọi API Liveness Detection của FPT AI.
-/// API nhận VIDEO và trả về kết quả xác minh thực thể sống + deepfake detection.
+/// Kết quả trả về sau khi gọi API Liveness Detection.
+/// ⚠️ VNPT eKYC không hỗ trợ Liveness Detection qua REST API — chỉ qua SDK.
 /// </summary>
 public sealed record LivenessDetectionResponse
 {
-    /// <summary>HTTP status code gốc từ FPT AI (ví dụ "200", "409").</summary>
+    /// <summary>HTTP status code gốc từ eKYC Provider.</summary>
     public string Code { get; init; } = string.Empty;
 
-    /// <summary>Thông điệp tổng quan từ FPT AI root level ("request successful").</summary>
-    public string FptMessage { get; init; } = string.Empty;
+    /// <summary>Thông điệp tổng quan từ eKYC Provider.</summary>
+    public string ProviderMessage { get; init; } = string.Empty;
 
-    // ── Kết quả Liveness (nested "liveness" object) ──────────────────────
+    // ── Kết quả Liveness ─────────────────────────────────────────────────
 
     /// <summary>
     /// Video có phải người thật hay không.
     /// <c>true</c> = liveness passed, <c>false</c> = phát hiện giả mạo (spoofing).
-    /// Tương ứng field <c>is_live</c> trong FPT AI response.
     /// </summary>
     public bool IsLive { get; init; }
 
     /// <summary>
     /// Xác suất giả mạo (spoof probability), dạng số (ví dụ 0.3587).
     /// Giá trị càng cao = càng nhiều khả năng bị giả mạo.
-    /// Tương ứng field <c>spoof_prob</c> trong FPT AI response.
     /// </summary>
     public double SpoofProbability { get; init; }
 
@@ -135,12 +131,12 @@ public sealed record LivenessDetectionResponse
     /// <summary>Video có phải deepfake hay không.</summary>
     public bool IsDeepfake { get; init; }
 
-    /// <summary>Cảnh báo chất lượng video (ví dụ: "Resolution of video is too low...").</summary>
+    /// <summary>Cảnh báo chất lượng video.</summary>
     public string Warning { get; init; } = string.Empty;
 
     /// <summary>Status code từ nested liveness object.</summary>
     public string LivenessCode { get; init; } = string.Empty;
 
-    /// <summary>Message từ nested liveness object ("liveness check successful").</summary>
+    /// <summary>Message từ nested liveness object.</summary>
     public string LivenessMessage { get; init; } = string.Empty;
 }
