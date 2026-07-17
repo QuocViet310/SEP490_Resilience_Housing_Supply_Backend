@@ -38,6 +38,7 @@ public class HousingProjectsController : ControllerBase
     /// <param name="minArea">Minimum area</param>
     /// <param name="maxArea">Maximum area</param>
     /// <param name="statusId">Filter by status ID</param>
+    /// <param name="statusCode">Filter by status code (e.g. OPEN, UPCOMING, Open_For_Registration)</param>
     /// <returns>Paginated list of housing projects</returns>
     [HttpGet]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -53,7 +54,8 @@ public class HousingProjectsController : ControllerBase
         [FromQuery] decimal? maxPrice = null,
         [FromQuery] double? minArea = null,
         [FromQuery] double? maxArea = null,
-        [FromQuery] Guid? statusId = null)
+        [FromQuery] Guid? statusId = null,
+        [FromQuery] string? statusCode = null)
     {
         try
         {
@@ -68,7 +70,8 @@ public class HousingProjectsController : ControllerBase
                 MaxPrice = maxPrice,
                 MinArea = minArea,
                 MaxArea = maxArea,
-                StatusId = statusId
+                StatusId = statusId,
+                StatusCode = statusCode
             };
 
             Guid? currentUserId = null;

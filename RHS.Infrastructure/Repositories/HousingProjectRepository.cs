@@ -85,6 +85,16 @@ public class HousingProjectRepository : IHousingProjectRepository
             query = query.Where(x => x.HousingProjectStatusId == request.StatusId.Value);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.StatusCode))
+        {
+            var code = request.StatusCode.Trim().ToUpper();
+            if (code == "OPEN_FOR_REGISTRATION")
+            {
+                code = "OPEN";
+            }
+            query = query.Where(x => x.HousingProjectStatus != null && x.HousingProjectStatus.StatusCode == code);
+        }
+
         // Get total count before pagination
         var totalCount = await query.CountAsync();
 

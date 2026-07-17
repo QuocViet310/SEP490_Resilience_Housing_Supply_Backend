@@ -12,4 +12,5 @@ public class HousingProjectFilterRequestDto
     public double? MinArea { get; set; }
     public double? MaxArea { get; set; }
     public Guid? StatusId { get; set; }
+    public string? StatusCode { get; set; }
 }
