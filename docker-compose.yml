@@ -10,7 +10,7 @@ services:
     volumes:
       - rhs-db-data:/var/opt/mssql
     healthcheck:
-      test: ["CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "RHS_Platform_StrongPassword_2026!", "-Q", "SELECT 1"]
+      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "RHS_Platform_StrongPassword_2026!", "-C", "-Q", "SELECT 1"]
       interval: 10s
       timeout: 5s
       retries: 5
