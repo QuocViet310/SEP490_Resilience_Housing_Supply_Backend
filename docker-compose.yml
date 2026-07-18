@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  rhs-db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: rhs-db-container
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=RHS_Platform_StrongPassword_2026!
+    ports:
+      - "1433:1433"
+    volumes:
+      - rhs-db-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "RHS_Platform_StrongPassword_2026!", "-Q", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  rhs-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rhs-api-container
+    ports:
+      - "5112:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=rhs-db;Database=RHS_Database;User ID=sa;Password=RHS_Platform_StrongPassword_2026!;TrustServerCertificate=True;MultipleActiveResultSets=true;Encrypt=False
+    depends_on:
+      rhs-db:
+        condition: service_healthy
+    env_file:
+      - .env
+
+volumes:
+  rhs-db-data:
