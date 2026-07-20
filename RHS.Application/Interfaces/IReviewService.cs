@@ -75,5 +75,20 @@ public interface IReviewService
         Guid applicationId,
         Guid sxdUserId,
         DepartmentOfConstructionReviewRequestDto request);
+
+    /// <summary>
+    /// SXD gắn cờ vi phạm (gian lận đất đai) cho hồ sơ.
+    /// </summary>
+    Task<ReviewResponseDto> FlagViolationAsync(
+        Guid applicationId,
+        Guid sxdUserId,
+        string reason);
+
+    /// <summary>
+    /// SXD gỡ cờ vi phạm cho hồ sơ.
+    /// </summary>
+    Task<ReviewResponseDto> UnflagViolationAsync(
+        Guid applicationId,
+        Guid sxdUserId);
 }
 

@@ -287,6 +287,8 @@ public class HousingApplicationService : IHousingApplicationService
             MonthlyIncome          = app.MonthlyIncome,
             SpouseMonthlyIncome    = app.SpouseMonthlyIncome,
             AverageHousingAreaPerPerson = app.AverageHousingAreaPerPerson,
+            IsViolation            = app.IsViolation,
+            ViolationReason        = app.ViolationReason,
 
             // ── Cán bộ thẩm định ──────────────────────────────────
             OfficerId      = app.OfficerId,

@@ -33,7 +33,8 @@ public class LotteryService : ILotteryService
 
         var participants = await _db.HousingApplications
             .Where(a => a.ProjectId == projectId
-                        && a.ApplicationStatus == ApplicationStatusConstants.DepositPaid)
+                        && a.ApplicationStatus == ApplicationStatusConstants.DepositPaid
+                        && !a.IsViolation)
             .OrderBy(a => a.SubmittedAt)
             .ToListAsync(ct);
 

@@ -41,4 +41,10 @@ public static class ReviewActionConstants
 
     /// <summary>Hệ thống tự động phê duyệt sau 20 ngày (Tacit Approval)</summary>
     public const string TacitApproval = "TACIT_APPROVAL";
+
+    /// <summary>Sở Xây dựng gắn cờ vi phạm (gian lận đất đai)</summary>
+    public const string FlagViolation = "FLAG_VIOLATION";
+
+    /// <summary>Sở Xây dựng gỡ cờ vi phạm</summary>
+    public const string UnflagViolation = "UNFLAG_VIOLATION";
 }

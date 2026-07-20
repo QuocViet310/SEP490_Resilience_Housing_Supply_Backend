@@ -54,6 +54,14 @@ public class HousingApplicationConfiguration : IEntityTypeConfiguration<HousingA
             .IsRequired(false)
             .HasMaxLength(30);
 
+        builder.Property(x => x.IsViolation)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(x => x.ViolationReason)
+            .IsRequired(false)
+            .HasMaxLength(1000);
+
         // ── Thời gian ─────────────────────────────────────────────
         builder.Property(x => x.CreatedAt)
             .IsRequired();

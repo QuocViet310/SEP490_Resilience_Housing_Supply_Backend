@@ -67,6 +67,8 @@ public class HousingApplicationRepository : IHousingApplicationRepository
         existingApplication.AverageHousingAreaPerPerson = application.AverageHousingAreaPerPerson;
         existingApplication.LotteryResult = application.LotteryResult;
         existingApplication.LatestAssessmentId = application.LatestAssessmentId;
+        existingApplication.IsViolation = application.IsViolation;
+        existingApplication.ViolationReason = application.ViolationReason;
 
         await _context.SaveChangesAsync();
     }
@@ -263,7 +265,9 @@ public class HousingApplicationRepository : IHousingApplicationRepository
                 HouseholdMembersCount = x.HouseholdMembersCount,
                 PriorityGroup     = x.PriorityGroup,
                 ReceiptUrl        = x.ReceiptUrl,
-                DocumentCount     = x.Documents.Count
+                DocumentCount     = x.Documents.Count,
+                IsViolation       = x.IsViolation,
+                ViolationReason   = x.ViolationReason
             })
             .ToListAsync();
 

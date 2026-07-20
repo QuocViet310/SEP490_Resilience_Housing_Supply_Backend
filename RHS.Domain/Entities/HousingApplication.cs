@@ -83,6 +83,12 @@ public class HousingApplication
 
     public Guid? LatestAssessmentId { get; set; }
 
+    /// <summary>Đánh dấu hồ sơ vi phạm (gian lận đất đai). Khi gắn cờ, hồ sơ bị loại khỏi danh sách bốc thăm.</summary>
+    public bool IsViolation { get; set; } = false;
+
+    /// <summary>Lý do gắn cờ vi phạm</summary>
+    public string? ViolationReason { get; set; }
+
     // ─────────────────────────────────────────────────────────────
     // Navigation properties
     // ─────────────────────────────────────────────────────────────

@@ -28,4 +28,6 @@ public class ApplicationSummaryResponseDto
     public string? PriorityGroup { get; set; }
     public string? ReceiptUrl { get; set; }
     public int DocumentCount { get; set; }
+    public bool IsViolation { get; set; }
+    public string? ViolationReason { get; set; }
 }

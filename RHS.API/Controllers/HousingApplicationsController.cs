@@ -590,6 +590,79 @@ public class HousingApplicationsController : ControllerBase
         }
     }
     // ──────────────────────────────────────────────────────────────
+    // DEPARTMENT OF CONSTRUCTION: Gắn cờ vi phạm (gian lận đất đai)
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// [DepartmentOfConstruction] Gắn cờ vi phạm (gian lận đất đai) cho hồ sơ.
+    /// Hồ sơ bị gắn cờ vi phạm sẽ được loại bỏ ngay lập tức khỏi danh sách bốc thăm dự án.
+    /// </summary>
+    [HttpPost("{id:guid}/flag-violation")]
+    [Authorize(Roles = RoleConstants.DepartmentOfConstruction)]
+    [ProducesResponseType(typeof(ReviewResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> FlagViolation(
+        Guid id,
+        [FromBody] FlagViolationRequestDto request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Reason))
+            return BadRequest(new { message = "Lý do gắn cờ vi phạm là bắt buộc." });
+
+        var sxdUserId = GetCurrentUserId();
+        if (sxdUserId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
+
+        try
+        {
+            var result = await _reviewService.FlagViolationAsync(id, sxdUserId, request.Reason);
+            return Ok(result);
+        }
+        catch (ApplicationNotFoundException ex)
+        {
+            return NotFound(new { errorCode = ex.ErrorCode, message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error flagging violation for application {Id}.", id);
+            return StatusCode(500, new { message = "Đã xảy ra lỗi khi gắn cờ vi phạm." });
+        }
+    }
+
+    /// <summary>
+    /// [DepartmentOfConstruction] Gỡ cờ vi phạm cho hồ sơ.
+    /// </summary>
+    [HttpPost("{id:guid}/unflag-violation")]
+    [Authorize(Roles = RoleConstants.DepartmentOfConstruction)]
+    [ProducesResponseType(typeof(ReviewResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> UnflagViolation(Guid id)
+    {
+        var sxdUserId = GetCurrentUserId();
+        if (sxdUserId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
+
+        try
+        {
+            var result = await _reviewService.UnflagViolationAsync(id, sxdUserId);
+            return Ok(result);
+        }
+        catch (ApplicationNotFoundException ex)
+        {
+            return NotFound(new { errorCode = ex.ErrorCode, message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error unflagging violation for application {Id}.", id);
+            return StatusCode(500, new { message = "Đã xảy ra lỗi khi gỡ cờ vi phạm." });
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // Private helper
     // ──────────────────────────────────────────────────────────────
 

@@ -421,6 +421,97 @@ public class ReviewService : IReviewService
         return BuildReviewResponse(applicationId, oldStatus, targetStatus, action, now);
     }
 
+    public async Task<ReviewResponseDto> FlagViolationAsync(
+        Guid applicationId,
+        Guid sxdUserId,
+        string reason)
+    {
+        _logger.LogInformation(
+            "SXD {SxdUserId} flagging violation for application {AppId}. Reason: {Reason}.",
+            sxdUserId, applicationId, reason);
+
+        var application = await GetApplicationOrThrowAsync(applicationId);
+        
+        var oldStatus = application.ApplicationStatus;
+        var now = DateTime.UtcNow;
+
+        using var dbTransaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            application.IsViolation = true;
+            application.ViolationReason = reason;
+            application.UpdatedAt = now;
+
+            await _applicationRepo.UpdateAsync(application);
+
+            await AppendHistoryAsync(
+                applicationId: applicationId,
+                changedBy: sxdUserId,
+                action: ReviewActionConstants.FlagViolation,
+                oldStatus: oldStatus,
+                newStatus: oldStatus,
+                note: reason);
+
+            await dbTransaction.CommitAsync();
+        }
+        catch
+        {
+            await dbTransaction.RollbackAsync();
+            throw;
+        }
+
+        _logger.LogInformation(
+            "SXD {SxdUserId} flagged application {AppId} successfully.",
+            sxdUserId, applicationId);
+
+        return BuildReviewResponse(applicationId, oldStatus, oldStatus, ReviewActionConstants.FlagViolation, now);
+    }
+
+    public async Task<ReviewResponseDto> UnflagViolationAsync(
+        Guid applicationId,
+        Guid sxdUserId)
+    {
+        _logger.LogInformation(
+            "SXD {SxdUserId} unflagging violation for application {AppId}.",
+            sxdUserId, applicationId);
+
+        var application = await GetApplicationOrThrowAsync(applicationId);
+
+        var oldStatus = application.ApplicationStatus;
+        var now = DateTime.UtcNow;
+
+        using var dbTransaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            application.IsViolation = false;
+            application.ViolationReason = null;
+            application.UpdatedAt = now;
+
+            await _applicationRepo.UpdateAsync(application);
+
+            await AppendHistoryAsync(
+                applicationId: applicationId,
+                changedBy: sxdUserId,
+                action: ReviewActionConstants.UnflagViolation,
+                oldStatus: oldStatus,
+                newStatus: oldStatus,
+                note: "Gỡ cờ vi phạm");
+
+            await dbTransaction.CommitAsync();
+        }
+        catch
+        {
+            await dbTransaction.RollbackAsync();
+            throw;
+        }
+
+        _logger.LogInformation(
+            "SXD {SxdUserId} unflagged application {AppId} successfully.",
+            sxdUserId, applicationId);
+
+        return BuildReviewResponse(applicationId, oldStatus, oldStatus, ReviewActionConstants.UnflagViolation, now);
+    }
+
     // ─────────────────────────────────────────────────────────────
     // Private helpers
     // ─────────────────────────────────────────────────────────────
@@ -563,6 +654,8 @@ public class ReviewService : IReviewService
             ReviewActionConstants.SubmitToDepartment   => "Gửi lên Sở Xây dựng",
             ReviewActionConstants.Cancel               => "Hủy hồ sơ",
             ReviewActionConstants.TacitApproval        => "Tự động phê duyệt (20 ngày)",
+            ReviewActionConstants.FlagViolation        => "Gắn cờ vi phạm",
+            ReviewActionConstants.UnflagViolation      => "Gỡ cờ vi phạm",
             _ => action
         };
 

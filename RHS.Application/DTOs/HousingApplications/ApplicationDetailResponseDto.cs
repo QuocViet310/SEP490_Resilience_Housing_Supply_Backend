@@ -39,6 +39,8 @@ public class ApplicationDetailResponseDto
     public decimal? MonthlyIncome { get; set; }
     public decimal? SpouseMonthlyIncome { get; set; }
     public decimal? AverageHousingAreaPerPerson { get; set; }
+    public bool IsViolation { get; set; }
+    public string? ViolationReason { get; set; }
 
     /// <summary>Kết quả thẩm định điều kiện Đ29–30 gần nhất.</summary>
     public EligibilityResultDto? Eligibility { get; set; }
