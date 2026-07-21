@@ -106,6 +106,9 @@ builder.Services.AddScoped<IContractSignService, ContractSignService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 
+// Dependency Injection - Announcement
+builder.Services.AddScoped<IAnnouncementService, AnnouncementService>();
+
 // Dependency Injection - VNPT eKYC
 builder.Services.AddEKycServices(builder.Configuration);
 

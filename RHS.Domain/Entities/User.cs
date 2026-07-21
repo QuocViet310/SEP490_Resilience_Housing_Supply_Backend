@@ -37,4 +37,5 @@ public class User
     public ICollection<Message> ReceivedMessages { get; set; } = new List<Message>();
     public ICollection<IssueReport> IssueReports { get; set; } = new List<IssueReport>();
     public ICollection<Wishlist> Wishlists { get; set; } = new List<Wishlist>();
+    public ICollection<Announcement> Announcements { get; set; } = new List<Announcement>();
 }

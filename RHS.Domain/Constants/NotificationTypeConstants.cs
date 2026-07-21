@@ -44,4 +44,7 @@ public static class NotificationTypeConstants
 
     /// <summary>Hợp đồng nguyên tắc đã được ký (đồng ý điều khoản)</summary>
     public const string ContractSigned = "CONTRACT_SIGNED";
+
+    /// <summary>Thông báo mới từ Sở Xây dựng (announcement published)</summary>
+    public const string AnnouncementPublished = "ANNOUNCEMENT_PUBLISHED";
 }

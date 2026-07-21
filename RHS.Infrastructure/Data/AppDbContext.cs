@@ -51,6 +51,8 @@ public class AppDbContext : DbContext
     public DbSet<PaymentMilestone> PaymentMilestones { get; set; }
     public DbSet<PaymentInstallment> PaymentInstallments { get; set; }
     public DbSet<HouseholdMember> HouseholdMembers { get; set; }
+    public DbSet<Announcement> Announcements { get; set; }
+    public DbSet<AnnouncementAttachment> AnnouncementAttachments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -80,6 +82,8 @@ public class AppDbContext : DbContext
         modelBuilder.ApplyConfiguration(new PaymentMilestoneConfiguration());
         modelBuilder.ApplyConfiguration(new PaymentInstallmentConfiguration());
         modelBuilder.ApplyConfiguration(new HouseholdMemberConfiguration());
+        modelBuilder.ApplyConfiguration(new AnnouncementConfiguration());
+        modelBuilder.ApplyConfiguration(new AnnouncementAttachmentConfiguration());
         // Role Configuration
         modelBuilder.Entity<Role>(entity =>
         {
