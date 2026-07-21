@@ -99,6 +99,9 @@ builder.Services.AddScoped<IPdfContractService, PdfContractService>();
 builder.Services.AddScoped<IPdfReceiptService, PdfReceiptService>();
 builder.Services.AddScoped<IPrincipleAgreementRepository, PrincipleAgreementRepository>();
 
+// Dependency Injection - Contract Sign
+builder.Services.AddScoped<IContractSignService, ContractSignService>();
+
 // Dependency Injection - Notification
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();

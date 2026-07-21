@@ -22,6 +22,17 @@ namespace RHS.Infrastructure.Configurations
             builder.Property(x => x.CreatedAt)
                 .IsRequired();
 
+            builder.Property(x => x.IsSigned)
+                .IsRequired()
+                .HasDefaultValue(false);
+
+            builder.Property(x => x.SignedAt)
+                .IsRequired(false);
+
+            builder.Property(x => x.SignedIpAddress)
+                .IsRequired(false)
+                .HasMaxLength(50);
+
             // 1-to-1 Relationship with HousingApplication
             builder.HasOne(x => x.HousingApplication)
                 .WithOne(x => x.PrincipleAgreement)

@@ -53,4 +53,7 @@ public static class ReviewActionConstants
 
     /// <summary>CĐT gán loại căn hộ cho người trúng bốc thăm</summary>
     public const string AssignApartment = "ASSIGN_APARTMENT";
+
+    /// <summary>Người dân ký (đồng ý) hợp đồng nguyên tắc</summary>
+    public const string ContractSigned = "CONTRACT_SIGNED";
 }

@@ -41,4 +41,7 @@ public static class NotificationTypeConstants
 
     /// <summary>Đã thanh toán đủ toàn bộ đợt trả trước</summary>
     public const string FullyPaid = "FULLY_PAID";
+
+    /// <summary>Hợp đồng nguyên tắc đã được ký (đồng ý điều khoản)</summary>
+    public const string ContractSigned = "CONTRACT_SIGNED";
 }

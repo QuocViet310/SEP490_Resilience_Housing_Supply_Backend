@@ -39,6 +39,9 @@ public static class ApplicationStatusConstants
     /// <summary>Đã thanh toán đủ toàn bộ đợt trả trước (tất cả installments PAID)</summary>
     public const string FullyPaid = "FULLY_PAID";
 
+    /// <summary>Đã ký hợp đồng nguyên tắc (đồng ý điều khoản)</summary>
+    public const string ContractSigned = "CONTRACT_SIGNED";
+
     /// <summary>Danh sách tất cả trạng thái hợp lệ</summary>
     public static readonly IReadOnlyList<string> AllStatuses = new[]
     {
@@ -52,7 +55,8 @@ public static class ApplicationStatusConstants
         Canceled,
         Expired,
         DepositPaid,
-        FullyPaid
+        FullyPaid,
+        ContractSigned
     };
 
     /// <summary>
@@ -91,6 +95,7 @@ public static class ApplicationStatusConstants
     {
         DepositPaid,
         FullyPaid,
+        ContractSigned,
         Rejected,
         Canceled,
         Expired
