@@ -115,4 +115,7 @@ public class HousingApplication
 
     public ICollection<PaymentInstallment> PaymentInstallments { get; set; }
         = new List<PaymentInstallment>();
+
+    public ICollection<HouseholdMember> HouseholdMembers { get; set; }
+        = new List<HouseholdMember>();
 }

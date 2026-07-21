@@ -90,6 +90,7 @@ public class HousingApplicationRepository : IHousingApplicationRepository
                 .ThenInclude(d => d.VerificationResult)
             .Include(x => x.StatusHistories.OrderByDescending(h => h.ChangedAt))
                 .ThenInclude(h => h.ChangedByUser)
+            .Include(x => x.HouseholdMembers)
             .FirstOrDefaultAsync(x => x.ApplicationId == applicationId);
     }
 
@@ -502,5 +503,64 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             })
             .OrderBy(x => x.FullName)
             .ToListAsync();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Household Members — Duplicate CCCD Check
+    // ─────────────────────────────────────────────────────────────
+
+    public async Task<List<string>> FindDuplicateMemberCitizenIdsInProjectAsync(
+        Guid applicationId, Guid projectId)
+    {
+        // Lấy tất cả CCCD thành viên hộ gia đình của hồ sơ hiện tại (bỏ qua null)
+        var memberCitizenIds = await _context.HouseholdMembers
+            .AsNoTracking()
+            .Where(m => m.ApplicationId == applicationId && m.CitizenId != null)
+            .Select(m => m.CitizenId!)
+            .ToListAsync();
+
+        if (memberCitizenIds.Count == 0)
+            return new List<string>();
+
+        // Trạng thái hồ sơ còn hiệu lực (chiếm CCCD)
+        var activeStatuses = new[]
+        {
+            ApplicationStatusConstants.Draft,
+            ApplicationStatusConstants.Submitted,
+            ApplicationStatusConstants.Reviewing,
+            ApplicationStatusConstants.NeedMoreDocuments,
+            ApplicationStatusConstants.PendingSxdReview,
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.DepositPaid
+        };
+
+        // Tìm CCCD trùng: xuất hiện trong applicant CCCD hoặc member CCCD của hồ sơ KHÁC cùng project
+        // Check 1: CCCD member trùng với CCCD applicant của hồ sơ khác
+        var duplicateWithApplicants = await _context.HousingApplications
+            .AsNoTracking()
+            .Where(a => a.ProjectId == projectId
+                     && a.ApplicationId != applicationId
+                     && activeStatuses.Contains(a.ApplicationStatus)
+                     && memberCitizenIds.Contains(a.CitizenId))
+            .Select(a => a.CitizenId)
+            .Distinct()
+            .ToListAsync();
+
+        // Check 2: CCCD member trùng với CCCD member của hồ sơ khác cùng project
+        var duplicateWithOtherMembers = await _context.HouseholdMembers
+            .AsNoTracking()
+            .Where(m => m.HousingApplication.ProjectId == projectId
+                     && m.ApplicationId != applicationId
+                     && m.CitizenId != null
+                     && memberCitizenIds.Contains(m.CitizenId)
+                     && activeStatuses.Contains(m.HousingApplication.ApplicationStatus))
+            .Select(m => m.CitizenId!)
+            .Distinct()
+            .ToListAsync();
+
+        return duplicateWithApplicants
+            .Union(duplicateWithOtherMembers)
+            .Distinct()
+            .ToList();
     }
 }

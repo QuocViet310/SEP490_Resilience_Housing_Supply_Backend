@@ -1,4 +1,5 @@
 using RHS.Application.DTOs.Eligibility;
+using RHS.Application.DTOs.HouseholdMember;
 
 namespace RHS.Application.DTOs.HousingApplications;
 
@@ -56,6 +57,10 @@ public class ApplicationDetailResponseDto
     // ── Lịch sử xét duyệt ────────────────────────────────────────
     public IEnumerable<ReviewHistoryResponseDto> ReviewHistories { get; set; }
         = new List<ReviewHistoryResponseDto>();
+
+    // ── Thành viên hộ gia đình ──────────────────────────────────────
+    public IEnumerable<HouseholdMemberResponseDto> HouseholdMembers { get; set; }
+        = new List<HouseholdMemberResponseDto>();
 }
 
 /// <summary>Response DTO cho một tài liệu đính kèm trong hồ sơ.</summary>

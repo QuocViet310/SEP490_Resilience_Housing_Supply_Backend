@@ -50,6 +50,7 @@ public class AppDbContext : DbContext
     public DbSet<ApartmentType> ApartmentTypes { get; set; }
     public DbSet<PaymentMilestone> PaymentMilestones { get; set; }
     public DbSet<PaymentInstallment> PaymentInstallments { get; set; }
+    public DbSet<HouseholdMember> HouseholdMembers { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -78,6 +79,7 @@ public class AppDbContext : DbContext
         modelBuilder.ApplyConfiguration(new ApartmentTypeConfiguration());
         modelBuilder.ApplyConfiguration(new PaymentMilestoneConfiguration());
         modelBuilder.ApplyConfiguration(new PaymentInstallmentConfiguration());
+        modelBuilder.ApplyConfiguration(new HouseholdMemberConfiguration());
         // Role Configuration
         modelBuilder.Entity<Role>(entity =>
         {

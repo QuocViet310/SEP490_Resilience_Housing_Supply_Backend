@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using RHS.Application.DTOs.HouseholdMember;
 using RHS.Domain.Constants;
 
 namespace RHS.Application.DTOs.HousingApplications;
@@ -59,10 +60,11 @@ public class CreateApplicationRequestDto
     [MaxLength(50, ErrorMessage = "Tình trạng hôn nhân không được quá 50 ký tự.")]
     public string MaritalStatus { get; set; } = string.Empty;
 
-    /// <summary>Số thành viên hộ gia đình</summary>
-    [Required(ErrorMessage = "Số thành viên hộ gia đình là bắt buộc.")]
-    [Range(1, 100, ErrorMessage = "Số thành viên hộ gia đình phải từ 1 trở lên.")]
-    public int HouseholdMembersCount { get; set; }
+    /// <summary>
+    /// Danh sách thành viên hộ gia đình (không tính người đứng đơn).
+    /// HouseholdMembersCount sẽ được tự động tính = 1 + số thành viên.
+    /// </summary>
+    public List<HouseholdMemberRequestDto>? HouseholdMembers { get; set; }
 
     /// <summary>Thuộc đối tượng (Mẫu số 01 mục 8): hộ nghèo / cận nghèo đô thị</summary>
     [Required(ErrorMessage = "Đối tượng thụ hưởng là bắt buộc.")]

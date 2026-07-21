@@ -1,10 +1,13 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using RHS.Application.DTOs.HouseholdMember;
 using RHS.Application.DTOs.HousingApplications;
 using RHS.Application.DTOs.HousingApplications.Dashboard;
 using RHS.Application.DTOs.HousingProjects;
 using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
 using RHS.Domain.Entities;
+using RHS.Infrastructure.Data;
 using RHS.Infrastructure.Exceptions;
 
 namespace RHS.Infrastructure.Services;
@@ -16,15 +19,18 @@ public class HousingApplicationService : IHousingApplicationService
 {
     private readonly IHousingApplicationRepository _applicationRepo;
     private readonly IEligibilityRuleEngine _eligibilityEngine;
+    private readonly AppDbContext _context;
     private readonly ILogger<HousingApplicationService> _logger;
 
     public HousingApplicationService(
         IHousingApplicationRepository applicationRepo,
         IEligibilityRuleEngine eligibilityEngine,
+        AppDbContext context,
         ILogger<HousingApplicationService> logger)
     {
         _applicationRepo = applicationRepo;
         _eligibilityEngine = eligibilityEngine;
+        _context = context;
         _logger = logger;
     }
 
@@ -97,12 +103,13 @@ public class HousingApplicationService : IHousingApplicationService
             PermanentAddress       = request.PermanentAddress.Trim(),
             HousingStatus          = request.HousingStatus,
             MaritalStatus          = request.MaritalStatus.Trim(),
-            HouseholdMembersCount  = request.HouseholdMembersCount,
+            HouseholdMembersCount  = 1 + (request.HouseholdMembers?.Count ?? 0),
             PriorityGroup          = request.PriorityGroup.Trim(),
             MonthlyIncome          = request.MonthlyIncome,
             SpouseMonthlyIncome    = request.SpouseMonthlyIncome,
             AverageHousingAreaPerPerson = request.AverageHousingAreaPerPerson,
-            LotteryResult          = LotteryResultConstants.Pending
+            LotteryResult          = LotteryResultConstants.Pending,
+            HouseholdMembers       = MapHouseholdMembers(request.HouseholdMembers)
         };
 
         // 4. Lưu vào DB
@@ -180,12 +187,36 @@ public class HousingApplicationService : IHousingApplicationService
         application.PermanentAddress      = request.PermanentAddress.Trim();
         application.HousingStatus         = request.HousingStatus;
         application.MaritalStatus         = request.MaritalStatus.Trim();
-        application.HouseholdMembersCount = request.HouseholdMembersCount;
         application.PriorityGroup         = request.PriorityGroup.Trim();
         application.MonthlyIncome         = request.MonthlyIncome;
         application.SpouseMonthlyIncome   = request.SpouseMonthlyIncome;
         application.AverageHousingAreaPerPerson = request.AverageHousingAreaPerPerson;
         application.UpdatedAt             = DateTime.UtcNow;
+
+        // Replace danh sách thành viên hộ gia đình nếu request chứa members
+        if (request.HouseholdMembers != null)
+        {
+            // Xóa members cũ
+            var existingMembers = await _context.HouseholdMembers
+                .Where(m => m.ApplicationId == applicationId)
+                .ToListAsync();
+            _context.HouseholdMembers.RemoveRange(existingMembers);
+
+            // Validate và thêm members mới
+            foreach (var memberDto in request.HouseholdMembers)
+            {
+                ValidateMemberRequest(memberDto);
+            }
+
+            var newMembers = MapHouseholdMembers(request.HouseholdMembers);
+            foreach (var member in newMembers)
+            {
+                member.ApplicationId = applicationId;
+                _context.HouseholdMembers.Add(member);
+            }
+
+            application.HouseholdMembersCount = 1 + request.HouseholdMembers.Count;
+        }
 
         await _applicationRepo.UpdateAsync(application);
 
@@ -321,6 +352,19 @@ public class HousingApplicationService : IHousingApplicationService
                     ChangedAt        = h.ChangedAt,
                     ChangedBy        = h.ChangedBy,
                     ChangedByFullName = h.ChangedByUser?.FullName ?? string.Empty
+                }).ToList(),
+
+            // ── Thành viên hộ gia đình ──────────────────────────────────
+            HouseholdMembers = app.HouseholdMembers
+                .Select(m => new HouseholdMemberResponseDto
+                {
+                    MemberId     = m.MemberId,
+                    FullName     = m.FullName,
+                    CitizenId    = m.CitizenId,
+                    DateOfBirth  = m.DateOfBirth,
+                    Relationship = m.Relationship,
+                    Note         = m.Note,
+                    CreatedAt    = m.CreatedAt
                 }).ToList()
         };
     }
@@ -352,5 +396,206 @@ public class HousingApplicationService : IHousingApplicationService
     public async Task<List<FinalListItemDto>> GetFinalListByProjectAsync(Guid projectId)
     {
         return await _applicationRepo.GetFinalListByProjectAsync(projectId);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Household Members CRUD
+    // ─────────────────────────────────────────────────────────────
+
+    public async Task<List<HouseholdMemberResponseDto>> GetMembersByApplicationIdAsync(
+        Guid applicantId, Guid applicationId)
+    {
+        var application = await _applicationRepo.GetByIdWithDetailsAsync(applicationId)
+            ?? throw new ApplicationNotFoundException(applicationId);
+
+        // Applicant chỉ xem của mình, Officer xem được tất cả
+        // (Controller sẽ xử lý logic phân quyền chi tiết)
+
+        return application.HouseholdMembers
+            .Select(MapToMemberResponseDto)
+            .ToList();
+    }
+
+    public async Task<HouseholdMemberResponseDto> AddMemberAsync(
+        Guid applicantId, Guid applicationId, HouseholdMemberRequestDto request)
+    {
+        var application = await GetEditableApplication(applicantId, applicationId);
+
+        ValidateMemberRequest(request);
+
+        var now = DateTime.UtcNow;
+        var member = new HouseholdMember
+        {
+            MemberId      = Guid.NewGuid(),
+            ApplicationId = applicationId,
+            FullName      = request.FullName.Trim(),
+            CitizenId     = request.CitizenId?.Trim(),
+            DateOfBirth   = request.DateOfBirth,
+            Relationship  = request.Relationship.Trim().ToUpperInvariant(),
+            Note          = request.Note?.Trim(),
+            CreatedAt     = now
+        };
+
+        _context.HouseholdMembers.Add(member);
+
+        // Auto-update count
+        application.HouseholdMembersCount = 1 + await _context.HouseholdMembers
+            .CountAsync(m => m.ApplicationId == applicationId) + 1; // +1 for the new member not yet saved
+        application.UpdatedAt = now;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Thêm thành viên {MemberId} vào hồ sơ {ApplicationId}. Tổng: {Count} người.",
+            member.MemberId, applicationId, application.HouseholdMembersCount);
+
+        return MapToMemberResponseDto(member);
+    }
+
+    public async Task<HouseholdMemberResponseDto> UpdateMemberAsync(
+        Guid applicantId, Guid applicationId, Guid memberId, HouseholdMemberRequestDto request)
+    {
+        await GetEditableApplication(applicantId, applicationId);
+
+        ValidateMemberRequest(request);
+
+        var member = await _context.HouseholdMembers
+            .FirstOrDefaultAsync(m => m.MemberId == memberId && m.ApplicationId == applicationId)
+            ?? throw new KeyNotFoundException(
+                $"Không tìm thấy thành viên {memberId} trong hồ sơ {applicationId}.");
+
+        member.FullName     = request.FullName.Trim();
+        member.CitizenId    = request.CitizenId?.Trim();
+        member.DateOfBirth  = request.DateOfBirth;
+        member.Relationship = request.Relationship.Trim().ToUpperInvariant();
+        member.Note         = request.Note?.Trim();
+        member.UpdatedAt    = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Cập nhật thành viên {MemberId} trong hồ sơ {ApplicationId}.",
+            memberId, applicationId);
+
+        return MapToMemberResponseDto(member);
+    }
+
+    public async Task RemoveMemberAsync(
+        Guid applicantId, Guid applicationId, Guid memberId)
+    {
+        var application = await GetEditableApplication(applicantId, applicationId);
+
+        var member = await _context.HouseholdMembers
+            .FirstOrDefaultAsync(m => m.MemberId == memberId && m.ApplicationId == applicationId)
+            ?? throw new KeyNotFoundException(
+                $"Không tìm thấy thành viên {memberId} trong hồ sơ {applicationId}.");
+
+        _context.HouseholdMembers.Remove(member);
+
+        // Auto-update count
+        var remainingCount = await _context.HouseholdMembers
+            .CountAsync(m => m.ApplicationId == applicationId && m.MemberId != memberId);
+        application.HouseholdMembersCount = 1 + remainingCount;
+        application.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Xóa thành viên {MemberId} khỏi hồ sơ {ApplicationId}. Tổng còn: {Count} người.",
+            memberId, applicationId, application.HouseholdMembersCount);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Household Members Helpers
+    // ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lấy hồ sơ và kiểm tra quyền chỉnh sửa (DRAFT / NEED_MORE_DOCUMENTS, chủ hồ sơ).
+    /// </summary>
+    private async Task<HousingApplication> GetEditableApplication(Guid applicantId, Guid applicationId)
+    {
+        var application = await _context.HousingApplications
+            .FirstOrDefaultAsync(a => a.ApplicationId == applicationId)
+            ?? throw new ApplicationNotFoundException(applicationId);
+
+        if (application.ApplicantId != applicantId)
+            throw new UnauthorizedAccessException("Bạn không có quyền thực hiện thao tác này trên hồ sơ.");
+
+        var editableStatuses = new[]
+        {
+            ApplicationStatusConstants.Draft,
+            ApplicationStatusConstants.NeedMoreDocuments
+        };
+
+        if (!editableStatuses.Contains(application.ApplicationStatus))
+        {
+            throw new ArgumentException(
+                $"Chỉ được chỉnh sửa thành viên khi hồ sơ ở trạng thái DRAFT hoặc NEED_MORE_DOCUMENTS. Hiện tại: {application.ApplicationStatus}.");
+        }
+
+        return application;
+    }
+
+    /// <summary>Validate thông tin thành viên: relationship hợp lệ, CCCD bắt buộc nếu ≥ 14 tuổi.</summary>
+    private static void ValidateMemberRequest(HouseholdMemberRequestDto request)
+    {
+        if (!HouseholdRelationshipConstants.IsValid(request.Relationship))
+        {
+            throw new ArgumentException(
+                $"Quan hệ '{request.Relationship}' không hợp lệ. " +
+                $"Giá trị cho phép: {string.Join(", ", HouseholdRelationshipConstants.AllValues)}");
+        }
+
+        // Luật VN: từ 14 tuổi trở lên bắt buộc có CCCD
+        if (request.DateOfBirth.HasValue)
+        {
+            var age = DateTime.UtcNow.Year - request.DateOfBirth.Value.Year;
+            if (request.DateOfBirth.Value > DateTime.UtcNow.AddYears(-age))
+                age--;
+
+            if (age >= 14 && string.IsNullOrWhiteSpace(request.CitizenId))
+            {
+                throw new ArgumentException(
+                    $"Thành viên '{request.FullName}' từ 14 tuổi trở lên bắt buộc phải có số CCCD (theo luật Việt Nam).");
+            }
+        }
+    }
+
+    /// <summary>Map danh sách HouseholdMemberRequestDto → HouseholdMember entities.</summary>
+    private static List<HouseholdMember> MapHouseholdMembers(
+        List<HouseholdMemberRequestDto>? memberDtos)
+    {
+        if (memberDtos == null || memberDtos.Count == 0)
+            return new List<HouseholdMember>();
+
+        var now = DateTime.UtcNow;
+        return memberDtos.Select(dto =>
+        {
+            ValidateMemberRequest(dto);
+            return new HouseholdMember
+            {
+                MemberId     = Guid.NewGuid(),
+                FullName     = dto.FullName.Trim(),
+                CitizenId    = dto.CitizenId?.Trim(),
+                DateOfBirth  = dto.DateOfBirth,
+                Relationship = dto.Relationship.Trim().ToUpperInvariant(),
+                Note         = dto.Note?.Trim(),
+                CreatedAt    = now
+            };
+        }).ToList();
+    }
+
+    private static HouseholdMemberResponseDto MapToMemberResponseDto(HouseholdMember m)
+    {
+        return new HouseholdMemberResponseDto
+        {
+            MemberId     = m.MemberId,
+            FullName     = m.FullName,
+            CitizenId    = m.CitizenId,
+            DateOfBirth  = m.DateOfBirth,
+            Relationship = m.Relationship,
+            Note         = m.Note,
+            CreatedAt    = m.CreatedAt
+        };
     }
 }

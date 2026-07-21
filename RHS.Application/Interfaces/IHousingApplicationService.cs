@@ -1,5 +1,6 @@
 using RHS.Application.DTOs.HousingApplications;
 using RHS.Application.DTOs.HousingApplications.Dashboard;
+using RHS.Application.DTOs.HouseholdMember;
 using RHS.Application.DTOs.HousingProjects;
 
 namespace RHS.Application.Interfaces;
@@ -71,5 +72,32 @@ public interface IHousingApplicationService
     /// Dữ liệu dùng để SXD export Excel/PDF công bố trên website.
     /// </summary>
     Task<List<FinalListItemDto>> GetFinalListByProjectAsync(Guid projectId);
-}
 
+    // ── Household Members ──────────────────────────────────────────
+
+    /// <summary>
+    /// Lấy danh sách thành viên hộ gia đình của một hồ sơ.
+    /// </summary>
+    Task<List<HouseholdMemberResponseDto>> GetMembersByApplicationIdAsync(
+        Guid applicantId, Guid applicationId);
+
+    /// <summary>
+    /// Thêm 1 thành viên vào hộ gia đình. Chỉ khi hồ sơ DRAFT hoặc NEED_MORE_DOCUMENTS.
+    /// Auto-update HouseholdMembersCount.
+    /// </summary>
+    Task<HouseholdMemberResponseDto> AddMemberAsync(
+        Guid applicantId, Guid applicationId, HouseholdMemberRequestDto request);
+
+    /// <summary>
+    /// Cập nhật thông tin 1 thành viên. Chỉ khi hồ sơ DRAFT hoặc NEED_MORE_DOCUMENTS.
+    /// </summary>
+    Task<HouseholdMemberResponseDto> UpdateMemberAsync(
+        Guid applicantId, Guid applicationId, Guid memberId, HouseholdMemberRequestDto request);
+
+    /// <summary>
+    /// Xóa 1 thành viên khỏi hộ gia đình. Chỉ khi hồ sơ DRAFT hoặc NEED_MORE_DOCUMENTS.
+    /// Auto-update HouseholdMembersCount.
+    /// </summary>
+    Task RemoveMemberAsync(
+        Guid applicantId, Guid applicationId, Guid memberId);
+}

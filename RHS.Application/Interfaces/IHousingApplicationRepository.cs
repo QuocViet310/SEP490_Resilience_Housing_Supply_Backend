@@ -75,5 +75,14 @@ public interface IHousingApplicationRepository
     /// Lấy danh sách chốt cuối (DEPOSIT_PAID) cho dự án (Task #10).
     /// </summary>
     Task<List<FinalListItemDto>> GetFinalListByProjectAsync(Guid projectId);
+
+    // ── Household Members ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Tìm các CCCD của thành viên hộ gia đình bị trùng trong hồ sơ KHÁC cùng dự án.
+    /// Trả về danh sách CCCD trùng (empty nếu không có).
+    /// </summary>
+    Task<List<string>> FindDuplicateMemberCitizenIdsInProjectAsync(
+        Guid applicationId, Guid projectId);
 }
 

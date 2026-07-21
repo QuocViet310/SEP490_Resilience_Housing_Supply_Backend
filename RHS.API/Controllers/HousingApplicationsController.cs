@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using RHS.Application.DTOs.HouseholdMember;
 using RHS.Application.DTOs.HousingApplications;
 using RHS.Application.DTOs.HousingApplications.Dashboard;
 using RHS.Application.Interfaces;
@@ -771,6 +772,154 @@ public class HousingApplicationsController : ControllerBase
                 message = "Lỗi khi gán loại căn hộ.",
                 error = ex.Message
             });
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // HOUSEHOLD MEMBERS: CRUD thành viên hộ gia đình
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// [Applicant, Officer] Lấy danh sách thành viên hộ gia đình của một hồ sơ.
+    /// </summary>
+    [HttpGet("{id}/members")]
+    [Authorize(Roles = $"{RoleConstants.Applicant},{RoleConstants.HousingAuthorityOfficer}")]
+    [ProducesResponseType(typeof(List<HouseholdMemberResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetHouseholdMembers(Guid id)
+    {
+        var userId = GetCurrentUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
+
+        try
+        {
+            var members = await _applicationService.GetMembersByApplicationIdAsync(userId, id);
+            return Ok(members);
+        }
+        catch (ApplicationNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// [Applicant] Thêm 1 thành viên vào hộ gia đình.
+    /// Chỉ cho phép khi hồ sơ ở trạng thái DRAFT hoặc NEED_MORE_DOCUMENTS.
+    /// </summary>
+    [HttpPost("{id}/members")]
+    [Authorize(Roles = RoleConstants.Applicant)]
+    [ProducesResponseType(typeof(HouseholdMemberResponseDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AddHouseholdMember(
+        Guid id, [FromBody] HouseholdMemberRequestDto request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var applicantId = GetCurrentUserId();
+        if (applicantId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
+
+        try
+        {
+            var member = await _applicationService.AddMemberAsync(applicantId, id, request);
+            return CreatedAtAction(
+                nameof(GetHouseholdMembers),
+                new { id },
+                member);
+        }
+        catch (ApplicationNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// [Applicant] Cập nhật thông tin 1 thành viên hộ gia đình.
+    /// Chỉ cho phép khi hồ sơ ở trạng thái DRAFT hoặc NEED_MORE_DOCUMENTS.
+    /// </summary>
+    [HttpPut("{id}/members/{memberId}")]
+    [Authorize(Roles = RoleConstants.Applicant)]
+    [ProducesResponseType(typeof(HouseholdMemberResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateHouseholdMember(
+        Guid id, Guid memberId, [FromBody] HouseholdMemberRequestDto request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var applicantId = GetCurrentUserId();
+        if (applicantId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
+
+        try
+        {
+            var member = await _applicationService.UpdateMemberAsync(applicantId, id, memberId, request);
+            return Ok(member);
+        }
+        catch (ApplicationNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// [Applicant] Xóa 1 thành viên khỏi hộ gia đình.
+    /// Chỉ cho phép khi hồ sơ ở trạng thái DRAFT hoặc NEED_MORE_DOCUMENTS.
+    /// </summary>
+    [HttpDelete("{id}/members/{memberId}")]
+    [Authorize(Roles = RoleConstants.Applicant)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RemoveHouseholdMember(Guid id, Guid memberId)
+    {
+        var applicantId = GetCurrentUserId();
+        if (applicantId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
+
+        try
+        {
+            await _applicationService.RemoveMemberAsync(applicantId, id, memberId);
+            return NoContent();
+        }
+        catch (ApplicationNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
         }
     }
 

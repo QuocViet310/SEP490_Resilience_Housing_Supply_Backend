@@ -132,6 +132,21 @@ public class ReviewService : IReviewService
                 application.ProjectId);
         }
 
+        // Nghiệp vụ: CCCD thành viên hộ gia đình cũng phải duy nhất trong cùng dự án
+        var duplicateMemberCitizenIds = await _applicationRepo
+            .FindDuplicateMemberCitizenIdsInProjectAsync(applicationId, application.ProjectId);
+
+        if (duplicateMemberCitizenIds.Count > 0)
+        {
+            _logger.LogWarning(
+                "Submit blocked: Member CitizenIds [{CitizenIds}] duplicated in project {ProjectId}. ApplicationId={AppId}.",
+                string.Join(", ", duplicateMemberCitizenIds), application.ProjectId, applicationId);
+
+            throw new DuplicateCitizenIdInProjectException(
+                string.Join(", ", duplicateMemberCitizenIds),
+                application.ProjectId);
+        }
+
         // Đ38.1.e — mỗi người chỉ nộp tại một dự án (active)
         var oneAppOnly = await _policyService.GetValueAsync(PolicyKeys.OneApplicationPerApplicant, true);
         if (oneAppOnly)
