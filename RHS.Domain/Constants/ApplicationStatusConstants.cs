@@ -36,6 +36,9 @@ public static class ApplicationStatusConstants
     /// <summary>Đã thanh toán đặt cọc thành công</summary>
     public const string DepositPaid = "DEPOSIT_PAID";
 
+    /// <summary>Đã thanh toán đủ toàn bộ đợt trả trước (tất cả installments PAID)</summary>
+    public const string FullyPaid = "FULLY_PAID";
+
     /// <summary>Danh sách tất cả trạng thái hợp lệ</summary>
     public static readonly IReadOnlyList<string> AllStatuses = new[]
     {
@@ -48,7 +51,8 @@ public static class ApplicationStatusConstants
         Rejected,
         Canceled,
         Expired,
-        DepositPaid
+        DepositPaid,
+        FullyPaid
     };
 
     /// <summary>
@@ -86,6 +90,7 @@ public static class ApplicationStatusConstants
     public static readonly IReadOnlyList<string> ClosedStatuses = new[]
     {
         DepositPaid,
+        FullyPaid,
         Rejected,
         Canceled,
         Expired

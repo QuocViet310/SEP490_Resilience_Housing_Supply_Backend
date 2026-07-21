@@ -32,4 +32,6 @@ public class HousingProjectResponseDto
     public DateTime? PublicAnnounceAt { get; set; }
     
     public List<ProjectImageResponseDto> Images { get; set; } = new List<ProjectImageResponseDto>();
+    public List<DTOs.ApartmentType.ApartmentTypeDto> ApartmentTypes { get; set; } = new();
+    public List<DTOs.Milestone.MilestoneDto> Milestones { get; set; } = new();
 }

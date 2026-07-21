@@ -663,6 +663,118 @@ public class HousingApplicationsController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────
+    // CĐT/SXD: Gán loại căn hộ cho người trúng bốc thăm
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// [CĐT/SXD] Gán loại căn hộ cho hồ sơ đã trúng bốc thăm (WON/PRIORITY_WON).
+    /// Tự động sinh lịch đóng tiền (PaymentInstallment) cho các milestone ON_LOTTERY_WON.
+    /// </summary>
+    [HttpPost("{id}/assign-apartment")]
+    [Authorize(Roles = "Housing Developer,Department Of Construction,System Administrator")]
+    public async Task<IActionResult> AssignApartment(
+        Guid id,
+        [FromBody] AssignApartmentRequestDto request,
+        [FromServices] IInstallmentService installmentService,
+        [FromServices] RHS.Infrastructure.Data.AppDbContext context)
+    {
+        try
+        {
+            var app = await context.HousingApplications
+                .FindAsync(id);
+
+            if (app == null)
+                return NotFound(new { success = false, message = "Không tìm thấy hồ sơ." });
+
+            // Chỉ gán cho hồ sơ đã trúng bốc thăm
+            if (app.LotteryResult != LotteryResultConstants.Won
+                && app.LotteryResult != LotteryResultConstants.PriorityWon)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = $"Hồ sơ chưa trúng bốc thăm. LotteryResult hiện tại: {app.LotteryResult}"
+                });
+            }
+
+            // Validate ApartmentType thuộc cùng project
+            var apartmentType = await context.ApartmentTypes
+                .FindAsync(request.ApartmentTypeId);
+
+            if (apartmentType == null || apartmentType.ProjectId != app.ProjectId)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "Loại căn hộ không hợp lệ hoặc không thuộc dự án này."
+                });
+            }
+
+            if (apartmentType.RemainingQuantity <= 0)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = $"Loại căn '{apartmentType.TypeName}' đã hết suất."
+                });
+            }
+
+            // Gán loại căn
+            app.ApartmentTypeId = request.ApartmentTypeId;
+            app.UpdatedAt = DateTime.UtcNow;
+            apartmentType.RemainingQuantity--;
+
+            // Ghi lịch sử
+            context.ApplicationStatusHistories.Add(new Domain.Entities.ApplicationStatusHistory
+            {
+                HistoryId     = Guid.NewGuid(),
+                ApplicationId = id,
+                OldStatus     = app.ApplicationStatus,
+                NewStatus     = app.ApplicationStatus,
+                Action        = ReviewActionConstants.AssignApartment,
+                Note          = $"Gán loại căn: {apartmentType.TypeName} {apartmentType.Area}m² - {apartmentType.Price:N0} VND",
+                ChangedAt     = DateTime.UtcNow,
+                ChangedBy     = GetCurrentUserId()
+            });
+
+            await context.SaveChangesAsync();
+
+            // Fire trigger ON_LOTTERY_WON → sinh installments cho Phase 1, Phase 2...
+            await installmentService.FireTriggerEventAsync(
+                id,
+                TriggerEventConstants.OnLotteryWon,
+                DateTime.UtcNow);
+
+            _logger.LogInformation(
+                "Assigned ApartmentType={TypeName} to App={AppId}. Installments generated.",
+                apartmentType.TypeName, id);
+
+            return Ok(new
+            {
+                success = true,
+                message = $"Đã gán căn {apartmentType.TypeName} {apartmentType.Area}m² và sinh lịch đóng tiền.",
+                data = new
+                {
+                    applicationId = id,
+                    apartmentTypeName = apartmentType.TypeName,
+                    area = apartmentType.Area,
+                    price = apartmentType.Price
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error assigning apartment to app {AppId}.", id);
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Lỗi khi gán loại căn hộ.",
+                error = ex.Message
+            });
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // Private helper
     // ──────────────────────────────────────────────────────────────
 

@@ -29,4 +29,16 @@ public static class NotificationTypeConstants
 
     /// <summary>Người dân tự hủy hồ sơ</summary>
     public const string ApplicationCanceled = "APPLICATION_CANCELED";
+
+    /// <summary>Khoản thu mới được tạo (installment created)</summary>
+    public const string InstallmentCreated = "INSTALLMENT_CREATED";
+
+    /// <summary>Thanh toán đợt thành công</summary>
+    public const string InstallmentPaid = "INSTALLMENT_PAID";
+
+    /// <summary>Khoản thu quá hạn</summary>
+    public const string InstallmentOverdue = "INSTALLMENT_OVERDUE";
+
+    /// <summary>Đã thanh toán đủ toàn bộ đợt trả trước</summary>
+    public const string FullyPaid = "FULLY_PAID";
 }

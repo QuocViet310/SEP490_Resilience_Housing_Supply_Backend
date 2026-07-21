@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using RHS.Application.DTOs.ApartmentType;
 using RHS.Application.DTOs.HousingProjects;
+using RHS.Application.DTOs.Milestone;
 using RHS.Application.Interfaces;
+using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 
 namespace RHS.Infrastructure.Services;
@@ -111,6 +114,54 @@ public class HousingProjectService : IHousingProjectService
             });
         }
 
+        // Add ApartmentTypes if provided
+        if (request.ApartmentTypes != null)
+        {
+            foreach (var at in request.ApartmentTypes)
+            {
+                housingProject.ApartmentTypes.Add(new Domain.Entities.ApartmentType
+                {
+                    Id                = Guid.NewGuid(),
+                    ProjectId         = housingProject.Id,
+                    TypeName          = at.TypeName,
+                    Area              = at.Area,
+                    Price             = at.Price,
+                    Quantity          = at.Quantity,
+                    RemainingQuantity = at.Quantity,
+                    Description       = at.Description,
+                    CreatedAt         = DateTime.UtcNow
+                });
+            }
+        }
+
+        // Add PaymentMilestones if provided
+        if (request.Milestones != null)
+        {
+            foreach (var ms in request.Milestones)
+            {
+                if (!CalculationTypeConstants.IsValid(ms.CalculationType))
+                    throw new ArgumentException($"CalculationType không hợp lệ: {ms.CalculationType}");
+                if (!TriggerEventConstants.IsValid(ms.TriggerEvent))
+                    throw new ArgumentException($"TriggerEvent không hợp lệ: {ms.TriggerEvent}");
+
+                housingProject.PaymentMilestones.Add(new PaymentMilestone
+                {
+                    Id              = Guid.NewGuid(),
+                    ProjectId       = housingProject.Id,
+                    PhaseOrder      = ms.PhaseOrder,
+                    PhaseName       = ms.PhaseName,
+                    CalculationType = ms.CalculationType,
+                    FixedAmount     = ms.FixedAmount,
+                    Percentage      = ms.Percentage,
+                    TriggerEvent    = ms.TriggerEvent,
+                    DueDays         = ms.DueDays,
+                    Description     = ms.Description,
+                    IsActive        = true,
+                    CreatedAt       = DateTime.UtcNow
+                });
+            }
+        }
+
         // Save to repository
         try
         {
@@ -211,6 +262,56 @@ public class HousingProjectService : IHousingProjectService
                 DisplayOrder = order++,
                 CreatedAt = DateTime.UtcNow
             });
+        }
+
+        // Sync ApartmentTypes (replace all)
+        if (request.ApartmentTypes != null)
+        {
+            existingProject.ApartmentTypes.Clear();
+            foreach (var at in request.ApartmentTypes)
+            {
+                existingProject.ApartmentTypes.Add(new Domain.Entities.ApartmentType
+                {
+                    Id                = Guid.NewGuid(),
+                    ProjectId         = existingProject.Id,
+                    TypeName          = at.TypeName,
+                    Area              = at.Area,
+                    Price             = at.Price,
+                    Quantity          = at.Quantity,
+                    RemainingQuantity = at.Quantity,
+                    Description       = at.Description,
+                    CreatedAt         = DateTime.UtcNow
+                });
+            }
+        }
+
+        // Sync PaymentMilestones (replace all)
+        if (request.Milestones != null)
+        {
+            existingProject.PaymentMilestones.Clear();
+            foreach (var ms in request.Milestones)
+            {
+                if (!CalculationTypeConstants.IsValid(ms.CalculationType))
+                    throw new ArgumentException($"CalculationType không hợp lệ: {ms.CalculationType}");
+                if (!TriggerEventConstants.IsValid(ms.TriggerEvent))
+                    throw new ArgumentException($"TriggerEvent không hợp lệ: {ms.TriggerEvent}");
+
+                existingProject.PaymentMilestones.Add(new PaymentMilestone
+                {
+                    Id              = Guid.NewGuid(),
+                    ProjectId       = existingProject.Id,
+                    PhaseOrder      = ms.PhaseOrder,
+                    PhaseName       = ms.PhaseName,
+                    CalculationType = ms.CalculationType,
+                    FixedAmount     = ms.FixedAmount,
+                    Percentage      = ms.Percentage,
+                    TriggerEvent    = ms.TriggerEvent,
+                    DueDays         = ms.DueDays,
+                    Description     = ms.Description,
+                    IsActive        = true,
+                    CreatedAt       = DateTime.UtcNow
+                });
+            }
         }
 
         // Save to repository
@@ -387,6 +488,34 @@ public class HousingProjectService : IHousingProjectService
                     Id = x.Id,
                     ImageUrl = x.ImageUrl,
                     DisplayOrder = x.DisplayOrder
+                })
+                .ToList(),
+            ApartmentTypes = project.ApartmentTypes
+                .Select(at => new ApartmentTypeDto
+                {
+                    Id                = at.Id,
+                    TypeName          = at.TypeName,
+                    Area              = at.Area,
+                    Price             = at.Price,
+                    Quantity          = at.Quantity,
+                    RemainingQuantity = at.RemainingQuantity,
+                    Description       = at.Description
+                })
+                .ToList(),
+            Milestones = project.PaymentMilestones
+                .OrderBy(m => m.PhaseOrder)
+                .Select(m => new MilestoneDto
+                {
+                    Id              = m.Id,
+                    PhaseOrder      = m.PhaseOrder,
+                    PhaseName       = m.PhaseName,
+                    CalculationType = m.CalculationType,
+                    FixedAmount     = m.FixedAmount,
+                    Percentage      = m.Percentage,
+                    TriggerEvent    = m.TriggerEvent,
+                    DueDays         = m.DueDays,
+                    Description     = m.Description,
+                    IsActive        = m.IsActive
                 })
                 .ToList()
         };

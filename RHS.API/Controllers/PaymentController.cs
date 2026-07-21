@@ -12,10 +12,14 @@ namespace RHS.API.Controllers;
 public class PaymentController : ControllerBase
 {
     private readonly IPaymentService _paymentService;
+    private readonly IInstallmentService _installmentService;
 
-    public PaymentController(IPaymentService paymentService)
+    public PaymentController(
+        IPaymentService paymentService,
+        IInstallmentService installmentService)
     {
         _paymentService = paymentService;
+        _installmentService = installmentService;
     }
 
     /// <summary>
@@ -307,6 +311,81 @@ public class PaymentController : ControllerBase
                 success = false,
                 message = "Lỗi tạo hợp đồng PDF",
                 error   = ex.Message
+            });
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Installment — Lịch đóng tiền theo đợt
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Lấy tổng hợp lịch đóng tiền (tất cả đợt) cho một hồ sơ.
+    /// Bao gồm: tổng tiền, đã đóng, còn lại, chi tiết từng đợt.
+    /// </summary>
+    [HttpGet("installments/{applicationId}")]
+    [Authorize]
+    public async Task<IActionResult> GetInstallments(Guid applicationId)
+    {
+        try
+        {
+            var summary = await _installmentService.GetSummaryAsync(applicationId);
+
+            if (summary == null)
+                return NotFound(new { success = false, message = "Không tìm thấy hồ sơ." });
+
+            return Ok(new { success = true, data = summary });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Lỗi khi lấy lịch đóng tiền.",
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Tạo URL VNPay thanh toán cho một đợt cụ thể (PaymentInstallment).
+    /// Chỉ cho thanh toán đợt PENDING/OVERDUE, phải đúng thứ tự.
+    /// </summary>
+    [HttpPost("installments/{installmentId}/pay")]
+    [Authorize]
+    public async Task<IActionResult> PayInstallment(Guid installmentId)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
+            return Unauthorized(new { success = false, message = "Token không hợp lệ" });
+
+        try
+        {
+            var result = await _installmentService.CreateInstallmentPaymentAsync(
+                userId, installmentId, HttpContext);
+
+            if (!result.Success)
+                return BadRequest(new { success = false, message = result.Message });
+
+            return Ok(new
+            {
+                success = true,
+                message = result.Message,
+                data = new
+                {
+                    paymentUrl = result.PaymentUrl,
+                    orderId = result.OrderId,
+                    amount = result.Amount
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Không thể tạo URL thanh toán.",
+                error = ex.Message
             });
         }
     }

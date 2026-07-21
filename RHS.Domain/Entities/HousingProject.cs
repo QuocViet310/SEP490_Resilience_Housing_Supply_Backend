@@ -63,4 +63,6 @@ public class HousingProject
     public ICollection<HousingQuota> HousingQuotas { get; set; } = new List<HousingQuota>();
     public ICollection<Wishlist> Wishlists { get; set; } = new List<Wishlist>();
     public ICollection<LotteryDraw> LotteryDraws { get; set; } = new List<LotteryDraw>();
+    public ICollection<ApartmentType> ApartmentTypes { get; set; } = new List<ApartmentType>();
+    public ICollection<PaymentMilestone> PaymentMilestones { get; set; } = new List<PaymentMilestone>();
 }

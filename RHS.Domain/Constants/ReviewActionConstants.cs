@@ -47,4 +47,10 @@ public static class ReviewActionConstants
 
     /// <summary>Sở Xây dựng gỡ cờ vi phạm</summary>
     public const string UnflagViolation = "UNFLAG_VIOLATION";
+
+    /// <summary>Thanh toán đợt (installment) thành công → cập nhật PaymentInstallment</summary>
+    public const string InstallmentPayment = "INSTALLMENT_PAYMENT";
+
+    /// <summary>CĐT gán loại căn hộ cho người trúng bốc thăm</summary>
+    public const string AssignApartment = "ASSIGN_APARTMENT";
 }

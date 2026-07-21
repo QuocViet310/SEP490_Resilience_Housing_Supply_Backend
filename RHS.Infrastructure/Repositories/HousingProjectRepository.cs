@@ -172,6 +172,8 @@ public class HousingProjectRepository : IHousingProjectRepository
         return await _context.HousingProjects
             .Include(x => x.HousingProjectStatus)
             .Include(x => x.ProjectImages)
+            .Include(x => x.ApartmentTypes)
+            .Include(x => x.PaymentMilestones)
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id);
     }
@@ -184,6 +186,17 @@ public class HousingProjectRepository : IHousingProjectRepository
             .Where(x => x.ProjectId == entity.Id)
             .ToListAsync();
         _context.ProjectImages.RemoveRange(existingImages);
+
+        // Clear old ApartmentTypes and PaymentMilestones before adding new ones
+        var existingApartmentTypes = await _context.ApartmentTypes
+            .Where(x => x.ProjectId == entity.Id)
+            .ToListAsync();
+        _context.ApartmentTypes.RemoveRange(existingApartmentTypes);
+
+        var existingMilestones = await _context.PaymentMilestones
+            .Where(x => x.ProjectId == entity.Id)
+            .ToListAsync();
+        _context.PaymentMilestones.RemoveRange(existingMilestones);
 
         _context.HousingProjects.Update(entity);
         await _context.SaveChangesAsync();

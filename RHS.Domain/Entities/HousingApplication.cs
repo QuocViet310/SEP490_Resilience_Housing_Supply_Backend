@@ -89,6 +89,9 @@ public class HousingApplication
     /// <summary>Lý do gắn cờ vi phạm</summary>
     public string? ViolationReason { get; set; }
 
+    /// <summary>Loại căn hộ được phân sau bốc thăm trúng</summary>
+    public Guid? ApartmentTypeId { get; set; }
+
     // ─────────────────────────────────────────────────────────────
     // Navigation properties
     // ─────────────────────────────────────────────────────────────
@@ -99,6 +102,8 @@ public class HousingApplication
 
     public HousingProject HousingProject { get; set; } = null!;
 
+    public ApartmentType? ApartmentType { get; set; }
+
     public ICollection<ApplicationDocument> Documents { get; set; }
         = new List<ApplicationDocument>();
 
@@ -107,4 +112,7 @@ public class HousingApplication
 
     public ICollection<Appointment> Appointments { get; set; }
         = new List<Appointment>();
+
+    public ICollection<PaymentInstallment> PaymentInstallments { get; set; }
+        = new List<PaymentInstallment>();
 }

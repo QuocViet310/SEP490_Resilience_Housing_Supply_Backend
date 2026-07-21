@@ -31,4 +31,10 @@ public class CreateHousingProjectRequestDto
     public bool IsConfirmed { get; set; }
     public DateTime? ApplicationOpenDate { get; set; }
     public DateTime? ApplicationCloseDate { get; set; }
+
+    /// <summary>Danh sách loại căn hộ với giá đã được SXD thẩm định</summary>
+    public List<DTOs.ApartmentType.CreateApartmentTypeDto>? ApartmentTypes { get; set; }
+
+    /// <summary>Cấu hình lịch thanh toán đợt (milestone templates)</summary>
+    public List<DTOs.Milestone.CreateMilestoneDto>? Milestones { get; set; }
 }

@@ -92,6 +92,7 @@ builder.Services.AddScoped<IBeneficiaryPublishService, BeneficiaryPublishService
 builder.Services.AddScoped<IVnPayService, VnPayService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
+builder.Services.AddScoped<IInstallmentService, InstallmentService>();
 
 // Dependency Injection - PDF Contract & PrincipleAgreement
 builder.Services.AddScoped<IPdfContractService, PdfContractService>();
@@ -111,6 +112,7 @@ builder.Services.AddDocumentVerificationServices(builder.Configuration);
 // Background Worker
 builder.Services.AddHostedService<RHS.API.BackgroundServices.PaymentTimeoutWorker>();
 builder.Services.AddHostedService<RHS.API.BackgroundServices.ProjectAutomationWorker>();
+builder.Services.AddHostedService<RHS.API.BackgroundServices.OverduePaymentWorker>();
 
 // CORS Configuration
 builder.Services.AddCors(options =>

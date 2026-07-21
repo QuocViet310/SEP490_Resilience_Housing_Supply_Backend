@@ -131,6 +131,16 @@ public class HousingApplicationConfiguration : IEntityTypeConfiguration<HousingA
             .HasForeignKey(x => x.ApplicationId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.HasOne(x => x.ApartmentType)
+            .WithMany()
+            .HasForeignKey(x => x.ApartmentTypeId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasMany(x => x.PaymentInstallments)
+            .WithOne(x => x.HousingApplication)
+            .HasForeignKey(x => x.ApplicationId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         // ── Indexes ───────────────────────────────────────────────
         builder.HasIndex(x => x.ApplicantId);
         builder.HasIndex(x => x.ProjectId);
