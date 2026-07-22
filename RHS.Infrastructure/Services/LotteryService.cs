@@ -31,15 +31,23 @@ public class LotteryService : ILotteryService
             .FirstOrDefaultAsync(p => p.Id == projectId, ct)
             ?? throw new InvalidOperationException("Không tìm thấy dự án.");
 
+        var qualifiedStatuses = new[]
+        {
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout,
+            ApplicationStatusConstants.DepositPaid
+        };
+
         var participants = await _db.HousingApplications
+            .Include(a => a.PrincipleAgreement)
             .Where(a => a.ProjectId == projectId
-                        && a.ApplicationStatus == ApplicationStatusConstants.DepositPaid
+                        && qualifiedStatuses.Contains(a.ApplicationStatus)
                         && !a.IsViolation)
             .OrderBy(a => a.SubmittedAt)
             .ToListAsync(ct);
 
         if (participants.Count == 0)
-            throw new InvalidOperationException("Không có hồ sơ DEPOSIT_PAID để bốc thăm.");
+            throw new InvalidOperationException("Không có hồ sơ đủ điều kiện để bốc thăm.");
 
         // Hướng A: nếu đã bốc thăm trước đó, hoàn suất của người từng trúng trước khi phân bổ lại.
         var wonResults = new[]
@@ -91,6 +99,7 @@ public class LotteryService : ILotteryService
 
         var winners = new HashSet<Guid>();
         var results = new List<LotteryParticipantResultDto>();
+        var now = DateTime.UtcNow;
 
         // Ưu tiên không bốc thăm — xếp theo SubmittedAt
         var priorityWinners = priorityApps.Take(priorityQuota).ToList();
@@ -98,7 +107,32 @@ public class LotteryService : ILotteryService
         {
             winners.Add(app.ApplicationId);
             app.LotteryResult = LotteryResultConstants.PriorityWon;
+            app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+            app.UpdatedAt = now;
             results.Add(MapParticipant(app, LotteryResultConstants.PriorityWon, true));
+
+            if (app.PrincipleAgreement == null)
+            {
+                _db.PrincipleAgreements.Add(new PrincipleAgreement
+                {
+                    Id = Guid.NewGuid(),
+                    ApplicationId = app.ApplicationId,
+                    PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
+                    CreatedAt = now
+                });
+            }
+
+            _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+            {
+                HistoryId = Guid.NewGuid(),
+                ApplicationId = app.ApplicationId,
+                ChangedBy = drawnBy,
+                Action = ReviewActionConstants.PriorityDirectApproval,
+                OldStatus = app.ApplicationStatus,
+                NewStatus = ApplicationStatusConstants.ContractPending,
+                Note = "Hồ sơ thuộc diện ưu tiên được phê duyệt trực tiếp.",
+                ChangedAt = now
+            });
         }
 
         foreach (var app in priorityApps.Skip(priorityQuota))
@@ -119,13 +153,52 @@ public class LotteryService : ILotteryService
         {
             winners.Add(app.ApplicationId);
             app.LotteryResult = LotteryResultConstants.Won;
+            app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+            app.UpdatedAt = now;
             results.Add(MapParticipant(app, LotteryResultConstants.Won, !string.IsNullOrWhiteSpace(app.PriorityGroup)));
+
+            if (app.PrincipleAgreement == null)
+            {
+                _db.PrincipleAgreements.Add(new PrincipleAgreement
+                {
+                    Id = Guid.NewGuid(),
+                    ApplicationId = app.ApplicationId,
+                    PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
+                    CreatedAt = now
+                });
+            }
+
+            _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+            {
+                HistoryId = Guid.NewGuid(),
+                ApplicationId = app.ApplicationId,
+                ChangedBy = drawnBy,
+                Action = ReviewActionConstants.LotteryWon,
+                OldStatus = app.ApplicationStatus,
+                NewStatus = ApplicationStatusConstants.ContractPending,
+                Note = "Hồ sơ trúng bốc thăm, chuyển sang bước ký hợp đồng nguyên tắc.",
+                ChangedAt = now
+            });
         }
 
         foreach (var app in randomLosers)
         {
             app.LotteryResult = LotteryResultConstants.Lost;
+            app.ApplicationStatus = ApplicationStatusConstants.LotteryLost;
+            app.UpdatedAt = now;
             results.Add(MapParticipant(app, LotteryResultConstants.Lost, !string.IsNullOrWhiteSpace(app.PriorityGroup)));
+
+            _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+            {
+                HistoryId = Guid.NewGuid(),
+                ApplicationId = app.ApplicationId,
+                ChangedBy = drawnBy,
+                Action = ReviewActionConstants.LotteryLost,
+                OldStatus = app.ApplicationStatus,
+                NewStatus = ApplicationStatusConstants.LotteryLost,
+                Note = "Hồ sơ trượt bốc thăm.",
+                ChangedAt = now
+            });
         }
 
         // Cập nhật HousingQuota RemainingSlots

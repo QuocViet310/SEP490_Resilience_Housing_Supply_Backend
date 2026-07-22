@@ -598,4 +598,215 @@ public class HousingApplicationService : IHousingApplicationService
             CreatedAt    = m.CreatedAt
         };
     }
+
+    /// <inheritdoc/>
+    public async Task<ProjectApplicationEvaluationDto> GetProjectApplicationEvaluationAsync(Guid projectId)
+    {
+        var project = await _context.HousingProjects
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == projectId)
+            ?? throw new InvalidOperationException("Không tìm thấy dự án.");
+
+        var qualifiedStatuses = new[]
+        {
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout
+        };
+
+        var apps = await _context.HousingApplications
+            .AsNoTracking()
+            .Where(a => a.ProjectId == projectId && qualifiedStatuses.Contains(a.ApplicationStatus) && !a.IsViolation)
+            .OrderByDescending(a => a.PriorityScore)
+            .ThenBy(a => a.SubmittedAt)
+            .ToListAsync();
+
+        var priorityApps = apps.Where(a => !string.IsNullOrWhiteSpace(a.PriorityGroup)).Select(MapToSummaryItem).ToList();
+        var nonPriorityApps = apps.Where(a => string.IsNullOrWhiteSpace(a.PriorityGroup)).Select(MapToSummaryItem).ToList();
+
+        var scenario = apps.Count <= project.AvailableUnits ? "LESS_OR_EQUAL_AVAILABLE" : "GREATER_THAN_AVAILABLE";
+
+        return new ProjectApplicationEvaluationDto
+        {
+            ProjectId = projectId,
+            ProjectName = project.ProjectName,
+            AvailableUnits = project.AvailableUnits,
+            TotalQualifiedApplications = apps.Count,
+            PriorityCount = priorityApps.Count,
+            NonPriorityCount = nonPriorityApps.Count,
+            RecommendedScenario = scenario,
+            PriorityApplications = priorityApps,
+            NonPriorityApplications = nonPriorityApps
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> ExecuteDeveloperDecisionAsync(
+        Guid projectId, DeveloperWorkflowDecisionRequestDto request, Guid developerUserId)
+    {
+        var project = await _context.HousingProjects
+            .Include(p => p.HousingProjectStatus)
+            .FirstOrDefaultAsync(p => p.Id == projectId)
+            ?? throw new InvalidOperationException("Không tìm thấy dự án.");
+
+        var qualifiedStatuses = new[]
+        {
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout
+        };
+
+        var apps = await _context.HousingApplications
+            .Include(a => a.PrincipleAgreement)
+            .Where(a => a.ProjectId == projectId && qualifiedStatuses.Contains(a.ApplicationStatus) && !a.IsViolation)
+            .OrderByDescending(a => a.PriorityScore)
+            .ThenBy(a => a.SubmittedAt)
+            .ToListAsync();
+
+        var now = DateTime.UtcNow;
+
+        using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            if (request.DecisionType == "CLOSE_AND_SIGN")
+            {
+                foreach (var app in apps)
+                {
+                    var oldStatus = app.ApplicationStatus;
+                    app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+                    app.UpdatedAt = now;
+
+                    if (app.PrincipleAgreement == null)
+                    {
+                        var agreement = new PrincipleAgreement
+                        {
+                            Id = Guid.NewGuid(),
+                            ApplicationId = app.ApplicationId,
+                            PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
+                            CreatedAt = now
+                        };
+                        await _context.PrincipleAgreements.AddAsync(agreement);
+                    }
+
+                    _context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+                    {
+                        HistoryId = Guid.NewGuid(),
+                        ApplicationId = app.ApplicationId,
+                        ChangedBy = developerUserId,
+                        Action = ReviewActionConstants.DeveloperDecisionCloseAndSign,
+                        OldStatus = oldStatus,
+                        NewStatus = ApplicationStatusConstants.ContractPending,
+                        Note = "CĐT chốt danh sách đủ điều kiện, chuyển sang bước ký hợp đồng nguyên tắc.",
+                        ChangedAt = now
+                    });
+                }
+
+                if (request.CloseProject)
+                {
+                    var closedStatus = await _context.HousingProjectStatuses
+                        .FirstOrDefaultAsync(s => s.StatusCode == "CLOSED");
+                    if (closedStatus != null)
+                    {
+                        project.HousingProjectStatusId = closedStatus.Id;
+                        project.HousingProjectStatus = closedStatus;
+                        project.UpdatedAt = now;
+                    }
+                }
+            }
+            else if (request.DecisionType == "KEEP_OPEN")
+            {
+                foreach (var app in apps)
+                {
+                    _context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+                    {
+                        HistoryId = Guid.NewGuid(),
+                        ApplicationId = app.ApplicationId,
+                        ChangedBy = developerUserId,
+                        Action = ReviewActionConstants.DeveloperDecisionKeepOpen,
+                        OldStatus = app.ApplicationStatus,
+                        NewStatus = app.ApplicationStatus,
+                        Note = "CĐT lưu hồ sơ đạt yêu cầu và tiếp tục mở tiếp nhận thêm hồ sơ đợt tới.",
+                        ChangedAt = now
+                    });
+                }
+            }
+            else if (request.DecisionType == "PROCESS_PRIORITY_AND_LOTTERY")
+            {
+                var priorityApps = apps.Where(a => !string.IsNullOrWhiteSpace(a.PriorityGroup)).ToList();
+                List<HousingApplication> selectedPriority = new();
+
+                if (priorityApps.Count <= project.AvailableUnits)
+                {
+                    selectedPriority = priorityApps;
+                }
+                else
+                {
+                    if (request.SelectedPriorityApplicationIds != null && request.SelectedPriorityApplicationIds.Count > 0)
+                    {
+                        selectedPriority = priorityApps
+                            .Where(a => request.SelectedPriorityApplicationIds.Contains(a.ApplicationId))
+                            .Take(project.AvailableUnits)
+                            .ToList();
+                    }
+                    else
+                    {
+                        selectedPriority = priorityApps.Take(project.AvailableUnits).ToList();
+                    }
+                }
+
+                foreach (var app in selectedPriority)
+                {
+                    var oldStatus = app.ApplicationStatus;
+                    app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+                    app.UpdatedAt = now;
+
+                    if (app.PrincipleAgreement == null)
+                    {
+                        var agreement = new PrincipleAgreement
+                        {
+                            Id = Guid.NewGuid(),
+                            ApplicationId = app.ApplicationId,
+                            PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
+                            CreatedAt = now
+                        };
+                        await _context.PrincipleAgreements.AddAsync(agreement);
+                    }
+
+                    _context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+                    {
+                        HistoryId = Guid.NewGuid(),
+                        ApplicationId = app.ApplicationId,
+                        ChangedBy = developerUserId,
+                        Action = ReviewActionConstants.PriorityDirectApproval,
+                        OldStatus = oldStatus,
+                        NewStatus = ApplicationStatusConstants.ContractPending,
+                        Note = "Duyệt trực tiếp đối tượng thuộc diện ưu tiên (không qua bốc thăm), chuyển sang bước ký hợp đồng nguyên tắc.",
+                        ChangedAt = now
+                    });
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Lỗi xảy ra khi thực thi quyết định của CĐT cho dự án {ProjectId}", projectId);
+            throw;
+        }
+    }
+
+    private static ApplicationSummaryItemDto MapToSummaryItem(HousingApplication a)
+    {
+        return new ApplicationSummaryItemDto
+        {
+            ApplicationId = a.ApplicationId,
+            FullName = a.FullName,
+            CitizenId = a.CitizenId,
+            PriorityGroup = a.PriorityGroup,
+            PriorityScore = a.PriorityScore,
+            SubmittedAt = a.SubmittedAt,
+            ApplicationStatus = a.ApplicationStatus
+        };
+    }
 }

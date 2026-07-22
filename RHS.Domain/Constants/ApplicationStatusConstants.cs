@@ -45,6 +45,12 @@ public static class ApplicationStatusConstants
     /// <summary>Đã ký hợp đồng nguyên tắc (đồng ý điều khoản)</summary>
     public const string ContractSigned = "CONTRACT_SIGNED";
 
+    /// <summary>Chờ người dân ký hợp đồng nguyên tắc (đã tạo hợp đồng)</summary>
+    public const string ContractPending = "CONTRACT_PENDING";
+
+    /// <summary>Đã trượt bốc thăm</summary>
+    public const string LotteryLost = "LOTTERY_LOST";
+
     /// <summary>Danh sách tất cả trạng thái hợp lệ</summary>
     public static readonly IReadOnlyList<string> AllStatuses = new[]
     {
@@ -60,7 +66,9 @@ public static class ApplicationStatusConstants
         Expired,
         DepositPaid,
         FullyPaid,
-        ContractSigned
+        ContractSigned,
+        ContractPending,
+        LotteryLost
     };
 
     /// <summary>

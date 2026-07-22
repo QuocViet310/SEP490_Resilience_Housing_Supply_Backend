@@ -13,6 +13,7 @@ public static class PolicyKeys
     public const string OneApplicationPerApplicant = "ONE_APPLICATION_PER_APPLICANT";
     public const string PublicAnnounceMinDays = "PUBLIC_ANNOUNCE_MIN_DAYS";
     public const string SxdCrosscheckSilenceDays = "SXD_CROSSCHECK_SILENCE_DAYS";
+    public const string ContractSigningDeadlineDays = "CONTRACT_SIGNING_DEADLINE_DAYS";
 
     public static readonly IReadOnlyList<(string Key, string Value, string Category, string Description)> Defaults =
         new[]
@@ -33,5 +34,7 @@ public static class PolicyKeys
                 "Số ngày công bố tối thiểu trước khi mở nhận hồ sơ — Đ38.1.b."),
             (SxdCrosscheckSilenceDays, "20", "Sales",
                 "Số ngày SXD không phản hồi sau khi nhận danh sách (đồng bộ tacit approval) — Đ38.1.đ."),
+            (ContractSigningDeadlineDays, "15", "Sales",
+                "Số ngày làm việc/hạn chót để người dân thực hiện ký hợp đồng nguyên tắc và đóng tiền cọc kể từ khi được duyệt/trúng bốc thăm."),
         };
 }

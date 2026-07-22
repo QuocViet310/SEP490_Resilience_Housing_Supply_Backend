@@ -12,15 +12,18 @@ namespace RHS.API.Controllers;
 public class HousingProjectsController : ControllerBase
 {
     private readonly IHousingProjectService _service;
+    private readonly IHousingApplicationService _applicationService;
     private readonly IUserRepository _userRepository;
     private readonly ILogger<HousingProjectsController> _logger;
 
     public HousingProjectsController(
         IHousingProjectService service,
+        IHousingApplicationService applicationService,
         IUserRepository userRepository,
         ILogger<HousingProjectsController> logger)
     {
         _service = service;
+        _applicationService = applicationService;
         _userRepository = userRepository;
         _logger = logger;
     }
@@ -275,6 +278,56 @@ public class HousingProjectsController : ControllerBase
             _logger.LogError(ex, "Error occurred while updating status for housing project {Id}", id);
             return StatusCode(StatusCodes.Status500InternalServerError,
                 new { message = "An error occurred while processing your request" });
+        }
+    }
+
+    /// <summary>
+    /// Lấy thống kê phân tích danh sách hồ sơ đủ điều kiện so với số căn có sẵn cho CĐT.
+    /// </summary>
+    [HttpGet("{id}/application-evaluation")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    public async Task<ActionResult<ProjectApplicationEvaluationDto>> GetApplicationEvaluation(Guid id)
+    {
+        try
+        {
+            var result = await _applicationService.GetProjectApplicationEvaluationAsync(id);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting application evaluation for project {ProjectId}", id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// CĐT thực thi quyết định quy trình cho danh sách hồ sơ đủ điều kiện.
+    /// </summary>
+    [HttpPost("{id}/developer-decision")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator}")]
+    public async Task<IActionResult> ExecuteDeveloperDecision(
+        Guid id, [FromBody] DeveloperWorkflowDecisionRequestDto request)
+    {
+        try
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var userId = string.IsNullOrEmpty(userIdStr) ? Guid.Empty : Guid.Parse(userIdStr);
+
+            var result = await _applicationService.ExecuteDeveloperDecisionAsync(id, request, userId);
+            return Ok(new { success = result, message = "Thực thi quyết định của CĐT thành công." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing developer decision for project {ProjectId}", id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
         }
     }
 }

@@ -88,14 +88,21 @@ public class PaymentService : IPaymentService
             };
         }
 
-        // Chỉ hồ sơ APPROVED hoặc APPROVED_BY_TIMEOUT mới được thanh toán
-        if (application.ApplicationStatus != ApplicationStatusConstants.Approved
-            && application.ApplicationStatus != ApplicationStatusConstants.ApprovedByTimeout)
+        // Chỉ hồ sơ CONTRACT_SIGNED (hoặc CONTRACT_PENDING/APPROVED) mới được thanh toán cọc
+        var payableStatuses = new[]
+        {
+            ApplicationStatusConstants.ContractSigned,
+            ApplicationStatusConstants.ContractPending,
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout
+        };
+
+        if (!payableStatuses.Contains(application.ApplicationStatus))
         {
             return new PaymentResponseDto
             {
                 Success = false,
-                Message = $"Hồ sơ chưa được phê duyệt. Trạng thái hiện tại: {application.ApplicationStatus}"
+                Message = $"Hồ sơ chưa ký hợp đồng hoặc chưa đủ điều kiện thanh toán. Trạng thái hiện tại: {application.ApplicationStatus}"
             };
         }
 
@@ -370,16 +377,20 @@ public class PaymentService : IPaymentService
             var wardManagerName = approvedHistory?.ChangedByUser?.FullName
                 ?? "Ban Quản lý Dự án";
 
-            // ── 4. Tạo PrincipleAgreement ───────────────────────────────────
-            // PDF được sinh on-demand qua API endpoint (không lưu trên Cloudinary)
-            var agreement = new PrincipleAgreement
+            // ── 4. Tạo PrincipleAgreement (nếu chưa có) ───────────────────
+            var existingAgreement = await _context.PrincipleAgreements
+                .FirstOrDefaultAsync(a => a.ApplicationId == application.ApplicationId);
+            if (existingAgreement == null)
             {
-                Id            = Guid.NewGuid(),
-                ApplicationId = application.ApplicationId,
-                PdfUrl        = $"/api/payment/download-contract/{application.ApplicationId}",
-                CreatedAt     = DateTime.UtcNow
-            };
-            await _context.PrincipleAgreements.AddAsync(agreement);
+                var agreement = new PrincipleAgreement
+                {
+                    Id            = Guid.NewGuid(),
+                    ApplicationId = application.ApplicationId,
+                    PdfUrl        = $"/api/payment/download-contract/{application.ApplicationId}",
+                    CreatedAt     = DateTime.UtcNow
+                };
+                await _context.PrincipleAgreements.AddAsync(agreement);
+            }
 
             // ── 5. Cập nhật trạng thái → DEPOSIT_PAID ──────────────────────
             var oldStatus = application.ApplicationStatus;

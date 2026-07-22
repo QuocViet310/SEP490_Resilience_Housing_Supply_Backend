@@ -56,4 +56,19 @@ public static class ReviewActionConstants
 
     /// <summary>Người dân ký (đồng ý) hợp đồng nguyên tắc</summary>
     public const string ContractSigned = "CONTRACT_SIGNED";
+
+    /// <summary>CĐT chốt danh sách và chuyển sang ký hợp đồng</summary>
+    public const string DeveloperDecisionCloseAndSign = "DEVELOPER_DECISION_CLOSE_AND_SIGN";
+
+    /// <summary>CĐT lưu hồ sơ đạt yêu cầu và tiếp tục nhận hồ sơ</summary>
+    public const string DeveloperDecisionKeepOpen = "DEVELOPER_DECISION_KEEP_OPEN";
+
+    /// <summary>Duyệt trực tiếp đối tượng thuộc diện ưu tiên (không qua bốc thăm)</summary>
+    public const string PriorityDirectApproval = "PRIORITY_DIRECT_APPROVAL";
+
+    /// <summary>Trúng bốc thăm → chuyển sang ký hợp đồng</summary>
+    public const string LotteryWon = "LOTTERY_WON";
+
+    /// <summary>Trượt bốc thăm</summary>
+    public const string LotteryLost = "LOTTERY_LOST";
 }

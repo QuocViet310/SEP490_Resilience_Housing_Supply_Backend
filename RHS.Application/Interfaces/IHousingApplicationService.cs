@@ -100,4 +100,15 @@ public interface IHousingApplicationService
     /// </summary>
     Task RemoveMemberAsync(
         Guid applicantId, Guid applicationId, Guid memberId);
+
+    /// <summary>
+    /// Lấy báo cáo phân tích hồ sơ đủ điều kiện so với số căn có sẵn cho CĐT.
+    /// </summary>
+    Task<ProjectApplicationEvaluationDto> GetProjectApplicationEvaluationAsync(Guid projectId);
+
+    /// <summary>
+    /// Thực thi quyết định luồng xử lý của CĐT (Chốt ký hợp đồng / Lưu nhận tiếp / Duyệt ưu tiên & Bốc thăm).
+    /// </summary>
+    Task<bool> ExecuteDeveloperDecisionAsync(
+        Guid projectId, DeveloperWorkflowDecisionRequestDto request, Guid developerUserId);
 }

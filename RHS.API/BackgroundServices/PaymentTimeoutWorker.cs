@@ -49,12 +49,16 @@ public class PaymentTimeoutWorker : BackgroundService
         var policyService = scope.ServiceProvider.GetRequiredService<IPolicyService>();
 
         var depositHours = await policyService.GetValueAsync(PolicyKeys.DepositPaymentHours, 24, stoppingToken);
+        var contractDays = await policyService.GetValueAsync(PolicyKeys.ContractSigningDeadlineDays, 15, stoppingToken);
+
         var cutoffTime = DateTime.UtcNow.AddHours(-depositHours);
+        var contractCutoffTime = DateTime.UtcNow.AddDays(-contractDays);
 
         var expiredApplications = await context.HousingApplications
-            .Where(x => (x.ApplicationStatus == ApplicationStatusConstants.Approved || x.ApplicationStatus == ApplicationStatusConstants.ApprovedByTimeout)
-                     && x.FinalDecisionDate.HasValue
-                     && x.FinalDecisionDate.Value < cutoffTime)
+            .Where(x => ((x.ApplicationStatus == ApplicationStatusConstants.Approved || x.ApplicationStatus == ApplicationStatusConstants.ApprovedByTimeout)
+                         && x.FinalDecisionDate.HasValue && x.FinalDecisionDate.Value < cutoffTime)
+                     || (x.ApplicationStatus == ApplicationStatusConstants.ContractPending
+                         && (x.UpdatedAt ?? x.SubmittedAt) < contractCutoffTime))
             .ToListAsync(stoppingToken);
 
         if (!expiredApplications.Any())

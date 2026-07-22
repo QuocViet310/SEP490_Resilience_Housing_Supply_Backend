@@ -67,9 +67,12 @@ public class ContractSignService : IContractSignService
             };
         }
 
-        // Chỉ cho ký khi hồ sơ ở trạng thái DEPOSIT_PAID hoặc FULLY_PAID
+        // Chỉ cho ký khi hồ sơ ở trạng thái CONTRACT_PENDING, APPROVED, DEPOSIT_PAID hoặc FULLY_PAID
         var allowedStatuses = new[]
         {
+            ApplicationStatusConstants.ContractPending,
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout,
             ApplicationStatusConstants.DepositPaid,
             ApplicationStatusConstants.FullyPaid
         };
