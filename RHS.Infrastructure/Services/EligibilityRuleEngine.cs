@@ -164,10 +164,18 @@ public class EligibilityRuleEngine : IEligibilityRuleEngine
         };
 
         _db.EligibilityAssessments.Add(assessment);
+
+        // Không dùng Update(application): entity load AsNoTracking kèm Include Applicant /
+        // UploadedByUser / ChangedByUser có thể cùng 1 User → EF tracking conflict.
+        var tracked = await _db.HousingApplications
+            .FirstAsync(a => a.ApplicationId == application.ApplicationId, ct);
+        tracked.LatestAssessmentId = assessment.AssessmentId;
+        tracked.PriorityScore = score;
+        await _db.SaveChangesAsync(ct);
+
+        // Đồng bộ lại trên instance gọi vào (ReviewService còn dùng tiếp)
         application.LatestAssessmentId = assessment.AssessmentId;
         application.PriorityScore = score;
-        _db.HousingApplications.Update(application);
-        await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
             "Eligibility assessed for App {AppId}: Eligible={Eligible}, Score={Score}, Object={Object}",

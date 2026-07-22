@@ -376,6 +376,11 @@ public class HousingApplicationsController : ControllerBase
             _logger.LogWarning("Invalid status transition for {Id}: {Message}", id, ex.Message);
             return UnprocessableEntity(new { errorCode = ex.ErrorCode, message = ex.Message });
         }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("Submit blocked for application {Id}: {Message}", id, ex.Message);
+            return UnprocessableEntity(new { message = ex.Message });
+        }
         catch (UnauthorizedAccessException)
         {
             return Forbid();

@@ -143,21 +143,29 @@ public class ReviewService : IReviewService
                 application.ProjectId);
         }
 
-        // Đ38.1.e — mỗi người chỉ nộp tại một dự án (active)
+        // Đ38.1.e — mỗi người chỉ 1 hồ sơ đang hoạt động (đã nộp / đang xử lý).
+        // Nháp (DRAFT) không tính — khớp HasActiveApplicationAsync khi tạo hồ sơ.
         var oneAppOnly = await _policyService.GetValueAsync(PolicyKeys.OneApplicationPerApplicant, true);
         if (oneAppOnly)
         {
-            var closedStatuses = new[]
+            var activeStatuses = new[]
             {
-                ApplicationStatusConstants.Rejected,
-                ApplicationStatusConstants.Canceled,
-                ApplicationStatusConstants.Expired
+                ApplicationStatusConstants.Submitted,
+                ApplicationStatusConstants.Reviewing,
+                ApplicationStatusConstants.NeedMoreDocuments,
+                ApplicationStatusConstants.PendingSxdReview,
+                ApplicationStatusConstants.Approved,
+                ApplicationStatusConstants.ApprovedByTimeout,
+                ApplicationStatusConstants.DepositPaid,
+                ApplicationStatusConstants.ContractPending,
+                ApplicationStatusConstants.ContractSigned,
+                ApplicationStatusConstants.FullyPaid
             };
 
             var otherActive = await _context.HousingApplications
                 .AnyAsync(a => a.ApplicantId == applicantId
                                && a.ApplicationId != applicationId
-                               && !closedStatuses.Contains(a.ApplicationStatus));
+                               && activeStatuses.Contains(a.ApplicationStatus));
 
             if (otherActive)
             {
