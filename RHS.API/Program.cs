@@ -96,9 +96,13 @@ builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 builder.Services.AddScoped<IInstallmentService, InstallmentService>();
 
+// Configure EPPlus NonCommercial License
+OfficeOpenXml.ExcelPackage.LicenseContext = OfficeOpenXml.LicenseContext.NonCommercial;
+
 // Dependency Injection - PDF Contract & PrincipleAgreement
 builder.Services.AddScoped<IPdfContractService, PdfContractService>();
 builder.Services.AddScoped<IPdfReceiptService, PdfReceiptService>();
+builder.Services.AddScoped<IReportExportService, ReportExportService>();
 builder.Services.AddScoped<IPrincipleAgreementRepository, PrincipleAgreementRepository>();
 
 // Dependency Injection - Contract Sign
