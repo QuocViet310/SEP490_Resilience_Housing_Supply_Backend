@@ -314,7 +314,8 @@ public class HousingProjectsController : ControllerBase
     {
         try
         {
-            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? User.FindFirstValue("sub");
             var userId = string.IsNullOrEmpty(userIdStr) ? Guid.Empty : Guid.Parse(userIdStr);
 
             var result = await _applicationService.ExecuteDeveloperDecisionAsync(id, request, userId);
