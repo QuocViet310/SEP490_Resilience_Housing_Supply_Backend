@@ -47,4 +47,10 @@ public static class NotificationTypeConstants
 
     /// <summary>Thông báo mới từ Sở Xây dựng (announcement published)</summary>
     public const string AnnouncementPublished = "ANNOUNCEMENT_PUBLISHED";
+
+    /// <summary>Lịch bốc thăm đã được lên/duyệt</summary>
+    public const string LotteryScheduled = "LOTTERY_SCHEDULED";
+
+    /// <summary>Kết quả bốc thăm đã được công bố</summary>
+    public const string LotteryResultPublished = "LOTTERY_RESULT_PUBLISHED";
 }

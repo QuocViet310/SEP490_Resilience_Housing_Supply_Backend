@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using RHS.Application.DTOs.Lottery;
@@ -6,18 +8,172 @@ using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Data;
+using RHS.Infrastructure.Hubs;
 
 namespace RHS.Infrastructure.Services;
 
 public class LotteryService : ILotteryService
 {
     private readonly AppDbContext _db;
+    private readonly INotificationService _notificationService;
+    private readonly IHubContext<LotteryHub, ILotteryHubClient> _hubContext;
     private readonly ILogger<LotteryService> _logger;
 
-    public LotteryService(AppDbContext db, ILogger<LotteryService> logger)
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> ProjectLocks = new();
+
+    private static readonly string[] EligibleStatuses = new[]
+    {
+        ApplicationStatusConstants.Approved,
+        ApplicationStatusConstants.ApprovedByTimeout,
+        ApplicationStatusConstants.DepositPaid
+    };
+
+    public LotteryService(
+        AppDbContext db,
+        INotificationService notificationService,
+        IHubContext<LotteryHub, ILotteryHubClient> hubContext,
+        ILogger<LotteryService> logger)
     {
         _db = db;
+        _notificationService = notificationService;
+        _hubContext = hubContext;
         _logger = logger;
+    }
+
+    public async Task<LotteryScheduleDetailDto> ScheduleLotteryAsync(
+        Guid projectId,
+        CreateOrUpdateLotteryScheduleDto dto,
+        Guid createdBy,
+        CancellationToken ct = default)
+    {
+        var project = await _db.HousingProjects
+            .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, ct)
+            ?? throw new InvalidOperationException("Không tìm thấy dự án.");
+
+        project.LotteryDate = dto.LotteryDate;
+        project.LotteryLocation = dto.LotteryLocation;
+        project.LotteryType = dto.LotteryType;
+        project.LotteryDescription = dto.LotteryDescription;
+        project.IsLotteryApproved = false; // Chờ Admin/Sở duyệt
+        project.UpdatedAt = DateTime.UtcNow;
+
+        if (dto.TotalUnits.HasValue && dto.TotalUnits.Value > 0)
+        {
+            project.AvailableUnits = dto.TotalUnits.Value;
+        }
+
+        await _db.SaveChangesAsync(ct);
+
+        return await BuildLotteryScheduleDetailDtoAsync(project, ct);
+    }
+
+    public async Task<LotteryScheduleDetailDto> ApproveLotteryScheduleAsync(
+        Guid projectId,
+        Guid approvedBy,
+        CancellationToken ct = default)
+    {
+        var project = await _db.HousingProjects
+            .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, ct)
+            ?? throw new InvalidOperationException("Không tìm thấy dự án.");
+
+        if (!project.LotteryDate.HasValue)
+            throw new InvalidOperationException("Dự án chưa có lịch bốc thăm để duyệt.");
+
+        project.IsLotteryApproved = true;
+        project.LotteryApprovedAt = DateTime.UtcNow;
+        project.LotteryApprovedBy = approvedBy;
+        project.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        // Gửi thông báo đến toàn bộ ứng viên đủ điều kiện thuộc dự án
+        var eligibleApplicants = await _db.HousingApplications
+            .Where(a => a.ProjectId == projectId
+                        && EligibleStatuses.Contains(a.ApplicationStatus)
+                        && !a.IsViolation)
+            .Select(a => a.ApplicantId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var notifTitle = "Lịch bốc thăm đã được phê duyệt & công bố";
+        var notifContent = $"Dự án '{project.ProjectName}' đã chốt lịch bốc thăm vào lúc {project.LotteryDate:dd/MM/yyyy HH:mm} tại {project.LotteryLocation}. Hình thức: {project.LotteryType}.";
+
+        foreach (var applicantId in eligibleApplicants)
+        {
+            try
+            {
+                await _notificationService.SendAsync(
+                    applicantId,
+                    notifTitle,
+                    notifContent,
+                    NotificationTypeConstants.LotteryScheduled);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi gửi thông báo lịch bốc thăm cho user {UserId}", applicantId);
+            }
+        }
+
+        return await BuildLotteryScheduleDetailDtoAsync(project, ct);
+    }
+
+    public async Task<LotteryScheduleDetailDto?> GetLotteryScheduleAsync(
+        Guid projectId,
+        CancellationToken ct = default)
+    {
+        var project = await _db.HousingProjects
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, ct);
+
+        if (project is null) return null;
+
+        return await BuildLotteryScheduleDetailDtoAsync(project, ct);
+    }
+
+    public async Task<List<LotteryParticipantDto>> GetEligibleParticipantsAsync(
+        Guid projectId,
+        CancellationToken ct = default)
+    {
+        return await _db.HousingApplications
+            .AsNoTracking()
+            .Include(a => a.Applicant)
+            .Where(a => a.ProjectId == projectId
+                        && EligibleStatuses.Contains(a.ApplicationStatus)
+                        && !a.IsViolation)
+            .OrderBy(a => a.SubmittedAt)
+            .Select(a => new LotteryParticipantDto
+            {
+                ApplicationId = a.ApplicationId,
+                ApplicantId = a.ApplicantId,
+                ApplicantName = a.Applicant != null ? a.Applicant.FullName : a.FullName,
+                CitizenId = a.CitizenId,
+                PriorityGroup = a.PriorityGroup,
+                ApplicationStatus = a.ApplicationStatus,
+                SubmittedAt = a.SubmittedAt
+            })
+            .ToListAsync(ct);
+    }
+
+    private async Task<LotteryScheduleDetailDto> BuildLotteryScheduleDetailDtoAsync(
+        HousingProject project,
+        CancellationToken ct)
+    {
+        var participants = await GetEligibleParticipantsAsync(project.Id, ct);
+
+        return new LotteryScheduleDetailDto
+        {
+            ProjectId = project.Id,
+            ProjectName = project.ProjectName,
+            LotteryDate = project.LotteryDate,
+            LotteryLocation = project.LotteryLocation,
+            LotteryType = project.LotteryType,
+            LotteryDescription = project.LotteryDescription,
+            IsLotteryApproved = project.IsLotteryApproved,
+            LotteryApprovedAt = project.LotteryApprovedAt,
+            AvailableUnits = project.AvailableUnits,
+            TotalEligibleParticipants = participants.Count,
+            EligibleParticipants = participants
+        };
     }
 
     public async Task<LotteryDrawResultDto> RunLotteryAsync(
@@ -41,13 +197,13 @@ public class LotteryService : ILotteryService
         var participants = await _db.HousingApplications
             .Include(a => a.PrincipleAgreement)
             .Where(a => a.ProjectId == projectId
-                        && qualifiedStatuses.Contains(a.ApplicationStatus)
+                        && EligibleStatuses.Contains(a.ApplicationStatus)
                         && !a.IsViolation)
             .OrderBy(a => a.SubmittedAt)
             .ToListAsync(ct);
 
         if (participants.Count == 0)
-            throw new InvalidOperationException("Không có hồ sơ đủ điều kiện để bốc thăm.");
+            throw new InvalidOperationException("Không có hồ sơ đủ điều kiện (APPROVED / APPROVED_BY_TIMEOUT / DEPOSIT_PAID) để bốc thăm.");
 
         // Hướng A: nếu đã bốc thăm trước đó, hoàn suất của người từng trúng trước khi phân bổ lại.
         var wonResults = new[]
@@ -261,6 +417,86 @@ public class LotteryService : ILotteryService
         };
     }
 
+    /// <summary>[Mục 21 & 22] Xử lý bốc thăm tương tác thời gian thực với SemaphoreSlim Concurrency Lock (Row Lock 1 mili-giây).</summary>
+    public async Task<LiveDrawResultDto> DrawUnitRealtimeAsync(
+        Guid projectId,
+        Guid applicantId,
+        CancellationToken ct = default)
+    {
+        var semaphore = ProjectLocks.GetOrAdd(projectId, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync(ct);
+
+        try
+        {
+            var project = await _db.HousingProjects
+                .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, ct)
+                ?? throw new InvalidOperationException("Không tìm thấy dự án.");
+
+            var app = await _db.HousingApplications
+                .Include(a => a.Applicant)
+                .FirstOrDefaultAsync(a => a.ProjectId == projectId
+                                          && a.ApplicantId == applicantId
+                                          && EligibleStatuses.Contains(a.ApplicationStatus)
+                                          && !a.IsViolation, ct)
+                ?? throw new InvalidOperationException("Hồ sơ không tồn tại hoặc chưa đủ điều kiện bốc thăm cho dự án này.");
+
+            if (app.LotteryResult != null && app.LotteryResult != LotteryResultConstants.Pending)
+            {
+                throw new InvalidOperationException($"Bạn đã thực hiện bốc thăm trước đó. Kết quả: {app.LotteryResult}");
+            }
+
+            string resultStatus;
+            string? slotCode = null;
+
+            if (project.AvailableUnits > 0)
+            {
+                project.AvailableUnits--;
+                bool isPriority = !string.IsNullOrWhiteSpace(app.PriorityGroup);
+                resultStatus = isPriority ? LotteryResultConstants.PriorityWon : LotteryResultConstants.Won;
+
+                // Sinh mã SlotCode chuẩn cho căn trúng tuyển
+                var suffix = (DateTime.UtcNow.Ticks % 10000).ToString("D4");
+                slotCode = $"LOT-{project.Id.ToString()[..4].ToUpper()}-{suffix}";
+
+                app.LotteryResult = resultStatus;
+                app.SlotCode = slotCode;
+                app.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                resultStatus = LotteryResultConstants.Lost;
+                app.LotteryResult = resultStatus;
+                app.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _db.SaveChangesAsync(ct);
+
+            var liveResult = new LiveDrawResultDto
+            {
+                ProjectId = projectId,
+                ApplicationId = app.ApplicationId,
+                ApplicantId = app.ApplicantId,
+                ApplicantName = app.Applicant != null ? app.Applicant.FullName : app.FullName,
+                CitizenId = app.CitizenId,
+                Result = resultStatus,
+                SlotCode = slotCode,
+                DrawnAt = DateTime.UtcNow,
+                RemainingUnits = project.AvailableUnits,
+                PriorityGroup = app.PriorityGroup
+            };
+
+            // Bắn tín hiệu SignalR ReceiveDrawResult(data) tức thì tới màn hình giám sát Web SXD/CĐT & Live Ticker (Mục 21 & 22)
+            var groupName = LotteryHub.GetGroupName(projectId);
+            await _hubContext.Clients.Group(groupName).ReceiveDrawResult(liveResult);
+
+            return liveResult;
+        }
+        finally
+        {
+            semaphore.Release();
+        }
+    }
+
     public async Task<LotteryDrawResultDto?> GetLatestResultAsync(Guid projectId, CancellationToken ct = default)
     {
         var draw = await _db.LotteryDraws
@@ -275,7 +511,7 @@ public class LotteryService : ILotteryService
         var apps = await _db.HousingApplications
             .AsNoTracking()
             .Where(a => a.ProjectId == projectId
-                        && a.ApplicationStatus == ApplicationStatusConstants.DepositPaid
+                        && EligibleStatuses.Contains(a.ApplicationStatus)
                         && a.LotteryResult != null)
             .ToListAsync(ct);
 

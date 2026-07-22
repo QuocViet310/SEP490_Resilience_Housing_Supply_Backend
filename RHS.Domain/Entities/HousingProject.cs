@@ -20,6 +20,19 @@ public class HousingProject
 
     public string? LotteryLocation { get; set; }
 
+    /// <summary>Hình thức bốc thăm: ONLINE, OFFLINE, HYBRID</summary>
+    public string? LotteryType { get; set; }
+
+    /// <summary>Quy định tham dự / Ghi chú phiên bốc thăm</summary>
+    public string? LotteryDescription { get; set; }
+
+    /// <summary>Trạng thái Admin/Sở duyệt hoặc xác nhận lịch bốc thăm</summary>
+    public bool? IsLotteryApproved { get; set; }
+
+    public DateTime? LotteryApprovedAt { get; set; }
+
+    public Guid? LotteryApprovedBy { get; set; }
+
     public decimal DepositAmount { get; set; }
 
     public decimal MinPrice { get; set; }
