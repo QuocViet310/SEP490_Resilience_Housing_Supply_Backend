@@ -56,8 +56,13 @@ public static class EKycServiceCollectionExtensions
                 // VNPT eKYC authentication headers
                 if (!string.IsNullOrWhiteSpace(options.AccessToken))
                 {
+                    // Cho phép dán cả "bearer xxx" từ Dashboard — strip prefix trước khi set header
+                    var rawToken = options.AccessToken.Trim();
+                    if (rawToken.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                        rawToken = rawToken["Bearer ".Length..].Trim();
+
                     client.DefaultRequestHeaders.Authorization =
-                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", options.AccessToken);
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", rawToken);
                 }
 
                 if (!string.IsNullOrWhiteSpace(options.TokenId))

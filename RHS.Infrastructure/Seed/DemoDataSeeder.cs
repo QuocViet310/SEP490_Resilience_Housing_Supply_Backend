@@ -208,15 +208,20 @@ public static class DemoDataSeeder
             db.HousingProjects.Add(def.Project);
             foreach (var q in def.Quotas)
                 db.HousingQuotas.Add(q);
+            foreach (var img in def.Images)
+                db.ProjectImages.Add(img);
             added++;
         }
 
-        if (added > 0 || updated > 0)
+        // Bổ sung ảnh demo nếu dự án seed đã có nhưng chưa có ProjectImage
+        var imageAdded = await EnsureDemoImagesAsync(db, defs, ct);
+
+        if (added > 0 || updated > 0 || imageAdded > 0)
         {
             await db.SaveChangesAsync(ct);
             logger?.LogInformation(
-                "Demo seed: added {Added} projects, updated address on {Updated} projects.",
-                added, updated);
+                "Demo seed: added {Added} projects, updated address on {Updated}, images +{Images}.",
+                added, updated, imageAdded);
         }
         else
         {
@@ -224,7 +229,30 @@ public static class DemoDataSeeder
         }
     }
 
-    private static List<(HousingProject Project, List<HousingQuota> Quotas)> BuildProjectDefs(
+    private static async Task<int> EnsureDemoImagesAsync(
+        AppDbContext db,
+        List<(HousingProject Project, List<HousingQuota> Quotas, List<ProjectImage> Images)> defs,
+        CancellationToken ct)
+    {
+        var projectIds = defs.Select(d => d.Project.Id).ToList();
+        var existingIds = await db.ProjectImages
+            .AsNoTracking()
+            .Where(i => projectIds.Contains(i.ProjectId))
+            .Select(i => i.ProjectId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var missing = defs.Where(d => !existingIds.Contains(d.Project.Id)).ToList();
+        foreach (var def in missing)
+        {
+            foreach (var img in def.Images)
+                db.ProjectImages.Add(img);
+        }
+
+        return missing.Sum(d => d.Images.Count);
+    }
+
+    private static List<(HousingProject Project, List<HousingQuota> Quotas, List<ProjectImage> Images)> BuildProjectDefs(
         DateTime now,
         IReadOnlyDictionary<string, HousingProjectStatus> statuses,
         Guid developerId)
@@ -232,6 +260,19 @@ public static class DemoDataSeeder
         var openId = statuses["OPEN"].Id;
         var upcomingId = statuses["UPCOMING"].Id;
         var closedId = statuses["CLOSED"].Id;
+
+        // Ảnh demo ổn định (Unsplash) — chỉ để test UI mobile
+        string[] DemoThumbs =
+        [
+            "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80",
+            "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800&q=80",
+            "https://images.unsplash.com/photo-1460317442991-0ec209397118?w=800&q=80",
+            "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80",
+            "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80",
+            "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&q=80",
+            "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80",
+            "https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800&q=80",
+        ];
 
         HousingProject Make(
             Guid id,
@@ -243,6 +284,10 @@ public static class DemoDataSeeder
             Guid statusId,
             int units,
             decimal deposit,
+            decimal minPrice,
+            decimal maxPrice,
+            int minArea,
+            int maxArea,
             DateTime? open,
             DateTime? close,
             DateTime? announce,
@@ -258,10 +303,10 @@ public static class DemoDataSeeder
             LotteryDate = now.AddDays(45),
             LotteryLocation = $"Hội trường UBND {district}, {province}",
             DepositAmount = deposit,
-            MinPrice = 450_000_000m,
-            MaxPrice = 850_000_000m,
-            MinArea = 25,
-            MaxArea = 55,
+            MinPrice = minPrice,
+            MaxPrice = maxPrice,
+            MinArea = minArea,
+            MaxArea = maxArea,
             AvailableUnits = units,
             HousingProjectStatusId = statusId,
             IsDeleted = false,
@@ -276,25 +321,69 @@ public static class DemoDataSeeder
             UpdatedAt = now
         };
 
-        List<HousingQuota> Quotas(Guid projectId, int units) =>
-        [
-            new HousingQuota
+        List<HousingQuota> Quotas(Guid projectId, int units)
+        {
+            // Phân bổ suất theo nhóm phổ biến (demo); còn lại vào bốc thăm chung nếu không khớp quota
+            var poor = Math.Max(1, units / 4);
+            var nearPoor = Math.Max(1, units / 4);
+            var lowIncome = Math.Max(1, units / 5);
+            var worker = Math.Max(1, units / 5);
+            var rest = Math.Max(1, units - poor - nearPoor - lowIncome - worker);
+
+            return
+            [
+                new HousingQuota
+                {
+                    QuotaId = Guid.NewGuid(),
+                    ProjectId = projectId,
+                    PriorityGroup = PriorityGroupConstants.UrbanPoor,
+                    AllocatedSlots = poor,
+                    RemainingSlots = poor
+                },
+                new HousingQuota
+                {
+                    QuotaId = Guid.NewGuid(),
+                    ProjectId = projectId,
+                    PriorityGroup = PriorityGroupConstants.UrbanNearPoor,
+                    AllocatedSlots = nearPoor,
+                    RemainingSlots = nearPoor
+                },
+                new HousingQuota
+                {
+                    QuotaId = Guid.NewGuid(),
+                    ProjectId = projectId,
+                    PriorityGroup = PriorityGroupConstants.LowIncomeUrban,
+                    AllocatedSlots = lowIncome,
+                    RemainingSlots = lowIncome
+                },
+                new HousingQuota
+                {
+                    QuotaId = Guid.NewGuid(),
+                    ProjectId = projectId,
+                    PriorityGroup = PriorityGroupConstants.IndustrialWorker,
+                    AllocatedSlots = worker,
+                    RemainingSlots = worker
+                },
+                new HousingQuota
+                {
+                    QuotaId = Guid.NewGuid(),
+                    ProjectId = projectId,
+                    PriorityGroup = PriorityGroupConstants.PublicOfficial,
+                    AllocatedSlots = rest,
+                    RemainingSlots = rest
+                },
+            ];
+        }
+
+        List<ProjectImage> Images(Guid projectId, params int[] thumbIndexes) =>
+            thumbIndexes.Select((idx, order) => new ProjectImage
             {
-                QuotaId = Guid.NewGuid(),
+                Id = Guid.NewGuid(),
                 ProjectId = projectId,
-                PriorityGroup = PriorityGroupConstants.UrbanPoor,
-                AllocatedSlots = Math.Max(1, units / 2),
-                RemainingSlots = Math.Max(1, units / 2)
-            },
-            new HousingQuota
-            {
-                QuotaId = Guid.NewGuid(),
-                ProjectId = projectId,
-                PriorityGroup = PriorityGroupConstants.UrbanNearPoor,
-                AllocatedSlots = Math.Max(1, units - units / 2),
-                RemainingSlots = Math.Max(1, units - units / 2)
-            }
-        ];
+                ImageUrl = DemoThumbs[idx % DemoThumbs.Length],
+                DisplayOrder = order,
+                CreatedAt = now
+            }).ToList();
 
         var p1 = Guid.Parse("b1000001-0001-0001-0001-000000000001");
         var p2 = Guid.Parse("b1000001-0001-0001-0001-000000000002");
@@ -302,54 +391,76 @@ public static class DemoDataSeeder
         var p4 = Guid.Parse("b1000001-0001-0001-0001-000000000004");
         var p5 = Guid.Parse("b1000001-0001-0001-0001-000000000005");
         var p6 = Guid.Parse("b1000001-0001-0001-0001-000000000006");
+        var p7 = Guid.Parse("b1000001-0001-0001-0001-000000000007");
+        var p8 = Guid.Parse("b1000001-0001-0001-0001-000000000008");
 
-        var list = new List<(HousingProject, List<HousingQuota>)>
-        {
-            // Format địa chỉ khớp assets: Province = name_with_type tinh; District = name_with_type quan
+        // Format địa chỉ khớp mobile assets: Province/District = name_with_type
+        return
+        [
             (
                 Make(p1, "NOXH Bình Minh — Thủ Đức", "Thành phố Hồ Chí Minh", "Thành phố Thủ Đức", "Phường Long Thạnh Mỹ",
-                    "12 Đại lộ Mai Chí Thọ", openId, 80, 5_000_000m,
+                    "12 Đại lộ Mai Chí Thọ", openId, 80, 5_000_000m, 480_000_000m, 780_000_000m, 28, 52,
                     now.AddDays(-10), now.AddDays(60), now.AddDays(-40),
-                    "Dự án OPEN demo Thủ Đức — đủ ngày công bố, đang nhận hồ sơ."),
-                Quotas(p1, 80)
+                    "Dự án OPEN demo Thủ Đức — đang nhận hồ sơ."),
+                Quotas(p1, 80),
+                Images(p1, 0, 1)
             ),
             (
                 Make(p2, "NOXH An Phú — Thủ Đức", "Thành phố Hồ Chí Minh", "Thành phố Thủ Đức", "Phường An Phú",
-                    "88 Đường Song Hành", openId, 120, 3_000_000m,
+                    "88 Đường Song Hành", openId, 120, 3_000_000m, 520_000_000m, 920_000_000m, 30, 60,
                     now.AddDays(-5), now.AddDays(90), now.AddDays(-35),
                     "Dự án OPEN demo khu An Phú (TP.HCM)."),
-                Quotas(p2, 120)
+                Quotas(p2, 120),
+                Images(p2, 2, 3)
             ),
             (
                 Make(p3, "NOXH Bình Tân — An Lạc", "Thành phố Hồ Chí Minh", "Quận Bình Tân", "Phường An Lạc A",
-                    "45 Đường Kinh Dương Vương", openId, 50, 2_500_000m,
+                    "45 Đường Kinh Dương Vương", openId, 50, 2_500_000m, 390_000_000m, 650_000_000m, 25, 48,
                     now.AddDays(-3), now.AddDays(45), now.AddDays(-33),
                     "Dự án OPEN demo Bình Tân (TP.HCM)."),
-                Quotas(p3, 50)
+                Quotas(p3, 50),
+                Images(p3, 4, 5)
             ),
             (
                 Make(p4, "NOXH Phước Long B — Thủ Đức", "Thành phố Hồ Chí Minh", "Thành phố Thủ Đức", "Phường Phước Long B",
-                    "210 Đường Đỗ Xuân Hợp", openId, 30, 5_000_000m,
+                    "210 Đường Đỗ Xuân Hợp", openId, 30, 5_000_000m, 450_000_000m, 700_000_000m, 26, 45,
                     now.AddDays(-1), now.AddDays(30), now.AddDays(-31),
-                    "Dự án OPEN số suất ít — test bốc thăm oversubscribe (TP.HCM)."),
-                Quotas(p4, 30)
+                    "Dự án OPEN số suất ít — test oversubscribe."),
+                Quotas(p4, 30),
+                Images(p4, 6)
+            ),
+            (
+                Make(p7, "NOXH Nhà Ở Xã Hội — Quận 7", "Thành phố Hồ Chí Minh", "Quận 7", "Phường Tân Thuận",
+                    "120 Nguyễn Văn Linh", openId, 90, 4_000_000m, 550_000_000m, 980_000_000m, 32, 58,
+                    now.AddDays(-7), now.AddDays(75), now.AddDays(-38),
+                    "Dự án OPEN Quận 7 — test filter quận + sort giá."),
+                Quotas(p7, 90),
+                Images(p7, 1, 7)
+            ),
+            (
+                Make(p8, "NOXH Nhà Ở Xã Hội — Quận 12", "Thành phố Hồ Chí Minh", "Quận 12", "Phường Trung Mỹ Tây",
+                    "55 Quốc lộ 1A", openId, 70, 2_000_000m, 320_000_000m, 580_000_000m, 24, 42,
+                    now.AddDays(-2), now.AddDays(50), now.AddDays(-32),
+                    "Dự án OPEN Quận 12 — giá thấp hơn để test sort."),
+                Quotas(p8, 70),
+                Images(p8, 3, 5)
             ),
             (
                 Make(p5, "NOXH Tân Phú — Sắp mở", "Thành phố Hồ Chí Minh", "Quận Tân Phú", "Phường Tân Sơn Nhì",
-                    "15 Đường Lũy Bán Bích", upcomingId, 60, 4_000_000m,
+                    "15 Đường Lũy Bán Bích", upcomingId, 60, 4_000_000m, 450_000_000m, 850_000_000m, 25, 55,
                     now.AddDays(7), now.AddDays(70), now.AddDays(-5),
-                    "Dự án UPCOMING TP.HCM — chưa tới ApplicationOpenDate (test worker Đ38.1.b)."),
-                Quotas(p5, 60)
+                    "Dự án UPCOMING — chưa mở đăng ký (mobile sẽ ẩn)."),
+                Quotas(p5, 60),
+                Images(p5, 0)
             ),
             (
                 Make(p6, "NOXH Nhà Bè — Đã đóng", "Thành phố Hồ Chí Minh", "Huyện Nhà Bè", "Xã Phước Kiển",
-                    "01 Đường Nguyễn Văn Tạo", closedId, 0, 2_000_000m,
+                    "01 Đường Nguyễn Văn Tạo", closedId, 0, 2_000_000m, 400_000_000m, 700_000_000m, 25, 50,
                     now.AddDays(-90), now.AddDays(-10), now.AddDays(-120),
-                    "Dự án CLOSED demo TP.HCM — hết hạn nhận hồ sơ."),
-                Quotas(p6, 40)
+                    "Dự án CLOSED — hết hạn nhận hồ sơ."),
+                Quotas(p6, 40),
+                Images(p6, 2)
             ),
-        };
-
-        return list;
+        ];
     }
 }
