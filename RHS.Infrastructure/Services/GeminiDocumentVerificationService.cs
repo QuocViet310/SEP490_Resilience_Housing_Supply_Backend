@@ -267,12 +267,15 @@ isMatch = true chỉ khi CCCD + Ngày sinh + Địa chỉ đều khớp (hoặc 
 Nếu lệch/thiếu: isMatch = false và ghi rõ bằng tiếng Việt vào mismatchDetails.
 ";
 
+        // ── POVERTY_HOUSEHOLD_CERTIFICATE ──
         if (string.Equals(documentType, DocumentTypeConstants.PovertyHouseholdCertificate, StringComparison.OrdinalIgnoreCase))
         {
             var expectedPoverty = priorityGroup switch
             {
                 PriorityGroupConstants.UrbanPoor => "hộ nghèo (đô thị)",
                 PriorityGroupConstants.UrbanNearPoor => "hộ cận nghèo (đô thị)",
+                PriorityGroupConstants.RuralPoor => "hộ nghèo (nông thôn)",
+                PriorityGroupConstants.RuralNearPoor => "hộ cận nghèo (nông thôn)",
                 _ => "hộ nghèo hoặc hộ cận nghèo"
             };
 
@@ -291,7 +294,153 @@ Nhiệm vụ:
 ";
         }
 
-        // HOUSING_CONDITION_PROOF
+        // ── MERIT_PERSON_CERTIFICATE ──
+        if (string.Equals(documentType, DocumentTypeConstants.MeritPersonCertificate, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY XÁC NHẬN NGƯỜI CÓ CÔNG VỚI CÁCH MẠNG hoặc THÂN NHÂN LIỆT SĨ,
+do cơ quan có thẩm quyền cấp theo Pháp lệnh Ưu đãi người có công với cách mạng 2020.
+
+Nhiệm vụ:
+1) Xác nhận giấy có nội dung chứng nhận người có công với cách mạng / thân nhân liệt sĩ (không phải giấy tờ khác).
+2) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ (nếu có trên giấy).
+3) Đối chiếu danh tính với Profile User bên dưới.
+4) Nếu giấy không phải xác nhận người có công/thân nhân liệt sĩ → isMatch = false.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── LOW_INCOME_CERTIFICATE ──
+        if (string.Equals(documentType, DocumentTypeConstants.LowIncomeCertificate, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY XÁC NHẬN THU NHẬP THẤP TẠI ĐÔ THỊ,
+do cơ quan thuế hoặc UBND cấp xã/phường xác nhận (khoản 5 Điều 76 Luật Nhà ở 2023).
+
+Nhiệm vụ:
+1) Xác nhận giấy có nội dung xác nhận người có thu nhập thấp tại khu vực đô thị.
+2) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ (nếu có trên giấy).
+3) Đối chiếu danh tính với Profile User bên dưới.
+4) Nếu giấy không phải xác nhận thu nhập thấp → isMatch = false.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── EMPLOYMENT_CERTIFICATE ──
+        if (string.Equals(documentType, DocumentTypeConstants.EmploymentCertificate, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY XÁC NHẬN ĐANG LÀM VIỆC tại doanh nghiệp, hợp tác xã,
+liên hiệp hợp tác xã trong hoặc ngoài khu công nghiệp (khoản 6 Điều 76 Luật Nhà ở 2023).
+
+Nhiệm vụ:
+1) Xác nhận giấy có nội dung xác nhận người lao động đang làm việc tại DN/HTX/KCN.
+2) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ, tên công ty/nơi làm việc (nếu có).
+3) Đối chiếu danh tính với Profile User bên dưới.
+4) Nếu giấy không phải xác nhận đang làm việc tại DN/HTX/KCN → isMatch = false.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── MILITARY_SERVICE_CERTIFICATE ──
+        if (string.Equals(documentType, DocumentTypeConstants.MilitaryServiceCertificate, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY XÁC NHẬN ĐANG PHỤC VỤ TẠI NGŨ trong lực lượng vũ trang nhân dân
+hoặc cơ yếu (khoản 7 Điều 76 Luật Nhà ở 2023).
+Bao gồm: sĩ quan, quân nhân chuyên nghiệp, hạ sĩ quan, công nhân công an, công nhân quốc phòng...
+
+Nhiệm vụ:
+1) Xác nhận giấy có nội dung xác nhận đang phục vụ tại ngũ / đang công tác trong LLVTND hoặc cơ yếu.
+2) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ, đơn vị công tác (nếu có).
+3) Đối chiếu danh tính với Profile User bên dưới.
+4) Nếu giấy không phải xác nhận phục vụ LLVT/cơ yếu → isMatch = false.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── CIVIL_SERVANT_CERTIFICATE ──
+        if (string.Equals(documentType, DocumentTypeConstants.CivilServantCertificate, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY XÁC NHẬN CÁN BỘ / CÔNG CHỨC / VIÊN CHỨC
+do cơ quan công tác cấp (khoản 8 Điều 76 Luật Nhà ở 2023).
+
+Nhiệm vụ:
+1) Xác nhận giấy có nội dung xác nhận cán bộ, công chức hoặc viên chức đang công tác.
+2) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ, tên cơ quan công tác (nếu có).
+3) Đối chiếu danh tính với Profile User bên dưới.
+4) Nếu giấy không phải xác nhận CB/CC/VC → isMatch = false.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── PUBLIC_HOUSING_RETURN_CERTIFICATE ──
+        if (string.Equals(documentType, DocumentTypeConstants.PublicHousingReturnCertificate, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là QUYẾT ĐỊNH / VĂN BẢN TRẢ LẠI NHÀ Ở CÔNG VỤ
+theo khoản 4 Điều 125 Luật Nhà ở 2023 (khoản 9 Điều 76).
+
+Nhiệm vụ:
+1) Xác nhận giấy có nội dung quyết định/văn bản trả lại nhà ở công vụ (không phải bị thu hồi do vi phạm).
+2) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ nhà công vụ đã trả (nếu có).
+3) Đối chiếu danh tính với Profile User bên dưới.
+4) Nếu giấy không phải văn bản trả nhà công vụ, hoặc nếu là quyết định thu hồi do vi phạm → isMatch = false.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── LAND_RECOVERY_DECISION ──
+        if (string.Equals(documentType, DocumentTypeConstants.LandRecoveryDecision, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là QUYẾT ĐỊNH THU HỒI ĐẤT / GIẢI TỎA NHÀ Ở
+do cơ quan có thẩm quyền ban hành (khoản 10 Điều 76 Luật Nhà ở 2023).
+Người nộp phải chưa được Nhà nước bồi thường bằng nhà ở, đất ở.
+
+Nhiệm vụ:
+1) Xác nhận giấy có nội dung quyết định thu hồi đất hoặc giải tỏa, phá dỡ nhà ở.
+2) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ đất bị thu hồi (nếu có).
+3) Đối chiếu danh tính với Profile User bên dưới.
+4) Nếu giấy không phải quyết định thu hồi đất / giải tỏa → isMatch = false.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── INCOME_CERTIFICATE ──
+        if (string.Equals(documentType, DocumentTypeConstants.IncomeCertificate, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY XÁC NHẬN THU NHẬP do cơ quan thuế hoặc nơi làm việc cấp
+(Điều 30 Nghị định 100/2024/NĐ-CP).
+
+Nhiệm vụ:
+1) Xác nhận giấy có nội dung xác nhận mức thu nhập hàng tháng/hàng năm.
+2) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ, mức thu nhập ghi trên giấy (nếu có).
+3) Đối chiếu danh tính với Profile User bên dưới.
+4) Nếu giấy không phải xác nhận thu nhập → isMatch = false.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── HOUSING_CONDITION_PROOF (default) ──
         var housingExpectation = housingStatus switch
         {
             HousingStatusConstants.NoHouse =>

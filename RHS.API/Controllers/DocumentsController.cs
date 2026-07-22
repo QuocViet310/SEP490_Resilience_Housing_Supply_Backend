@@ -39,8 +39,16 @@ public class DocumentsController : ControllerBase
     /// [Applicant] Upload tài liệu PDF vào hồ sơ.
     ///
     /// Loại giấy tờ hợp lệ (trường DocumentType):
-    ///   - HOUSING_CONDITION_PROOF         : Giấy chứng nhận thực trạng nhà ở
-    ///   - POVERTY_HOUSEHOLD_CERTIFICATE   : Giấy chứng nhận hộ nghèo/cận nghèo
+    ///   - HOUSING_CONDITION_PROOF             : Giấy xác nhận điều kiện nhà ở (bắt buộc tất cả)
+    ///   - POVERTY_HOUSEHOLD_CERTIFICATE       : Giấy chứng nhận hộ nghèo/cận nghèo
+    ///   - MERIT_PERSON_CERTIFICATE            : Giấy xác nhận người có công với cách mạng
+    ///   - LOW_INCOME_CERTIFICATE              : Giấy xác nhận thu nhập thấp tại đô thị
+    ///   - EMPLOYMENT_CERTIFICATE              : Giấy xác nhận đang làm việc tại DN/HTX/KCN
+    ///   - MILITARY_SERVICE_CERTIFICATE        : Giấy xác nhận phục vụ lực lượng vũ trang
+    ///   - CIVIL_SERVANT_CERTIFICATE           : Giấy xác nhận cán bộ/công chức/viên chức
+    ///   - PUBLIC_HOUSING_RETURN_CERTIFICATE   : Văn bản trả lại nhà ở công vụ
+    ///   - LAND_RECOVERY_DECISION              : Quyết định thu hồi đất/giải tỏa nhà ở
+    ///   - INCOME_CERTIFICATE                  : Giấy xác nhận thu nhập
     ///
     /// Ràng buộc:
     ///   - Chỉ chấp nhận file .pdf (Content-Type: application/pdf)

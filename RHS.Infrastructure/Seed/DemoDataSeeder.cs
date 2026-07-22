@@ -360,7 +360,7 @@ public static class DemoDataSeeder
                 {
                     QuotaId = Guid.NewGuid(),
                     ProjectId = projectId,
-                    PriorityGroup = PriorityGroupConstants.IndustrialWorker,
+                    PriorityGroup = PriorityGroupConstants.Worker,
                     AllocatedSlots = worker,
                     RemainingSlots = worker
                 },
@@ -368,7 +368,7 @@ public static class DemoDataSeeder
                 {
                     QuotaId = Guid.NewGuid(),
                     ProjectId = projectId,
-                    PriorityGroup = PriorityGroupConstants.PublicOfficial,
+                    PriorityGroup = PriorityGroupConstants.CivilServant,
                     AllocatedSlots = rest,
                     RemainingSlots = rest
                 },

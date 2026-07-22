@@ -2,8 +2,17 @@ namespace RHS.Domain.Entities;
 
 /// <summary>
 /// Tài liệu đính kèm trong hồ sơ đăng ký nhà ở xã hội.
-/// Chỉ chấp nhận file PDF. Applicant phải nộp đủ 2 loại:
-/// HOUSING_CONDITION_PROOF và POVERTY_HOUSEHOLD_CERTIFICATE.
+/// Chỉ chấp nhận file PDF.
+/// 
+/// Hồ sơ cần nộp đủ các loại giấy tờ tùy theo nhóm đối tượng:
+///   (A) HOUSING_CONDITION_PROOF — bắt buộc tất cả
+///   (B) 1 giấy tờ chứng minh đối tượng (tùy nhóm đối tượng):
+///       POVERTY_HOUSEHOLD_CERTIFICATE, MERIT_PERSON_CERTIFICATE,
+///       LOW_INCOME_CERTIFICATE, EMPLOYMENT_CERTIFICATE,
+///       MILITARY_SERVICE_CERTIFICATE, CIVIL_SERVANT_CERTIFICATE,
+///       PUBLIC_HOUSING_RETURN_CERTIFICATE, LAND_RECOVERY_DECISION
+///   (C) INCOME_CERTIFICATE — bắt buộc cho một số nhóm
+/// Xem chi tiết: DocumentTypeConstants.
 /// </summary>
 public class ApplicationDocument
 {
@@ -19,7 +28,7 @@ public class ApplicationDocument
 
     /// <summary>
     /// Loại giấy tờ. Sử dụng DocumentTypeConstants.
-    /// Giá trị: HOUSING_CONDITION_PROOF hoặc POVERTY_HOUSEHOLD_CERTIFICATE.
+    /// Xem danh sách: DocumentTypeConstants.AllowedApplicantDocumentTypes.
     /// </summary>
     public string DocumentType { get; set; } = string.Empty;
 

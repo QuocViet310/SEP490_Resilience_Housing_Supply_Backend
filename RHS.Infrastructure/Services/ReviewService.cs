@@ -90,25 +90,21 @@ public class ReviewService : IReviewService
             allowedTargets: new[] { ApplicationStatusConstants.Submitted },
             validSources: new[] { ApplicationStatusConstants.Draft, ApplicationStatusConstants.NeedMoreDocuments });
 
-        // Nghiệp vụ: bắt buộc đủ 2 loại giấy tờ
-        // 1) Giấy chứng nhận hộ nghèo/cận nghèo
-        // 2) Giấy xác nhận nhà ở (NO_HOUSE hoặc SMALL_HOUSE < 15m²/người)
+        // Nghiệp vụ: bắt buộc đủ giấy tờ tùy theo nhóm đối tượng
+        // (A) Giấy xác nhận nhà ở — bắt buộc tất cả
+        // (B) 1 giấy tờ chứng minh đối tượng — tùy PriorityGroup
+        // (C) Giấy xác nhận thu nhập — bắt buộc cho một số nhóm
         var documents = await _documentRepo.GetByApplicationIdAsync(applicationId);
         var uploadedTypes = documents.Select(d => d.DocumentType).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var missingTypes = DocumentTypeConstants.RequiredForSubmit
+
+        var requiredTypes = DocumentTypeConstants.GetRequiredTypesForSubmit(application.PriorityGroup);
+        var missingTypes = requiredTypes
             .Where(t => !uploadedTypes.Contains(t))
             .ToList();
 
         if (missingTypes.Count > 0)
         {
-            var missingLabels = missingTypes.Select(t => t switch
-            {
-                DocumentTypeConstants.HousingConditionProof
-                    => "Giấy xác nhận nhà ở (chưa có nhà hoặc diện tích < 15 m²/người)",
-                DocumentTypeConstants.PovertyHouseholdCertificate
-                    => "Giấy chứng nhận hộ nghèo/cận nghèo",
-                _ => t
-            });
+            var missingLabels = missingTypes.Select(t => DocumentTypeConstants.GetLabel(t));
 
             throw new ApplicationNotReadyToSubmitException(applicationId,
                 "Hồ sơ thiếu giấy tờ bắt buộc: " + string.Join("; ", missingLabels) + ".");
