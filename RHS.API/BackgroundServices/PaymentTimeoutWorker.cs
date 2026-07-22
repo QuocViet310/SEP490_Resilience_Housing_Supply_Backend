@@ -52,7 +52,7 @@ public class PaymentTimeoutWorker : BackgroundService
         var cutoffTime = DateTime.UtcNow.AddHours(-depositHours);
 
         var expiredApplications = await context.HousingApplications
-            .Where(x => x.ApplicationStatus == ApplicationStatusConstants.Approved
+            .Where(x => (x.ApplicationStatus == ApplicationStatusConstants.Approved || x.ApplicationStatus == ApplicationStatusConstants.ApprovedByTimeout)
                      && x.FinalDecisionDate.HasValue
                      && x.FinalDecisionDate.Value < cutoffTime)
             .ToListAsync(stoppingToken);

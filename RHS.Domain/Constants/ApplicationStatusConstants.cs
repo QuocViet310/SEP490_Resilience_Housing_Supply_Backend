@@ -24,6 +24,9 @@ public static class ApplicationStatusConstants
     /// <summary>Sở Xây dựng đã phê duyệt</summary>
     public const string Approved = "APPROVED";
 
+    /// <summary>Tự động phê duyệt do quá 20 ngày Sở Xây dựng không phản hồi (Approved by Timeout)</summary>
+    public const string ApprovedByTimeout = "APPROVED_BY_TIMEOUT";
+
     /// <summary>Đã bị từ chối</summary>
     public const string Rejected = "REJECTED";
 
@@ -51,6 +54,7 @@ public static class ApplicationStatusConstants
         NeedMoreDocuments,
         PendingSxdReview,
         Approved,
+        ApprovedByTimeout,
         Rejected,
         Canceled,
         Expired,

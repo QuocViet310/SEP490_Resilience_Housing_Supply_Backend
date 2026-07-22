@@ -161,6 +161,7 @@ public class ProjectAutomationWorker : BackgroundService
                     var blockedStatuses = new[]
                     {
                         ApplicationStatusConstants.Approved,
+                        ApplicationStatusConstants.ApprovedByTimeout,
                         ApplicationStatusConstants.DepositPaid
                     };
                     var alreadySupported = await context.HousingApplications.AnyAsync(a =>
@@ -177,7 +178,7 @@ public class ProjectAutomationWorker : BackgroundService
                     }
 
                     var oldStatus = app.ApplicationStatus;
-                    app.ApplicationStatus = ApplicationStatusConstants.Approved;
+                    app.ApplicationStatus = ApplicationStatusConstants.ApprovedByTimeout;
                     app.UpdatedAt = now;
                     app.FinalDecisionDate = now;
 
@@ -186,10 +187,10 @@ public class ProjectAutomationWorker : BackgroundService
                         HistoryId = Guid.NewGuid(),
                         ApplicationId = app.ApplicationId,
                         ChangedBy = RoleConstants.SystemAdministratorId,
-                        Action = ReviewActionConstants.Approve,
+                        Action = ReviewActionConstants.TacitApproval,
                         OldStatus = oldStatus,
-                        NewStatus = ApplicationStatusConstants.Approved,
-                        Note = $"Tự động phê duyệt theo quy định {tacitDays} ngày (PolicyConfig TACIT_APPROVAL_DAYS)",
+                        NewStatus = ApplicationStatusConstants.ApprovedByTimeout,
+                        Note = $"Approved by Timeout (Quá {tacitDays} ngày Sở Xây Dựng không phản hồi)",
                         ChangedAt = now
                     };
                     context.ApplicationStatusHistories.Add(history);
@@ -199,8 +200,8 @@ public class ProjectAutomationWorker : BackgroundService
 
                     await notificationService.SendAsync(
                         app.ApplicantId,
-                        "Hồ sơ được tự động phê duyệt",
-                        $"Hồ sơ của bạn đã được tự động phê duyệt do quá {tacitDays} ngày thẩm định theo quy định của Sở Xây Dựng. Vui lòng thanh toán đặt cọc để đủ điều kiện tham gia bốc thăm.",
+                        "Hồ sơ được phê duyệt (Approved by Timeout)",
+                        $"Hồ sơ của bạn đã được phê duyệt tự động (Approved by Timeout) do quá {tacitDays} ngày Sở Xây Dựng không phản hồi. Vui lòng thanh toán đặt cọc để CĐT đi bốc thăm.",
                         NotificationTypeConstants.ApplicationApproved
                     );
                 }

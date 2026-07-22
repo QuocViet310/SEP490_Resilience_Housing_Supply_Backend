@@ -88,8 +88,9 @@ public class PaymentService : IPaymentService
             };
         }
 
-        // Chỉ hồ sơ APPROVED mới được thanh toán
-        if (application.ApplicationStatus != ApplicationStatusConstants.Approved)
+        // Chỉ hồ sơ APPROVED hoặc APPROVED_BY_TIMEOUT mới được thanh toán
+        if (application.ApplicationStatus != ApplicationStatusConstants.Approved
+            && application.ApplicationStatus != ApplicationStatusConstants.ApprovedByTimeout)
         {
             return new PaymentResponseDto
             {
@@ -362,7 +363,7 @@ public class PaymentService : IPaymentService
             var approvedHistory = await _context.ApplicationStatusHistories
                 .Include(h => h.ChangedByUser)
                 .Where(h => h.ApplicationId == application.ApplicationId
-                         && h.NewStatus == ApplicationStatusConstants.Approved)
+                         && (h.NewStatus == ApplicationStatusConstants.Approved || h.NewStatus == ApplicationStatusConstants.ApprovedByTimeout))
                 .OrderByDescending(h => h.ChangedAt)
                 .FirstOrDefaultAsync();
 

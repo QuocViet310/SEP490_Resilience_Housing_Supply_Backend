@@ -138,6 +138,7 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             ApplicationStatusConstants.NeedMoreDocuments,
             ApplicationStatusConstants.PendingSxdReview,
             ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout,
             ApplicationStatusConstants.DepositPaid
         };
 
@@ -163,6 +164,7 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             ApplicationStatusConstants.NeedMoreDocuments,
             ApplicationStatusConstants.PendingSxdReview,
             ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout,
             ApplicationStatusConstants.DepositPaid
         };
 
@@ -382,6 +384,7 @@ public class HousingApplicationRepository : IHousingApplicationRepository
         {
             ApplicationStatusConstants.PendingSxdReview,
             ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout,
             ApplicationStatusConstants.Rejected
         };
 
@@ -531,6 +534,7 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             ApplicationStatusConstants.NeedMoreDocuments,
             ApplicationStatusConstants.PendingSxdReview,
             ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout,
             ApplicationStatusConstants.DepositPaid
         };
 
