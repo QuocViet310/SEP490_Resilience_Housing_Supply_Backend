@@ -87,6 +87,8 @@ builder.Services.AddScoped<IPolicyService, PolicyService>();
 builder.Services.AddScoped<IEligibilityRuleEngine, EligibilityRuleEngine>();
 builder.Services.AddScoped<ILotteryService, LotteryService>();
 builder.Services.AddScoped<IBeneficiaryPublishService, BeneficiaryPublishService>();
+builder.Services.AddScoped<IPublicPostCheckService, PublicPostCheckService>();
+builder.Services.AddMemoryCache();
 
 // Dependency Injection - VNPay Payment
 builder.Services.AddScoped<IVnPayService, VnPayService>();
