@@ -465,6 +465,91 @@ public class ReportExportService : IReportExportService
         return document.GeneratePdf();
     }
 
+    public async Task<byte[]> ExportLotteryMinutesPdfAsync(Guid projectId)
+    {
+        _logger.LogInformation("Exporting Lottery Minutes PDF for ProjectId={ProjectId}", projectId);
+
+        var project = await _dbContext.HousingProjects
+            .AsNoTracking()
+            .Include(p => p.Developer)
+            .FirstOrDefaultAsync(p => p.Id == projectId);
+
+        var draw = await _dbContext.LotteryDraws
+            .AsNoTracking()
+            .Include(d => d.DrawnByUser)
+            .Where(d => d.ProjectId == projectId)
+            .OrderByDescending(d => d.DrawnAt)
+            .FirstOrDefaultAsync();
+
+        var (_, rows) = await GetLotteryExportDataAsync(projectId);
+        var winners = rows.Where(r =>
+            r.LotteryResult is "WON" or "PRIORITY_WON").ToList();
+        var losers = rows.Where(r => r.LotteryResult == "LOST").ToList();
+
+        var document = Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(40);
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(Fonts.Lato));
+
+                page.Header().Column(col =>
+                {
+                    col.Item().AlignCenter().Text("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM").Bold();
+                    col.Item().AlignCenter().Text("Độc lập - Tự do - Hạnh phúc").Bold().Underline();
+                    col.Item().PaddingTop(12).AlignCenter()
+                        .Text("BIÊN BẢN PHIÊN BỐC THĂM NHÀ Ở XÃ HỘI").Bold().FontSize(14);
+                    col.Item().AlignCenter().Text(project?.ProjectName ?? "").Italic();
+                });
+
+                page.Content().PaddingTop(16).Column(col =>
+                {
+                    col.Item().Text($"Ngày giờ tổ chức: {project?.LotteryDate:dd/MM/yyyy HH:mm} (UTC)");
+                    col.Item().Text($"Hình thức: {project?.LotteryType ?? "-"}");
+                    col.Item().Text($"Địa điểm / kênh: {project?.LotteryLocation ?? "-"}");
+                    col.Item().Text($"Trạng thái phiên: {project?.LotterySessionStatus ?? "-"}");
+                    col.Item().Text($"Chủ đầu tư: {project?.Developer?.FullName ?? "-"}");
+                    if (draw != null)
+                    {
+                        col.Item().PaddingTop(6).Text($"Mã phiên (DrawId): {draw.DrawId}");
+                        col.Item().Text($"Thời điểm chốt: {draw.DrawnAt:dd/MM/yyyy HH:mm:ss} UTC");
+                        col.Item().Text($"Người điều hành: {draw.DrawnByUser?.FullName ?? draw.DrawnBy.ToString()}");
+                        col.Item().Text($"Số người tham gia: {draw.TotalParticipants} | Trúng: {draw.PriorityAllocated + draw.RandomAllocated}");
+                    }
+
+                    col.Item().PaddingTop(12).Text("I. DANH SÁCH TRÚNG TUYỂN").Bold();
+                    foreach (var (w, i) in winners.Select((w, i) => (w, i + 1)))
+                        col.Item().Text($"{i}. {w.FullName} — CCCD {w.CitizenId} — {w.LotteryResult} — {w.SlotCode}");
+
+                    if (winners.Count == 0)
+                        col.Item().Text("(Không có)").Italic();
+
+                    col.Item().PaddingTop(12).Text("II. DANH SÁCH KHÔNG TRÚNG").Bold();
+                    foreach (var (l, i) in losers.Select((l, i) => (l, i + 1)))
+                        col.Item().Text($"{i}. {l.FullName} — CCCD {l.CitizenId}");
+
+                    if (losers.Count == 0)
+                        col.Item().Text("(Không có)").Italic();
+
+                    col.Item().PaddingTop(20).Text(
+                        "Biên bản được lập tự động từ hệ thống RHS sau khi kết thúc/công bố phiên bốc thăm, phục vụ giám sát minh bạch.")
+                        .Italic().FontSize(9);
+                });
+
+                page.Footer().AlignCenter().Text(t =>
+                {
+                    t.Span("Trang ");
+                    t.CurrentPageNumber();
+                    t.Span(" / ");
+                    t.TotalPages();
+                });
+            });
+        });
+
+        return document.GeneratePdf();
+    }
+
     #endregion
 
     #region 4. Projects Summary Report (Excel)

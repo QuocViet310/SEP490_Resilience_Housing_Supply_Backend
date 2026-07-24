@@ -130,4 +130,105 @@ public class LotteryController : ControllerBase
             return NotFound(new { message = "Chưa có kết quả bốc thăm cho dự án này." });
         return Ok(result);
     }
+
+    /// <summary>[CĐT] Mở sảnh chờ (WaitingLobby).</summary>
+    [HttpPost("session/open-lobby")]
+    [Authorize(Roles = RoleConstants.HousingDeveloper)]
+    public async Task<IActionResult> OpenLobby(Guid projectId, CancellationToken ct)
+    {
+        try
+        {
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            return Ok(await _lotteryService.OpenLobbyAsync(projectId, userId, ct));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>[CĐT] Bắt đầu bốc thăm live (Live).</summary>
+    [HttpPost("session/start")]
+    [Authorize(Roles = RoleConstants.HousingDeveloper)]
+    public async Task<IActionResult> StartLive(Guid projectId, CancellationToken ct)
+    {
+        try
+        {
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            return Ok(await _lotteryService.StartLiveAsync(projectId, userId, ct));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>[CĐT] Kết thúc phiên (Finished) — chốt người chưa bốc = trượt.</summary>
+    [HttpPost("session/finish")]
+    [Authorize(Roles = RoleConstants.HousingDeveloper)]
+    public async Task<IActionResult> FinishSession(Guid projectId, CancellationToken ct)
+    {
+        try
+        {
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            return Ok(await _lotteryService.FinishSessionAsync(projectId, userId, ct));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>[CĐT/Sở] Công bố kết quả (Published).</summary>
+    [HttpPost("session/publish")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    public async Task<IActionResult> PublishSession(Guid projectId, CancellationToken ct)
+    {
+        try
+        {
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            return Ok(await _lotteryService.PublishSessionAsync(projectId, userId, ct));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>Xác thực OTP vào sảnh (Applicant). Staff không cần mã.</summary>
+    [HttpPost("session/verify-otp")]
+    [Authorize]
+    public async Task<IActionResult> VerifyOtp(
+        Guid projectId,
+        [FromBody] JoinLotteryLobbyRequestDto request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            var isStaff = User.IsInRole(RoleConstants.HousingDeveloper)
+                          || User.IsInRole(RoleConstants.DepartmentOfConstruction)
+                          || User.IsInRole(RoleConstants.SystemAdministrator);
+            var result = await _lotteryService.VerifyJoinCodeAsync(
+                projectId, userId, request.JoinCode, isStaff, ct);
+            if (!result.Success)
+                return BadRequest(result);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>Tải biên bản PDF phiên bốc thăm.</summary>
+    [HttpGet("minutes.pdf")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    public async Task<IActionResult> DownloadMinutes(
+        Guid projectId,
+        [FromServices] IReportExportService reports)
+    {
+        var bytes = await reports.ExportLotteryMinutesPdfAsync(projectId);
+        return File(bytes, "application/pdf", $"BienBan_BocTham_{projectId:N}.pdf");
+    }
 }

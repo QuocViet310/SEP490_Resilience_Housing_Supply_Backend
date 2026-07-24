@@ -43,6 +43,22 @@ public class HousingProjectConfiguration : IEntityTypeConfiguration<HousingProje
             .IsRequired(false)
             .HasMaxLength(255);
 
+        builder.Property(x => x.LotteryType)
+            .IsRequired(false)
+            .HasMaxLength(50);
+
+        builder.Property(x => x.LotteryDescription)
+            .IsRequired(false)
+            .HasMaxLength(2000);
+
+        builder.Property(x => x.LotterySessionStatus)
+            .IsRequired(false)
+            .HasMaxLength(30);
+
+        builder.Property(x => x.LotteryJoinCode)
+            .IsRequired(false)
+            .HasMaxLength(10);
+
         builder.Property(x => x.DepositAmount)
             .HasPrecision(18, 2);
 

@@ -30,6 +30,12 @@ public class LotteryScheduleDetailDto
     public int AvailableUnits { get; set; }
     public int TotalEligibleParticipants { get; set; }
     public List<LotteryParticipantDto> EligibleParticipants { get; set; } = new();
+
+    /// <summary>FSM: Scheduled / WaitingLobby / Live / Finished / Published</summary>
+    public string? SessionStatus { get; set; }
+
+    /// <summary>Mã OTP 6 số vào sảnh (chỉ trả khi đã duyệt lịch).</summary>
+    public string? JoinCode { get; set; }
 }
 
 public class LotteryParticipantDto

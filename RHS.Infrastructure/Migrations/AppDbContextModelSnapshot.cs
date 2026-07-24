@@ -723,12 +723,21 @@ namespace RHS.Infrastructure.Migrations
                     b.Property<string>("LotteryDescription")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("LotteryJoinCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
                     b.Property<string>("LotteryLocation")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
+                    b.Property<string>("LotterySessionStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.Property<string>("LotteryType")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<double>("MaxArea")
                         .HasColumnType("float");

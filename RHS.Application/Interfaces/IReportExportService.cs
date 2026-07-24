@@ -35,6 +35,11 @@ public interface IReportExportService
     Task<byte[]> ExportLotteryResultsPdfAsync(Guid projectId);
 
     /// <summary>
+    /// Xuất biên bản PDF phiên bốc thăm (ngày giờ, hình thức, OTP đã dùng, DS trúng/trượt, drawId).
+    /// </summary>
+    Task<byte[]> ExportLotteryMinutesPdfAsync(Guid projectId);
+
+    /// <summary>
     /// Xuất file Excel báo cáo tổng hợp tiến độ các dự án NOXH.
     /// </summary>
     Task<byte[]> ExportProjectsSummaryExcelAsync();

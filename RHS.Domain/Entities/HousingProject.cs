@@ -33,6 +33,12 @@ public class HousingProject
 
     public Guid? LotteryApprovedBy { get; set; }
 
+    /// <summary>FSM phiên live: Scheduled → WaitingLobby → Live → Finished → Published</summary>
+    public string? LotterySessionStatus { get; set; }
+
+    /// <summary>Mã OTP/join code 6 số để vào sảnh chờ (công bố khi Sở duyệt lịch).</summary>
+    public string? LotteryJoinCode { get; set; }
+
     public decimal DepositAmount { get; set; }
 
     public decimal MinPrice { get; set; }

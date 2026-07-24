@@ -3,20 +3,17 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using RHS.Application.Interfaces;
+using RHS.Domain.Constants;
 
 namespace RHS.Infrastructure.Hubs;
 
 /// <summary>
-/// SignalR Hub quản lý sảnh chờ bốc thăm thời gian thực (Real-time Waiting Lobby),
-/// xử lý bốc thăm tương tác và phát sóng kết quả trực tiếp cho SXD/CĐT (Mục 20, 21, 22).
+/// SignalR Hub: sảnh chờ, bốc live, phát sóng kết quả + trạng thái phiên.
 /// </summary>
 [Authorize]
 public class LotteryHub : Hub<ILotteryHubClient>
 {
-    // Mapping projectId -> Map(connectionId -> byte) để đếm số kết nối online thời gian thực ở sảnh
     private static readonly ConcurrentDictionary<Guid, ConcurrentDictionary<string, byte>> ProjectLobbies = new();
-    
-    // Mapping connectionId -> list of projectIds mà client đã join
     private static readonly ConcurrentDictionary<string, ConcurrentBag<Guid>> ConnectionProjects = new();
 
     private readonly ILotteryService _lotteryService;
@@ -26,9 +23,18 @@ public class LotteryHub : Hub<ILotteryHubClient>
         _lotteryService = lotteryService;
     }
 
-    /// <summary>[Mục 20] Client (App/Web) tham gia sảnh chờ bốc thăm của dự án.</summary>
-    public async Task JoinProjectLobby(Guid projectId)
+    /// <summary>
+    /// Tham gia sảnh. Applicant bắt buộc OTP (joinCode). Staff (CĐT/SXD/Admin) không cần.
+    /// </summary>
+    public async Task JoinProjectLobby(Guid projectId, string? joinCode = null)
     {
+        var userId = GetUserId();
+        var isStaff = IsStaff();
+
+        var verify = await _lotteryService.VerifyJoinCodeAsync(projectId, userId, joinCode, isStaff);
+        if (!verify.Success)
+            throw new HubException(verify.Message);
+
         var groupName = GetGroupName(projectId);
         await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
 
@@ -38,11 +44,11 @@ public class LotteryHub : Hub<ILotteryHubClient>
         var userProjects = ConnectionProjects.GetOrAdd(Context.ConnectionId, _ => new ConcurrentBag<Guid>());
         userProjects.Add(projectId);
 
-        int onlineCount = lobby.Count;
-        await Clients.Group(groupName).ReceiveLobbyCount(onlineCount);
+        await Clients.Group(groupName).ReceiveLobbyCount(lobby.Count);
+        if (!string.IsNullOrWhiteSpace(verify.SessionStatus))
+            await Clients.Caller.ReceiveLotteryStatus(verify.SessionStatus);
     }
 
-    /// <summary>[Mục 20] Client rời sảnh chờ bốc thăm.</summary>
     public async Task LeaveProjectLobby(Guid projectId)
     {
         var groupName = GetGroupName(projectId);
@@ -51,28 +57,17 @@ public class LotteryHub : Hub<ILotteryHubClient>
         if (ProjectLobbies.TryGetValue(projectId, out var lobby))
         {
             lobby.TryRemove(Context.ConnectionId, out _);
-            int onlineCount = lobby.Count;
-            await Clients.Group(groupName).ReceiveLobbyCount(onlineCount);
+            await Clients.Group(groupName).ReceiveLobbyCount(lobby.Count);
         }
     }
 
-    /// <summary>[Mục 21] Người dân bấm nút bốc thăm trực tiếp trên App/Web thời gian thực.</summary>
     public async Task DrawUnit(Guid projectId)
     {
-        var userIdStr = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!Guid.TryParse(userIdStr, out var userId))
-        {
-            throw new HubException("Không thể xác thực người dùng.");
-        }
-
+        var userId = GetUserId();
         try
         {
-            // Thực hiện bốc thăm thời gian thực với SemaphoreSlim concurrency lock (Row lock 1 mili-giây)
-            var result = await _lotteryService.DrawUnitRealtimeAsync(projectId, userId);
-
-            // Bắn gói tin ReceiveDrawResult(data) tức thì đến sảnh bốc thăm và màn hình giám sát Web SXD (Mục 21 & 22)
-            var groupName = GetGroupName(projectId);
-            await Clients.Group(groupName).ReceiveDrawResult(result);
+            // Service đã broadcast ReceiveDrawResult
+            await _lotteryService.DrawUnitRealtimeAsync(projectId, userId);
         }
         catch (Exception ex)
         {
@@ -89,8 +84,7 @@ public class LotteryHub : Hub<ILotteryHubClient>
                 if (ProjectLobbies.TryGetValue(projectId, out var lobby))
                 {
                     lobby.TryRemove(Context.ConnectionId, out _);
-                    var groupName = GetGroupName(projectId);
-                    await Clients.Group(groupName).ReceiveLobbyCount(lobby.Count);
+                    await Clients.Group(GetGroupName(projectId)).ReceiveLobbyCount(lobby.Count);
                 }
             }
         }
@@ -99,4 +93,21 @@ public class LotteryHub : Hub<ILotteryHubClient>
     }
 
     public static string GetGroupName(Guid projectId) => $"project_lottery_{projectId}";
+
+    private Guid GetUserId()
+    {
+        var userIdStr = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdStr, out var userId))
+            throw new HubException("Không thể xác thực người dùng.");
+        return userId;
+    }
+
+    private bool IsStaff()
+    {
+        var roles = Context.User?.FindAll(ClaimTypes.Role).Select(c => c.Value).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return roles.Contains(RoleConstants.HousingDeveloper)
+               || roles.Contains(RoleConstants.DepartmentOfConstruction)
+               || roles.Contains(RoleConstants.SystemAdministrator);
+    }
 }
