@@ -21,6 +21,7 @@ public class ContractSignService : IContractSignService
     private readonly IHousingApplicationRepository _applicationRepo;
     private readonly IPrincipleAgreementRepository _agreementRepo;
     private readonly INotificationService _notificationService;
+    private readonly IInstallmentService _installmentService;
     private readonly AppDbContext _context;
     private readonly ILogger<ContractSignService> _logger;
 
@@ -28,12 +29,14 @@ public class ContractSignService : IContractSignService
         IHousingApplicationRepository applicationRepo,
         IPrincipleAgreementRepository agreementRepo,
         INotificationService notificationService,
+        IInstallmentService installmentService,
         AppDbContext context,
         ILogger<ContractSignService> logger)
     {
         _applicationRepo     = applicationRepo;
         _agreementRepo       = agreementRepo;
         _notificationService = notificationService;
+        _installmentService  = installmentService;
         _context             = context;
         _logger              = logger;
     }
@@ -67,14 +70,10 @@ public class ContractSignService : IContractSignService
             };
         }
 
-        // Chỉ cho ký khi hồ sơ ở trạng thái CONTRACT_PENDING, APPROVED, DEPOSIT_PAID hoặc FULLY_PAID
+        // Chỉ cho ký khi đã vào bước hợp đồng (sau chốt danh sách / trúng bốc thăm)
         var allowedStatuses = new[]
         {
-            ApplicationStatusConstants.ContractPending,
-            ApplicationStatusConstants.Approved,
-            ApplicationStatusConstants.ApprovedByTimeout,
-            ApplicationStatusConstants.DepositPaid,
-            ApplicationStatusConstants.FullyPaid
+            ApplicationStatusConstants.ContractPending
         };
 
         if (!allowedStatuses.Contains(application.ApplicationStatus))
@@ -171,11 +170,24 @@ public class ContractSignService : IContractSignService
             throw;
         }
 
-        // ── 4. Gửi notification (sau commit) ────────────────────────────────
+        // ── 4. Sinh lịch đóng tiền đợt cọc + notification (sau commit) ───
+        try
+        {
+            await _installmentService.FireTriggerEventAsync(
+                applicationId,
+                TriggerEventConstants.OnContractSigned,
+                signedAt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to fire ON_CONTRACT_SIGNED installments for App {AppId}.", applicationId);
+        }
+
         await _notificationService.SendAsync(
             applicantId,
             "Ký hợp đồng thành công",
-            "Bạn đã đồng ý điều khoản hợp đồng nguyên tắc. Hợp đồng đã được ghi nhận trạng thái đã ký.",
+            "Bạn đã đồng ý điều khoản hợp đồng nguyên tắc. Lịch đặt cọc đã được tạo — vui lòng thanh toán đúng hạn.",
             NotificationTypeConstants.ContractSigned);
 
         return new ContractSignResponseDto

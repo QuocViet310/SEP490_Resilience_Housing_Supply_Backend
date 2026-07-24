@@ -30,7 +30,6 @@ public class VnPayService : IVnPayService
     /// <inheritdoc/>
     public string CreatePaymentUrl(HttpContext context, VnPaymentRequest request)
     {
-        // ── Đọc cấu hình từ appsettings ──────────────────────────────────
         var tmnCode    = _configuration["VnPay:TmnCode"]!;
         var hashSecret = _configuration["VnPay:HashSecret"]!;
         var baseUrl    = _configuration["VnPay:BaseUrl"]!;
@@ -40,6 +39,7 @@ public class VnPayService : IVnPayService
         var expireDate = now.AddMinutes(15);
 
         // ── Build Dictionary tham số vnp_* (sẽ được sort & ký) ──────────
+        // IPN URL cấu hình trên Merchant Admin VNPay → /api/payment/payment-ipn (VnPay:IpnUrl)
         var vnpParams = new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
             ["vnp_Version"]    = VnpVersion,

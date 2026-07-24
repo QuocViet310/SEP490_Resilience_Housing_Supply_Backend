@@ -19,6 +19,9 @@ public static class DemoDataSeeder
     public const string DemoSxdEmail = "sxd.demo@rhs.local";
     public const string DemoPassword = "Demo@123456";
 
+    /// <summary>Account trống — dùng test tạo hồ sơ / rào 1 tài khoản 1 hồ sơ.</summary>
+    public const string DemoApplicantFreeEmail = "dan.free@rhs.local";
+
     /// <summary>Marker trong Description để nhận diện dự án seed.</summary>
     private const string SeedMarker = "[DEMO_SEED]";
 
@@ -27,6 +30,7 @@ public static class DemoDataSeeder
         await EnsureProjectStatusesAsync(db, logger, ct);
         var developer = await EnsureDemoStaffAsync(db, logger, ct);
         await EnsureDemoProjectsAsync(db, developer.Id, logger, ct);
+        await EnsureDemoApplicantsAndApplicationsAsync(db, logger, ct);
     }
 
     private static async Task EnsureProjectStatusesAsync(AppDbContext db, ILogger? logger, CancellationToken ct)
@@ -462,5 +466,270 @@ public static class DemoDataSeeder
                 Images(p6, 2)
             ),
         ];
+    }
+
+    /// <summary>
+    /// Seed người dân + hồ sơ nhiều trạng thái (1 account = 1 hồ sơ) để test end-to-end.
+    /// Idempotent theo User.Id / ApplicationId cố định.
+    /// </summary>
+    private static async Task EnsureDemoApplicantsAndApplicationsAsync(
+        AppDbContext db,
+        ILogger? logger,
+        CancellationToken ct)
+    {
+        var projectId = Guid.Parse("b1000001-0001-0001-0001-000000000001"); // NOXH Bình Minh — Thủ Đức
+        var projectExists = await db.HousingProjects.AnyAsync(p => p.Id == projectId && !p.IsDeleted, ct);
+        if (!projectExists)
+        {
+            logger?.LogWarning("Demo seed: project Bình Minh missing — skip applicants/applications.");
+            return;
+        }
+
+        var roleExists = await db.Roles.AnyAsync(r => r.Id == RoleConstants.ApplicantId, ct);
+        if (!roleExists)
+        {
+            db.Roles.Add(new Role { Id = RoleConstants.ApplicantId, RoleName = RoleConstants.Applicant });
+            await db.SaveChangesAsync(ct);
+        }
+
+        var passwordHash = BCrypt.Net.BCrypt.HashPassword(DemoPassword);
+        var now = DateTime.UtcNow;
+        var defs = BuildApplicantApplicationDefs(projectId, now);
+
+        var userAdded = 0;
+        var appAdded = 0;
+        var agreementAdded = 0;
+
+        foreach (var def in defs)
+        {
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Id == def.UserId || u.Email == def.Email, ct);
+            if (user == null)
+            {
+                user = new User
+                {
+                    Id = def.UserId,
+                    Email = def.Email,
+                    FullName = def.FullName,
+                    PasswordHash = passwordHash,
+                    RoleId = RoleConstants.ApplicantId,
+                    Status = "Active",
+                    IsEmailVerified = true,
+                    PhoneNumber = def.Phone,
+                    CitizenId = def.CitizenId,
+                    CreatedAt = now.AddDays(-30)
+                };
+                db.Users.Add(user);
+                userAdded++;
+            }
+            else
+            {
+                // Đồng bộ CCCD / active nếu seed cũ thiếu
+                if (string.IsNullOrWhiteSpace(user.CitizenId))
+                    user.CitizenId = def.CitizenId;
+                if (user.Status != "Active")
+                    user.Status = "Active";
+                user.UpdatedAt = DateTime.UtcNow;
+            }
+
+            if (def.SkipApplication)
+                continue;
+
+            var app = await db.HousingApplications
+                .FirstOrDefaultAsync(a => a.ApplicationId == def.ApplicationId, ct);
+            if (app != null)
+                continue;
+
+            // Tránh trùng ApplicantId+ProjectId nếu đã có hồ sơ khác
+            var existsPair = await db.HousingApplications.AnyAsync(
+                a => a.ApplicantId == def.UserId
+                     && a.ProjectId == projectId
+                     && a.ApplicationStatus != ApplicationStatusConstants.Rejected
+                     && a.ApplicationStatus != ApplicationStatusConstants.Canceled, ct);
+            if (existsPair)
+                continue;
+
+            app = new HousingApplication
+            {
+                ApplicationId = def.ApplicationId,
+                ApplicantId = def.UserId,
+                ProjectId = projectId,
+                ApplicationStatus = def.Status,
+                SubmittedAt = now.AddDays(def.SubmittedDaysAgo),
+                CreatedAt = now.AddDays(def.SubmittedDaysAgo - 1),
+                UpdatedAt = now,
+                FullName = def.FullName,
+                CitizenId = def.CitizenId,
+                Occupation = def.Occupation,
+                WorkPlace = "Công ty TNHH Demo RHS",
+                CurrentResidence = "12 Nguyễn Văn Linh, Quận 7, TP.HCM",
+                PermanentAddress = "12 Nguyễn Văn Linh, Quận 7, TP.HCM",
+                HousingStatus = HousingStatusConstants.NoHouse,
+                MaritalStatus = "SINGLE",
+                HouseholdMembersCount = 3,
+                PriorityGroup = def.PriorityGroup,
+                PriorityScore = def.PriorityScore,
+                MonthlyIncome = def.MonthlyIncome,
+                LotteryResult = def.LotteryResult,
+                SlotCode = def.SlotCode,
+                IsViolation = false
+            };
+            db.HousingApplications.Add(app);
+            appAdded++;
+
+            db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+            {
+                HistoryId = Guid.NewGuid(),
+                ApplicationId = def.ApplicationId,
+                ChangedBy = def.UserId,
+                Action = ReviewActionConstants.Submit,
+                OldStatus = ApplicationStatusConstants.Draft,
+                NewStatus = def.Status,
+                Note = $"[DEMO_SEED] Hồ sơ demo trạng thái {def.Status}",
+                ChangedAt = now.AddDays(def.SubmittedDaysAgo)
+            });
+
+            if (def.NeedsAgreement)
+            {
+                var hasAgreement = await db.PrincipleAgreements
+                    .AnyAsync(a => a.ApplicationId == def.ApplicationId, ct);
+                if (!hasAgreement)
+                {
+                    db.PrincipleAgreements.Add(new PrincipleAgreement
+                    {
+                        Id = Guid.NewGuid(),
+                        ApplicationId = def.ApplicationId,
+                        PdfUrl = $"/api/payment/download-contract/{def.ApplicationId}",
+                        CreatedAt = now.AddDays(-2),
+                        IsSigned = def.AgreementSigned,
+                        SignedAt = def.AgreementSigned ? now.AddDays(-1) : null,
+                        SignedIpAddress = def.AgreementSigned ? "127.0.0.1" : null
+                    });
+                    agreementAdded++;
+                }
+            }
+        }
+
+        if (userAdded > 0 || appAdded > 0 || agreementAdded > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger?.LogInformation(
+                "Demo seed: applicants +{Users}, applications +{Apps}, agreements +{Agreements}. Password={Password}",
+                userAdded, appAdded, agreementAdded, DemoPassword);
+        }
+        else
+        {
+            logger?.LogInformation("Demo seed: applicants/applications already present — skip.");
+        }
+    }
+
+    private static List<DemoApplicantDef> BuildApplicantApplicationDefs(Guid projectId, DateTime now)
+    {
+        // Mỗi account một hồ sơ (khớp rào 1 TK = 1 hồ sơ active) — trừ dan.free (chưa có hồ sơ).
+        return
+        [
+            new("c1000001-0001-0001-0001-000000000001", "d1000001-0001-0001-0001-000000000001",
+                "dan.draft@rhs.local", "Nguyễn Văn Draft", "001090000001", "0901000001",
+                ApplicationStatusConstants.Draft, PriorityGroupConstants.UrbanPoor, 10, 8_000_000m,
+                null, null, false, false, -20, "Công nhân"),
+
+            new("c1000001-0001-0001-0001-000000000002", "d1000001-0001-0001-0001-000000000002",
+                "dan.submitted@rhs.local", "Trần Thị Submitted", "001090000002", "0901000002",
+                ApplicationStatusConstants.Submitted, PriorityGroupConstants.UrbanNearPoor, 20, 9_000_000m,
+                null, null, false, false, -18, "Nhân viên"),
+
+            new("c1000001-0001-0001-0001-000000000003", "d1000001-0001-0001-0001-000000000003",
+                "dan.reviewing@rhs.local", "Lê Văn Reviewing", "001090000003", "0901000003",
+                ApplicationStatusConstants.Reviewing, PriorityGroupConstants.LowIncomeUrban, 30, 10_000_000m,
+                null, null, false, false, -16, "Kỹ thuật viên"),
+
+            new("c1000001-0001-0001-0001-000000000004", "d1000001-0001-0001-0001-000000000004",
+                "dan.needdoc@rhs.local", "Phạm Thị NeedDoc", "001090000004", "0901000004",
+                ApplicationStatusConstants.NeedMoreDocuments, PriorityGroupConstants.Worker, 25, 11_000_000m,
+                null, null, false, false, -15, "Công nhân"),
+
+            new("c1000001-0001-0001-0001-000000000005", "d1000001-0001-0001-0001-000000000005",
+                "dan.pendingsxd@rhs.local", "Hoàng Văn PendingSxd", "001090000005", "0901000005",
+                ApplicationStatusConstants.PendingSxdReview, PriorityGroupConstants.UrbanPoor, 40, 7_500_000m,
+                null, null, false, false, -14, "Lao động tự do"),
+
+            new("c1000001-0001-0001-0001-000000000006", "d1000001-0001-0001-0001-000000000006",
+                "dan.approved@rhs.local", "Võ Thị Approved", "001090000006", "0901000006",
+                ApplicationStatusConstants.Approved, PriorityGroupConstants.UrbanPoor, 50, 8_500_000m,
+                null, null, false, false, -12, "Công nhân"),
+
+            new("c1000001-0001-0001-0001-000000000007", "d1000001-0001-0001-0001-000000000007",
+                "dan.timeout@rhs.local", "Đặng Văn Timeout", "001090000007", "0901000007",
+                ApplicationStatusConstants.ApprovedByTimeout, PriorityGroupConstants.UrbanNearPoor, 45, 9_500_000m,
+                null, null, false, false, -25, "Nhân viên"),
+
+            new("c1000001-0001-0001-0001-000000000008", "d1000001-0001-0001-0001-000000000008",
+                "dan.contract@rhs.local", "Bùi Thị ContractPending", "001090000008", "0901000008",
+                ApplicationStatusConstants.ContractPending, PriorityGroupConstants.UrbanPoor, 60, 8_000_000m,
+                LotteryResultConstants.Won, null, true, false, -10, "Công nhân"),
+
+            new("c1000001-0001-0001-0001-000000000009", "d1000001-0001-0001-0001-000000000009",
+                "dan.signed@rhs.local", "Ngô Văn ContractSigned", "001090000009", "0901000009",
+                ApplicationStatusConstants.ContractSigned, PriorityGroupConstants.Worker, 55, 10_000_000m,
+                LotteryResultConstants.PriorityWon, null, true, true, -9, "Công nhân"),
+
+            new("c1000001-0001-0001-0001-00000000000a", "d1000001-0001-0001-0001-00000000000a",
+                "dan.deposit@rhs.local", "Đỗ Thị DepositPaid", "001090000010", "0901000010",
+                ApplicationStatusConstants.DepositPaid, PriorityGroupConstants.UrbanPoor, 70, 8_200_000m,
+                LotteryResultConstants.Won, "NOXH-TD-001", true, true, -8, "Công nhân"),
+
+            new("c1000001-0001-0001-0001-00000000000b", "d1000001-0001-0001-0001-00000000000b",
+                "dan.priority@rhs.local", "Lý Văn PriorityApproved", "001090000011", "0901000011",
+                ApplicationStatusConstants.Approved, PriorityGroupConstants.MeritPerson, 90, 7_000_000m,
+                null, null, false, false, -11, "Người có công"),
+
+            new("c1000001-0001-0001-0001-00000000000c", "d1000001-0001-0001-0001-00000000000c",
+                "dan.lost@rhs.local", "Mai Thị LotteryLost", "001090000012", "0901000012",
+                ApplicationStatusConstants.LotteryLost, PriorityGroupConstants.LowIncomeUrban, 15, 12_000_000m,
+                LotteryResultConstants.Lost, null, false, false, -7, "Nhân viên"),
+
+            new("c1000001-0001-0001-0001-00000000000d", "d1000001-0001-0001-0001-00000000000d",
+                "dan.rejected@rhs.local", "Phan Văn Rejected", "001090000013", "0901000013",
+                ApplicationStatusConstants.Rejected, PriorityGroupConstants.UrbanNearPoor, 5, 15_000_000m,
+                null, null, false, false, -6, "Buôn bán"),
+
+            new("c1000001-0001-0001-0001-00000000000e", "d1000001-0001-0001-0001-00000000000e",
+                "dan.expired@rhs.local", "Trương Thị Expired", "001090000014", "0901000014",
+                ApplicationStatusConstants.Expired, PriorityGroupConstants.Worker, 35, 9_000_000m,
+                null, null, false, false, -30, "Công nhân"),
+
+            new("c1000001-0001-0001-0001-00000000000f", "d1000001-0001-0001-0001-00000000000f",
+                "dan.fullypaid@rhs.local", "Huỳnh Văn FullyPaid", "001090000015", "0901000015",
+                ApplicationStatusConstants.FullyPaid, PriorityGroupConstants.UrbanPoor, 80, 8_000_000m,
+                LotteryResultConstants.Won, "NOXH-TD-002", true, true, -5, "Công nhân"),
+
+            // Account trống — test tạo hồ sơ mới + kiểm tra rào 1 TK 1 hồ sơ
+            new("c1000001-0001-0001-0001-000000000010", "00000000-0000-0000-0000-000000000000",
+                DemoApplicantFreeEmail, "Nguyễn Thị Free", "001090000016", "0901000016",
+                "", PriorityGroupConstants.UrbanPoor, 0, 8_000_000m,
+                null, null, false, false, 0, "Công nhân", SkipApplication: true),
+        ];
+    }
+
+    private sealed record DemoApplicantDef(
+        string UserIdRaw,
+        string ApplicationIdRaw,
+        string Email,
+        string FullName,
+        string CitizenId,
+        string Phone,
+        string Status,
+        string? PriorityGroup,
+        decimal PriorityScore,
+        decimal MonthlyIncome,
+        string? LotteryResult,
+        string? SlotCode,
+        bool NeedsAgreement,
+        bool AgreementSigned,
+        int SubmittedDaysAgo,
+        string Occupation,
+        bool SkipApplication = false)
+    {
+        public Guid UserId => Guid.Parse(UserIdRaw);
+        public Guid ApplicationId => Guid.Parse(ApplicationIdRaw);
     }
 }

@@ -134,8 +134,8 @@ public class HousingProjectService : IHousingProjectService
             }
         }
 
-        // Add PaymentMilestones if provided
-        if (request.Milestones != null)
+        // Add PaymentMilestones if provided; otherwise seed mặc định 3 đợt
+        if (request.Milestones != null && request.Milestones.Count > 0)
         {
             foreach (var ms in request.Milestones)
             {
@@ -160,6 +160,53 @@ public class HousingProjectService : IHousingProjectService
                     CreatedAt       = DateTime.UtcNow
                 });
             }
+        }
+        else
+        {
+            var deposit = request.DepositAmount > 0 ? request.DepositAmount : 50_000_000m;
+            var now = DateTime.UtcNow;
+            housingProject.PaymentMilestones.Add(new PaymentMilestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = housingProject.Id,
+                PhaseOrder = 1,
+                PhaseName = "Đặt cọc",
+                CalculationType = CalculationTypeConstants.FixedAmount,
+                FixedAmount = deposit,
+                TriggerEvent = TriggerEventConstants.OnContractSigned,
+                DueDays = 7,
+                Description = "Đợt đặt cọc sau khi ký hợp đồng nguyên tắc",
+                IsActive = true,
+                CreatedAt = now
+            });
+            housingProject.PaymentMilestones.Add(new PaymentMilestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = housingProject.Id,
+                PhaseOrder = 2,
+                PhaseName = "Đợt 1",
+                CalculationType = CalculationTypeConstants.Percentage,
+                Percentage = 40m,
+                TriggerEvent = TriggerEventConstants.OnLotteryWon,
+                DueDays = 30,
+                Description = "Đợt 1 theo đơn giá căn đã thẩm định",
+                IsActive = true,
+                CreatedAt = now
+            });
+            housingProject.PaymentMilestones.Add(new PaymentMilestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = housingProject.Id,
+                PhaseOrder = 3,
+                PhaseName = "Đợt 2",
+                CalculationType = CalculationTypeConstants.Percentage,
+                Percentage = 60m,
+                TriggerEvent = TriggerEventConstants.OnLotteryWon,
+                DueDays = 90,
+                Description = "Đợt 2 theo đơn giá căn đã thẩm định",
+                IsActive = true,
+                CreatedAt = now
+            });
         }
 
         // Save to repository

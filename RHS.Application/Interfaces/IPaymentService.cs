@@ -24,14 +24,18 @@ public interface IPaymentService
     Task<PaymentResponseDto> CreatePaymentAsync(Guid userId, CreatePaymentDto dto, HttpContext httpContext);
 
     /// <summary>
-    /// Xử lý callback từ VNPay:
+    /// Xử lý callback từ VNPay (ReturnUrl — browser redirect):
     /// 1. Xác minh chữ ký HMAC-SHA512
-    /// 2. Cập nhật trạng thái Payment trong DB (Success / Failed)
-    /// 3. Nếu Success → sinh SlotCode, tạo PDF hợp đồng, lưu PrincipleAgreement
+    /// 2. Cập nhật trạng thái Payment trong DB (Paid / Failed)
+    /// 3. Nếu Success → SlotCode + DEPOSIT_PAID (hoặc đánh dấu installment PAID)
     /// </summary>
-    /// <param name="queryParams">Query parameters từ VNPay ReturnUrl</param>
-    /// <returns>True nếu callback hợp lệ và đã xử lý thành công</returns>
     Task<bool> HandleCallbackAsync(IQueryCollection queryParams);
+
+    /// <summary>
+    /// Xử lý IPN từ VNPay Sandbox (server-to-server), idempotent.
+    /// Trả RspCode theo chuẩn VNPay: 00 confirm, 02 already, 97 invalid signature, 01 not found.
+    /// </summary>
+    Task<VnPayIpnResultDto> HandleIpnAsync(IQueryCollection queryParams);
 
     /// <summary>
     /// Tra cứu thông tin giao dịch theo mã đơn hàng nội bộ.

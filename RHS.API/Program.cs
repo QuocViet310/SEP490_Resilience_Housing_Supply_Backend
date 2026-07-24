@@ -280,9 +280,11 @@ using (var scope = app.Services.CreateScope())
             RHS.Infrastructure.Seed.DemoDataSeeder
                 .EnsureSeededAsync(dbContext, demoLogger)
                 .GetAwaiter().GetResult();
-            Console.WriteLine("✅ Demo data (CĐT/SXD + dự án) ensured!");
+            Console.WriteLine("✅ Demo data (CĐT/SXD + dự án + người dân/hồ sơ) ensured!");
             Console.WriteLine($"   CĐT: {RHS.Infrastructure.Seed.DemoDataSeeder.DemoDeveloperEmail} / {RHS.Infrastructure.Seed.DemoDataSeeder.DemoPassword}");
             Console.WriteLine($"   SXD: {RHS.Infrastructure.Seed.DemoDataSeeder.DemoSxdEmail} / {RHS.Infrastructure.Seed.DemoDataSeeder.DemoPassword}");
+            Console.WriteLine($"   Dân (trống hồ sơ): {RHS.Infrastructure.Seed.DemoDataSeeder.DemoApplicantFreeEmail} / {RHS.Infrastructure.Seed.DemoDataSeeder.DemoPassword}");
+            Console.WriteLine("   Dân theo trạng thái: dan.approved@rhs.local, dan.signed@rhs.local, dan.deposit@rhs.local, ... / cùng mật khẩu Demo@123456");
         }
         catch (Exception demoEx)
         {

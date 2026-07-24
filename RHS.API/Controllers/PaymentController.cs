@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RHS.Application.DTOs.Payment;
 using RHS.Application.Interfaces;
+using RHS.Domain.Constants;
 using System.Security.Claims;
 
 namespace RHS.API.Controllers;
@@ -86,10 +87,8 @@ public class PaymentController : ControllerBase
     }
 
     /// <summary>
-    /// [Bước 2 luồng] Callback VNPay gọi về sau khi người dùng thanh toán.
-    /// Xác minh chữ ký, cập nhật trạng thái, và nếu thành công sẽ tự động
-    /// sinh SlotCode + PDF hợp đồng nguyên tắc.
-    /// ⚠️ AllowAnonymous vì VNPay gọi trực tiếp (không có JWT).
+    /// [Bước 2] ReturnUrl — browser redirect sau thanh toán (UX).
+    /// IPN (`payment-ipn`) là nguồn xác nhận authoritative hơn.
     /// </summary>
     [HttpGet("payment-callback")]
     [AllowAnonymous]
@@ -109,14 +108,12 @@ public class PaymentController : ControllerBase
                 });
             }
 
-            // Đọc kết quả để trả về phản hồi tường minh
             var responseCode = queryParams["vnp_ResponseCode"].ToString();
             var orderId      = queryParams["vnp_TxnRef"].ToString();
             var amount       = long.Parse(queryParams["vnp_Amount"].ToString()) / 100;
 
             if (responseCode == "00")
             {
-                // Lấy deposit result (SlotCode, PdfUrl) nếu có
                 var depositResult = await _paymentService.GetDepositResultAsync(orderId);
 
                 return Ok(new
@@ -137,7 +134,6 @@ public class PaymentController : ControllerBase
                 });
             }
 
-            // Giao dịch thất bại hoặc bị hủy
             var status = responseCode == "24" ? "Cancelled" : "Failed";
             return Ok(new
             {
@@ -161,6 +157,27 @@ public class PaymentController : ControllerBase
                 message = "Lỗi xử lý callback",
                 error   = ex.Message
             });
+        }
+    }
+
+    /// <summary>
+    /// [Bước 2b] IPN VNPay Sandbox — server-to-server, idempotent.
+    /// Trả JSON RspCode theo chuẩn VNPay (00 / 02 / 97 / 01).
+    /// Cấu hình VnPay:IpnUrl = https://.../api/payment/payment-ipn
+    /// </summary>
+    [HttpGet("payment-ipn")]
+    [HttpPost("payment-ipn")]
+    [AllowAnonymous]
+    public async Task<IActionResult> PaymentIpn()
+    {
+        try
+        {
+            var result = await _paymentService.HandleIpnAsync(HttpContext.Request.Query);
+            return Ok(new { RspCode = result.RspCode, Message = result.Message });
+        }
+        catch (Exception ex)
+        {
+            return Ok(new { RspCode = "99", Message = ex.Message });
         }
     }
 
@@ -267,9 +284,22 @@ public class PaymentController : ControllerBase
                 return Forbid();
             }
 
-            // Kiểm tra hồ sơ đã thanh toán đặt cọc chưa
-            if (string.IsNullOrEmpty(application.SlotCode))
-                return BadRequest(new { success = false, message = "Hồ sơ chưa thanh toán đặt cọc" });
+            // Cho tải PDF sau khi đã có HĐ nguyên tắc (CONTRACT_PENDING trở đi)
+            var previewStatuses = new[]
+            {
+                ApplicationStatusConstants.ContractPending,
+                ApplicationStatusConstants.ContractSigned,
+                ApplicationStatusConstants.DepositPaid,
+                ApplicationStatusConstants.FullyPaid
+            };
+            if (!previewStatuses.Contains(application.ApplicationStatus))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "Hồ sơ chưa đến bước hợp đồng nguyên tắc. Chỉ tải PDF sau khi được chốt/trúng và chuyển CONTRACT_PENDING."
+                });
+            }
 
             var project = await context.HousingProjects
                 .FirstOrDefaultAsync(p => p.Id == application.ProjectId);
@@ -277,31 +307,35 @@ public class PaymentController : ControllerBase
             if (project == null)
                 return NotFound(new { success = false, message = "Không tìm thấy dự án" });
 
-            // Tìm payment tương ứng
+            // Payment có thể chưa có (xem trước HĐ trước khi đóng cọc)
             var payment = await context.Payments
-                .Where(p => p.ApplicationId == applicationId && p.Status == "Success")
+                .Where(p => p.ApplicationId == applicationId
+                            && (p.Status == "Success" || p.Status == "Paid"))
                 .OrderByDescending(p => p.PaidAt)
                 .FirstOrDefaultAsync();
 
-            // Tìm Ward Manager = người đã duyệt hồ sơ (NewStatus = APPROVED)
             var approvedHistory = await context.ApplicationStatusHistories
                 .Include(h => h.ChangedByUser)
                 .Where(h => h.ApplicationId == applicationId
-                         && h.NewStatus == "APPROVED")
+                         && (h.NewStatus == "APPROVED" || h.NewStatus == "APPROVED_BY_TIMEOUT"
+                             || h.NewStatus == "CONTRACT_PENDING"))
                 .OrderByDescending(h => h.ChangedAt)
                 .FirstOrDefaultAsync();
 
             var wardManagerName = approvedHistory?.ChangedByUser?.FullName
                 ?? "Ban Quản lý Dự án";
 
-            // Sinh PDF on-demand
+            var slotCode = !string.IsNullOrEmpty(application.SlotCode)
+                ? application.SlotCode
+                : $"PENDING-{application.ApplicationId.ToString()[..8].ToUpperInvariant()}";
+
             var pdfBytes = pdfContractService.GeneratePdfBytesOnly(
-                application, project, application.SlotCode,
+                application, project, slotCode,
                 payment?.Amount ?? project.DepositAmount,
                 payment?.VnpTransactionNo,
                 wardManagerName);
 
-            var fileName = $"HopDong_{application.SlotCode}.pdf";
+            var fileName = $"HopDong_{slotCode}.pdf";
             return File(pdfBytes, "application/pdf", fileName);
         }
         catch (Exception ex)

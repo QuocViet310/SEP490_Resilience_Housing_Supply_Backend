@@ -10,11 +10,11 @@ using RHS.Infrastructure.Data;
 namespace RHS.Infrastructure.Services;
 
 /// <summary>
-/// Triển khai IPaymentService – điều phối toàn bộ nghiệp vụ thanh toán đặt cọc:
-/// 1. Tạo giao dịch Pending → lấy URL VNPay
-/// 2. Xử lý callback → xác minh chữ ký → cập nhật trạng thái DB
-/// 3. Nếu thanh toán thành công → sinh SlotCode + PDF hợp đồng + PrincipleAgreement
-/// 4. Cung cấp API tra cứu lịch sử
+/// Triển khai IPaymentService – điều phối nghiệp vụ thanh toán đặt cọc:
+/// 1. Tạo giao dịch Pending → lấy URL VNPay (chỉ sau khi đã ký HĐ — CONTRACT_SIGNED)
+/// 2. Xử lý ReturnUrl / IPN → xác minh chữ ký → cập nhật trạng thái DB
+/// 3. Thành công → SlotCode + DEPOSIT_PAID (HĐ nguyên tắc đã tạo từ bước CONTRACT_PENDING)
+/// 4. Tra cứu lịch sử
 /// </summary>
 public class PaymentService : IPaymentService
 {
@@ -22,10 +22,10 @@ public class PaymentService : IPaymentService
     private readonly IPaymentRepository _paymentRepository;
     private readonly IHousingApplicationRepository _applicationRepo;
     private readonly IHousingProjectRepository _projectRepo;
-    private readonly IPdfContractService _pdfContractService;
     private readonly IPrincipleAgreementRepository _agreementRepo;
     private readonly IReviewHistoryRepository _historyRepo;
     private readonly INotificationService _notificationService;
+    private readonly IInstallmentService _installmentService;
     private readonly AppDbContext _context;
     private readonly ILogger<PaymentService> _logger;
 
@@ -34,10 +34,10 @@ public class PaymentService : IPaymentService
         IPaymentRepository paymentRepository,
         IHousingApplicationRepository applicationRepo,
         IHousingProjectRepository projectRepo,
-        IPdfContractService pdfContractService,
         IPrincipleAgreementRepository agreementRepo,
         IReviewHistoryRepository historyRepo,
         INotificationService notificationService,
+        IInstallmentService installmentService,
         AppDbContext context,
         ILogger<PaymentService> logger)
     {
@@ -45,10 +45,10 @@ public class PaymentService : IPaymentService
         _paymentRepository   = paymentRepository;
         _applicationRepo     = applicationRepo;
         _projectRepo         = projectRepo;
-        _pdfContractService  = pdfContractService;
         _agreementRepo       = agreementRepo;
         _historyRepo         = historyRepo;
         _notificationService = notificationService;
+        _installmentService  = installmentService;
         _context             = context;
         _logger              = logger;
     }
@@ -88,21 +88,13 @@ public class PaymentService : IPaymentService
             };
         }
 
-        // Chỉ hồ sơ CONTRACT_SIGNED (hoặc CONTRACT_PENDING/APPROVED) mới được thanh toán cọc
-        var payableStatuses = new[]
-        {
-            ApplicationStatusConstants.ContractSigned,
-            ApplicationStatusConstants.ContractPending,
-            ApplicationStatusConstants.Approved,
-            ApplicationStatusConstants.ApprovedByTimeout
-        };
-
-        if (!payableStatuses.Contains(application.ApplicationStatus))
+        // Chỉ hồ sơ đã ký hợp đồng nguyên tắc mới được thanh toán cọc
+        if (application.ApplicationStatus != ApplicationStatusConstants.ContractSigned)
         {
             return new PaymentResponseDto
             {
                 Success = false,
-                Message = $"Hồ sơ chưa ký hợp đồng hoặc chưa đủ điều kiện thanh toán. Trạng thái hiện tại: {application.ApplicationStatus}"
+                Message = $"Hồ sơ chưa ký hợp đồng nguyên tắc. Trạng thái hiện tại: {application.ApplicationStatus}"
             };
         }
 
@@ -194,34 +186,63 @@ public class PaymentService : IPaymentService
     /// <inheritdoc/>
     public async Task<bool> HandleCallbackAsync(IQueryCollection queryParams)
     {
-        // ── 1. Xác minh chữ ký HMAC-SHA512 ───────────────────────────────
+        var result = await ProcessVnPayNotificationAsync(queryParams);
+        return result.IsValidSignature && result.PaymentFound;
+    }
+
+    /// <inheritdoc/>
+    public async Task<VnPayIpnResultDto> HandleIpnAsync(IQueryCollection queryParams)
+    {
+        var result = await ProcessVnPayNotificationAsync(queryParams);
+
+        if (!result.IsValidSignature)
+            return new VnPayIpnResultDto { RspCode = "97", Message = "Invalid Signature" };
+
+        if (!result.PaymentFound)
+            return new VnPayIpnResultDto { RspCode = "01", Message = "Order not found" };
+
+        if (result.AlreadyProcessed)
+            return new VnPayIpnResultDto { RspCode = "02", Message = "Order already confirmed" };
+
+        return new VnPayIpnResultDto { RspCode = "00", Message = "Confirm Success" };
+    }
+
+    /// <summary>
+    /// Pipeline chung cho ReturnUrl callback và IPN (idempotent).
+    /// </summary>
+    private async Task<(bool IsValidSignature, bool PaymentFound, bool AlreadyProcessed)> ProcessVnPayNotificationAsync(
+        IQueryCollection queryParams)
+    {
         var isValidSignature = _vnPayService.ValidateSignature(queryParams);
         if (!isValidSignature)
         {
-            _logger.LogWarning("VNPay callback: invalid signature.");
-            return false;
+            _logger.LogWarning("VNPay notification: invalid signature.");
+            return (false, false, false);
         }
 
-        // ── 2. Lấy mã đơn hàng từ callback ───────────────────────────────
         var orderId = queryParams["vnp_TxnRef"].ToString();
         if (string.IsNullOrEmpty(orderId))
-            return false;
+            return (true, false, false);
 
-        // ── 3. Tìm bản ghi Payment trong DB ──────────────────────────────
         var payment = await _paymentRepository.GetByOrderIdAsync(orderId);
         if (payment == null)
-            return false;
+            return (true, false, false);
 
-        // ── 4. Đọc thông tin phản hồi VNPay ──────────────────────────────
-        var responseCode       = queryParams["vnp_ResponseCode"].ToString();
-        var transactionStatus  = queryParams["vnp_TransactionStatus"].ToString();
-        var transactionNo      = queryParams["vnp_TransactionNo"].ToString();
-        var bankCode           = queryParams["vnp_BankCode"].ToString();
-        var bankTranNo         = queryParams["vnp_BankTranNo"].ToString();
-        var cardType           = queryParams["vnp_CardType"].ToString();
-        var payDate            = queryParams["vnp_PayDate"].ToString();
+        // Idempotent: đã Success thì không xử lý lại
+        if (string.Equals(payment.Status, "Success", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(payment.Status, "Paid", StringComparison.OrdinalIgnoreCase))
+        {
+            return (true, true, true);
+        }
 
-        // ── 5. Cập nhật Payment theo kết quả VNPay ────────────────────────
+        var responseCode      = queryParams["vnp_ResponseCode"].ToString();
+        var transactionStatus = queryParams["vnp_TransactionStatus"].ToString();
+        var transactionNo     = queryParams["vnp_TransactionNo"].ToString();
+        var bankCode          = queryParams["vnp_BankCode"].ToString();
+        var bankTranNo        = queryParams["vnp_BankTranNo"].ToString();
+        var cardType          = queryParams["vnp_CardType"].ToString();
+        var payDate           = queryParams["vnp_PayDate"].ToString();
+
         payment.VnpResponseCode      = responseCode;
         payment.VnpTransactionStatus = transactionStatus;
         payment.VnpTransactionNo     = transactionNo;
@@ -234,16 +255,21 @@ public class PaymentService : IPaymentService
         {
             payment.PaidAt = DateTime.UtcNow;
 
-            if (payment.ApplicationId.HasValue)
+            // Thanh toán đợt installment nếu OrderInfo chứa InstId:
+            if (TryParseInstallmentId(payment.OrderInfo, out var installmentId))
             {
-                // Đưa payment.Status = "Success" vào cùng transaction với
-                // ProcessSuccessfulDepositAsync để nếu có lỗi (Cloudinary, DB...)
-                // thì payment cũng không bị ghi nhầm là Success khi slotCode/pdfUrl chưa có
+                payment.Status = "Paid";
+                payment.PaidAt ??= DateTime.UtcNow;
+                await _paymentRepository.UpdateAsync(payment);
+                await _installmentService.ProcessInstallmentPaidAsync(installmentId, payment.Id);
+            }
+            else if (payment.ApplicationId.HasValue)
+            {
                 await ProcessSuccessfulDepositAsync(payment);
             }
             else
             {
-                payment.Status = "Success";
+                payment.Status = "Paid";
                 await _paymentRepository.UpdateAsync(payment);
             }
         }
@@ -257,7 +283,23 @@ public class PaymentService : IPaymentService
             await _paymentRepository.UpdateAsync(payment);
         }
 
-        return true;
+        return (true, true, false);
+    }
+
+    private static bool TryParseInstallmentId(string? orderInfo, out Guid installmentId)
+    {
+        installmentId = Guid.Empty;
+        if (string.IsNullOrWhiteSpace(orderInfo))
+            return false;
+
+        const string marker = "InstId:";
+        var idx = orderInfo.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0)
+            return false;
+
+        var raw = orderInfo[(idx + marker.Length)..].Trim();
+        var token = raw.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? raw;
+        return Guid.TryParse(token, out installmentId);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -289,7 +331,7 @@ public class PaymentService : IPaymentService
     public async Task<DepositPaymentResultDto?> GetDepositResultAsync(string orderId)
     {
         var payment = await _paymentRepository.GetByOrderIdAsync(orderId);
-        if (payment == null || payment.Status != "Success" || !payment.ApplicationId.HasValue)
+        if (payment == null || !IsPaidStatus(payment.Status) || !payment.ApplicationId.HasValue)
             return null;
 
         var application = await _applicationRepo.GetByIdWithDetailsAsync(payment.ApplicationId.Value);
@@ -318,13 +360,13 @@ public class PaymentService : IPaymentService
     // ═══════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Xử lý sau thanh toán thành công:
+    /// Xử lý sau thanh toán đặt cọc thành công:
     /// 1. Sinh SlotCode
-    /// 2. Sinh PDF hợp đồng nguyên tắc
-    /// 3. Tạo bản ghi PrincipleAgreement
-    /// 4. Cập nhật HousingApplication → DEPOSIT_PAID
+    /// 2. Cập nhật Payment → Paid
+    /// 3. Cập nhật HousingApplication → DEPOSIT_PAID
+    /// 4. Đánh dấu đợt cọc (installment ON_CONTRACT_SIGNED) là PAID nếu có
     /// 5. Ghi ApplicationStatusHistory
-    /// Tất cả trong 1 DB transaction.
+    /// Hợp đồng nguyên tắc đã được tạo ở bước CONTRACT_PENDING — không tạo lại ở đây.
     /// </summary>
     private async Task ProcessSuccessfulDepositAsync(Payment payment)
     {
@@ -339,9 +381,18 @@ public class PaymentService : IPaymentService
             return;
         }
 
-        // Nếu đã xử lý rồi (idempotency guard)
-        if (application.ApplicationStatus == ApplicationStatusConstants.DepositPaid)
+        // Nếu đã xử lý rồi (idempotency guard) — vẫn đảm bảo payment = Paid
+        if (application.ApplicationStatus == ApplicationStatusConstants.DepositPaid
+            || application.ApplicationStatus == ApplicationStatusConstants.FullyPaid)
         {
+            if (!string.Equals(payment.Status, "Paid", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(payment.Status, "Success", StringComparison.OrdinalIgnoreCase))
+            {
+                payment.Status = "Paid";
+                payment.PaidAt ??= DateTime.UtcNow;
+                await _paymentRepository.UpdateAsync(payment);
+            }
+
             _logger.LogInformation("Application {AppId} already DEPOSIT_PAID. Skipping.", application.ApplicationId);
             return;
         }
@@ -356,50 +407,33 @@ public class PaymentService : IPaymentService
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            // ── 1. Sinh SlotCode ────────────────────────────────────────────
             var slotCode = await GenerateSlotCodeAsync(project);
             application.SlotCode = slotCode;
 
-            // ── 2. Cập nhật payment Status = "Success" TRONG transaction ──
-            payment.Status = "Success";
+            payment.Status = "Paid";
             payment.PaidAt ??= DateTime.UtcNow;
             await _paymentRepository.UpdateAsync(payment);
 
-            // ── 3. Tìm Ward Manager name từ lịch sử duyệt hồ sơ ────────────
-            //    Lấy người đã chuyển trạng thái sang APPROVED
-            var approvedHistory = await _context.ApplicationStatusHistories
-                .Include(h => h.ChangedByUser)
-                .Where(h => h.ApplicationId == application.ApplicationId
-                         && (h.NewStatus == ApplicationStatusConstants.Approved || h.NewStatus == ApplicationStatusConstants.ApprovedByTimeout))
-                .OrderByDescending(h => h.ChangedAt)
-                .FirstOrDefaultAsync();
-
-            var wardManagerName = approvedHistory?.ChangedByUser?.FullName
-                ?? "Ban Quản lý Dự án";
-
-            // ── 4. Tạo PrincipleAgreement (nếu chưa có) ───────────────────
+            // Đảm bảo còn PrincipleAgreement (đã tạo lúc CONTRACT_PENDING; tạo bổ sung nếu thiếu)
             var existingAgreement = await _context.PrincipleAgreements
                 .FirstOrDefaultAsync(a => a.ApplicationId == application.ApplicationId);
             if (existingAgreement == null)
             {
-                var agreement = new PrincipleAgreement
+                await _context.PrincipleAgreements.AddAsync(new PrincipleAgreement
                 {
                     Id            = Guid.NewGuid(),
                     ApplicationId = application.ApplicationId,
                     PdfUrl        = $"/api/payment/download-contract/{application.ApplicationId}",
                     CreatedAt     = DateTime.UtcNow
-                };
-                await _context.PrincipleAgreements.AddAsync(agreement);
+                });
             }
 
-            // ── 5. Cập nhật trạng thái → DEPOSIT_PAID ──────────────────────
             var oldStatus = application.ApplicationStatus;
             application.ApplicationStatus = ApplicationStatusConstants.DepositPaid;
             application.UpdatedAt = DateTime.UtcNow;
             await _applicationRepo.UpdateAsync(application);
 
-            // ── 6. Ghi lịch sử xét duyệt ──────────────────────────────────
-            var history = new ApplicationStatusHistory
+            await _context.ApplicationStatusHistories.AddAsync(new ApplicationStatusHistory
             {
                 HistoryId     = Guid.NewGuid(),
                 ApplicationId = application.ApplicationId,
@@ -409,8 +443,25 @@ public class PaymentService : IPaymentService
                 NewStatus     = ApplicationStatusConstants.DepositPaid,
                 Note          = $"Thanh toán đặt cọc thành công. OrderId: {payment.OrderId}, SlotCode: {slotCode}",
                 ChangedAt     = DateTime.UtcNow
-            };
-            await _context.ApplicationStatusHistories.AddAsync(history);
+            });
+
+            // Đồng bộ đợt cọc trên lịch installment (nếu đã sinh sau khi ký)
+            var depositInstallment = await _context.PaymentInstallments
+                .Include(i => i.Milestone)
+                .Where(i => i.ApplicationId == application.ApplicationId
+                            && i.Status != InstallmentStatusConstants.Paid
+                            && i.Status != InstallmentStatusConstants.Cancelled
+                            && i.Milestone.TriggerEvent == TriggerEventConstants.OnContractSigned)
+                .OrderBy(i => i.Milestone.PhaseOrder)
+                .FirstOrDefaultAsync();
+
+            if (depositInstallment != null)
+            {
+                depositInstallment.Status = InstallmentStatusConstants.Paid;
+                depositInstallment.PaidAt = DateTime.UtcNow;
+                depositInstallment.PaymentId = payment.Id;
+                depositInstallment.UpdatedAt = DateTime.UtcNow;
+            }
 
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
@@ -419,11 +470,10 @@ public class PaymentService : IPaymentService
                 "Post-payment completed: AppId={AppId}, SlotCode={SlotCode}, Status={Old}→{New}.",
                 application.ApplicationId, slotCode, oldStatus, ApplicationStatusConstants.DepositPaid);
 
-            // ── 7. Gửi thông báo cho Applicant (sau commit) ─────────────
             await _notificationService.SendAsync(
                 application.ApplicantId,
                 "Thanh toán đặt cọc thành công",
-                $"Mã tham dự bốc thăm: {slotCode}. Hợp đồng nguyên tắc đã được tạo (cam kết tham gia phân suất, chưa đồng nghĩa đã được phân căn).",
+                $"Mã giao dịch/suất: {slotCode}. Hồ sơ đã chuyển sang trạng thái đặt cọc thành công.",
                 NotificationTypeConstants.DepositPaid);
         }
         catch (Exception ex)
@@ -491,7 +541,7 @@ public class PaymentService : IPaymentService
         };
 
         // Enrich với SlotCode & PdfUrl nếu có ApplicationId
-        if (payment.ApplicationId.HasValue && payment.Status == "Success")
+        if (payment.ApplicationId.HasValue && IsPaidStatus(payment.Status))
         {
             var application = await _applicationRepo.GetByIdWithDetailsAsync(payment.ApplicationId.Value);
             if (application != null)
@@ -505,6 +555,10 @@ public class PaymentService : IPaymentService
 
         return dto;
     }
+
+    private static bool IsPaidStatus(string? status) =>
+        string.Equals(status, "Paid", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "Success", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Bỏ dấu tiếng Việt (dùng cho OrderInfo và SlotCode prefix).</summary>
     private static string RemoveDiacritics(string text)

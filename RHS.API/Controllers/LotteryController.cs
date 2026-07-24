@@ -69,7 +69,7 @@ public class LotteryController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>[CĐT/Sở/Admin] Xem danh sách ứng viên đủ điều kiện bốc thăm (APPROVED / APPROVED_BY_TIMEOUT / DEPOSIT_PAID).</summary>
+    /// <summary>[CĐT/Sở/Admin] Xem danh sách ứng viên đủ điều kiện bốc thăm (APPROVED / APPROVED_BY_TIMEOUT).</summary>
     [HttpGet("eligible-participants")]
     [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
     public async Task<IActionResult> GetEligibleParticipants(Guid projectId, CancellationToken ct)

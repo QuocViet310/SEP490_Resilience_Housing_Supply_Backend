@@ -692,14 +692,21 @@ public class HousingApplicationsController : ControllerBase
             if (app == null)
                 return NotFound(new { success = false, message = "Không tìm thấy hồ sơ." });
 
-            // Chỉ gán cho hồ sơ đã trúng bốc thăm
-            if (app.LotteryResult != LotteryResultConstants.Won
-                && app.LotteryResult != LotteryResultConstants.PriorityWon)
+            // Cho phép: trúng bốc thăm HOẶC đã chốt danh sách (CONTRACT_PENDING/SIGNED/DEPOSIT_PAID)
+            var wonLottery = app.LotteryResult == LotteryResultConstants.Won
+                || app.LotteryResult == LotteryResultConstants.PriorityWon;
+            var finalizedForContract = app.ApplicationStatus is
+                ApplicationStatusConstants.ContractPending
+                or ApplicationStatusConstants.ContractSigned
+                or ApplicationStatusConstants.DepositPaid
+                or ApplicationStatusConstants.FullyPaid;
+
+            if (!wonLottery && !finalizedForContract)
             {
                 return BadRequest(new
                 {
                     success = false,
-                    message = $"Hồ sơ chưa trúng bốc thăm. LotteryResult hiện tại: {app.LotteryResult}"
+                    message = $"Hồ sơ chưa đủ điều kiện gán căn. LotteryResult={app.LotteryResult}, Status={app.ApplicationStatus}"
                 });
             }
 

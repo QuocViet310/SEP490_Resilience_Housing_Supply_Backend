@@ -131,6 +131,7 @@ public class HousingApplicationRepository : IHousingApplicationRepository
 
     public async Task<bool> HasActiveApplicationAsync(Guid applicantId)
     {
+        // Đ38.1.e: 1 tài khoản chỉ 1 hồ sơ đang xử lý / đã chốt (không gồm DRAFT, REJECTED, CANCELED, EXPIRED, LOTTERY_LOST)
         var activeStatuses = new[]
         {
             ApplicationStatusConstants.Submitted,
@@ -139,12 +140,15 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             ApplicationStatusConstants.PendingSxdReview,
             ApplicationStatusConstants.Approved,
             ApplicationStatusConstants.ApprovedByTimeout,
-            ApplicationStatusConstants.DepositPaid
+            ApplicationStatusConstants.ContractPending,
+            ApplicationStatusConstants.ContractSigned,
+            ApplicationStatusConstants.DepositPaid,
+            ApplicationStatusConstants.FullyPaid
         };
 
         return await _context.HousingApplications
             .AsNoTracking()
-            .AnyAsync(x => x.ApplicantId == applicantId 
+            .AnyAsync(x => x.ApplicantId == applicantId
                 && activeStatuses.Contains(x.ApplicationStatus));
     }
 
@@ -165,7 +169,10 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             ApplicationStatusConstants.PendingSxdReview,
             ApplicationStatusConstants.Approved,
             ApplicationStatusConstants.ApprovedByTimeout,
-            ApplicationStatusConstants.DepositPaid
+            ApplicationStatusConstants.ContractPending,
+            ApplicationStatusConstants.ContractSigned,
+            ApplicationStatusConstants.DepositPaid,
+            ApplicationStatusConstants.FullyPaid
         };
 
         return await _context.HousingApplications

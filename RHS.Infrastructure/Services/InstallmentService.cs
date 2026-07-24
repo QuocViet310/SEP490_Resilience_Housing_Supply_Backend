@@ -54,6 +54,8 @@ public class InstallmentService : IInstallmentService
             .FirstOrDefaultAsync(a => a.ApplicationId == applicationId)
             ?? throw new InvalidOperationException($"Hồ sơ {applicationId} không tồn tại.");
 
+        await EnsureDefaultMilestonesAsync(app.ProjectId);
+
         // Lấy milestones active phù hợp với trigger event
         var milestones = await _db.PaymentMilestones
             .Where(m => m.ProjectId == app.ProjectId
@@ -442,6 +444,75 @@ public class InstallmentService : IInstallmentService
     /// FIXED_AMOUNT: dùng FixedAmount trực tiếp.
     /// PERCENTAGE:   dùng Percentage × ApartmentType.Price.
     /// </summary>
+    /// <summary>
+    /// Nếu dự án chưa có milestone active → seed mặc định 3 đợt:
+    /// đặt cọc (FIXED / ON_CONTRACT_SIGNED), đợt 1 &amp; đợt 2 (% giá căn / ON_LOTTERY_WON).
+    /// </summary>
+    private async Task EnsureDefaultMilestonesAsync(Guid projectId)
+    {
+        var hasActive = await _db.PaymentMilestones
+            .AnyAsync(m => m.ProjectId == projectId && m.IsActive);
+        if (hasActive)
+            return;
+
+        var project = await _db.HousingProjects
+            .FirstOrDefaultAsync(p => p.Id == projectId);
+        if (project == null)
+            return;
+
+        var deposit = project.DepositAmount > 0 ? project.DepositAmount : 50_000_000m;
+        var now = DateTime.UtcNow;
+
+        _db.PaymentMilestones.AddRange(
+            new PaymentMilestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                PhaseOrder = 1,
+                PhaseName = "Đặt cọc",
+                CalculationType = CalculationTypeConstants.FixedAmount,
+                FixedAmount = deposit,
+                TriggerEvent = TriggerEventConstants.OnContractSigned,
+                DueDays = 7,
+                Description = "Đợt đặt cọc sau khi ký hợp đồng nguyên tắc",
+                IsActive = true,
+                CreatedAt = now
+            },
+            new PaymentMilestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                PhaseOrder = 2,
+                PhaseName = "Đợt 1",
+                CalculationType = CalculationTypeConstants.Percentage,
+                Percentage = 40m,
+                TriggerEvent = TriggerEventConstants.OnLotteryWon,
+                DueDays = 30,
+                Description = "Đợt 1 theo đơn giá căn đã thẩm định (sau gán loại căn)",
+                IsActive = true,
+                CreatedAt = now
+            },
+            new PaymentMilestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                PhaseOrder = 3,
+                PhaseName = "Đợt 2",
+                CalculationType = CalculationTypeConstants.Percentage,
+                Percentage = 60m,
+                TriggerEvent = TriggerEventConstants.OnLotteryWon,
+                DueDays = 90,
+                Description = "Đợt 2 theo đơn giá căn đã thẩm định (sau gán loại căn)",
+                IsActive = true,
+                CreatedAt = now
+            });
+
+        await _db.SaveChangesAsync();
+        _logger.LogInformation(
+            "Seeded default payment milestones (cọc / đợt 1 / đợt 2) for Project={ProjectId}.",
+            projectId);
+    }
+
     private static decimal CalculateAmount(PaymentMilestone milestone, ApartmentType? apartmentType)
     {
         return milestone.CalculationType switch

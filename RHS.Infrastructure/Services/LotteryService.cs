@@ -21,7 +21,15 @@ public class LotteryService : ILotteryService
 
     private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> ProjectLocks = new();
 
-    private static readonly string[] EligibleStatuses = new[]
+    /// <summary>Pool batch/schedule theo task: chỉ hồ sơ Sở đã duyệt.</summary>
+    private static readonly string[] BatchEligibleStatuses = new[]
+    {
+        ApplicationStatusConstants.Approved,
+        ApplicationStatusConstants.ApprovedByTimeout
+    };
+
+    /// <summary>Pool live giữ nguyên (không đổi khâu livestream).</summary>
+    private static readonly string[] LiveEligibleStatuses = new[]
     {
         ApplicationStatusConstants.Approved,
         ApplicationStatusConstants.ApprovedByTimeout,
@@ -89,7 +97,7 @@ public class LotteryService : ILotteryService
         // Gửi thông báo đến toàn bộ ứng viên đủ điều kiện thuộc dự án
         var eligibleApplicants = await _db.HousingApplications
             .Where(a => a.ProjectId == projectId
-                        && EligibleStatuses.Contains(a.ApplicationStatus)
+                        && BatchEligibleStatuses.Contains(a.ApplicationStatus)
                         && !a.IsViolation)
             .Select(a => a.ApplicantId)
             .Distinct()
@@ -138,7 +146,7 @@ public class LotteryService : ILotteryService
             .AsNoTracking()
             .Include(a => a.Applicant)
             .Where(a => a.ProjectId == projectId
-                        && EligibleStatuses.Contains(a.ApplicationStatus)
+                        && BatchEligibleStatuses.Contains(a.ApplicationStatus)
                         && !a.IsViolation)
             .OrderBy(a => a.SubmittedAt)
             .Select(a => new LotteryParticipantDto
@@ -187,23 +195,16 @@ public class LotteryService : ILotteryService
             .FirstOrDefaultAsync(p => p.Id == projectId, ct)
             ?? throw new InvalidOperationException("Không tìm thấy dự án.");
 
-        var qualifiedStatuses = new[]
-        {
-            ApplicationStatusConstants.Approved,
-            ApplicationStatusConstants.ApprovedByTimeout,
-            ApplicationStatusConstants.DepositPaid
-        };
-
         var participants = await _db.HousingApplications
             .Include(a => a.PrincipleAgreement)
             .Where(a => a.ProjectId == projectId
-                        && EligibleStatuses.Contains(a.ApplicationStatus)
+                        && BatchEligibleStatuses.Contains(a.ApplicationStatus)
                         && !a.IsViolation)
             .OrderBy(a => a.SubmittedAt)
             .ToListAsync(ct);
 
         if (participants.Count == 0)
-            throw new InvalidOperationException("Không có hồ sơ đủ điều kiện (APPROVED / APPROVED_BY_TIMEOUT / DEPOSIT_PAID) để bốc thăm.");
+            throw new InvalidOperationException("Không có hồ sơ đủ điều kiện (APPROVED / APPROVED_BY_TIMEOUT) để bốc thăm.");
 
         // Hướng A: nếu đã bốc thăm trước đó, hoàn suất của người từng trúng trước khi phân bổ lại.
         var wonResults = new[]
@@ -262,6 +263,7 @@ public class LotteryService : ILotteryService
         foreach (var app in priorityWinners)
         {
             winners.Add(app.ApplicationId);
+            var oldStatus = app.ApplicationStatus;
             app.LotteryResult = LotteryResultConstants.PriorityWon;
             app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
             app.UpdatedAt = now;
@@ -284,9 +286,9 @@ public class LotteryService : ILotteryService
                 ApplicationId = app.ApplicationId,
                 ChangedBy = drawnBy,
                 Action = ReviewActionConstants.PriorityDirectApproval,
-                OldStatus = app.ApplicationStatus,
+                OldStatus = oldStatus,
                 NewStatus = ApplicationStatusConstants.ContractPending,
-                Note = "Hồ sơ thuộc diện ưu tiên được phê duyệt trực tiếp.",
+                Note = "Hồ sơ thuộc diện ưu tiên được phê duyệt trực tiếp, chuyển sang ký hợp đồng nguyên tắc.",
                 ChangedAt = now
             });
         }
@@ -308,6 +310,7 @@ public class LotteryService : ILotteryService
         foreach (var app in randomWinners)
         {
             winners.Add(app.ApplicationId);
+            var oldStatus = app.ApplicationStatus;
             app.LotteryResult = LotteryResultConstants.Won;
             app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
             app.UpdatedAt = now;
@@ -330,7 +333,7 @@ public class LotteryService : ILotteryService
                 ApplicationId = app.ApplicationId,
                 ChangedBy = drawnBy,
                 Action = ReviewActionConstants.LotteryWon,
-                OldStatus = app.ApplicationStatus,
+                OldStatus = oldStatus,
                 NewStatus = ApplicationStatusConstants.ContractPending,
                 Note = "Hồ sơ trúng bốc thăm, chuyển sang bước ký hợp đồng nguyên tắc.",
                 ChangedAt = now
@@ -339,6 +342,7 @@ public class LotteryService : ILotteryService
 
         foreach (var app in randomLosers)
         {
+            var oldStatus = app.ApplicationStatus;
             app.LotteryResult = LotteryResultConstants.Lost;
             app.ApplicationStatus = ApplicationStatusConstants.LotteryLost;
             app.UpdatedAt = now;
@@ -350,7 +354,7 @@ public class LotteryService : ILotteryService
                 ApplicationId = app.ApplicationId,
                 ChangedBy = drawnBy,
                 Action = ReviewActionConstants.LotteryLost,
-                OldStatus = app.ApplicationStatus,
+                OldStatus = oldStatus,
                 NewStatus = ApplicationStatusConstants.LotteryLost,
                 Note = "Hồ sơ trượt bốc thăm.",
                 ChangedAt = now
@@ -436,7 +440,7 @@ public class LotteryService : ILotteryService
                 .Include(a => a.Applicant)
                 .FirstOrDefaultAsync(a => a.ProjectId == projectId
                                           && a.ApplicantId == applicantId
-                                          && EligibleStatuses.Contains(a.ApplicationStatus)
+                                          && LiveEligibleStatuses.Contains(a.ApplicationStatus)
                                           && !a.IsViolation, ct)
                 ?? throw new InvalidOperationException("Hồ sơ không tồn tại hoặc chưa đủ điều kiện bốc thăm cho dự án này.");
 
@@ -511,8 +515,8 @@ public class LotteryService : ILotteryService
         var apps = await _db.HousingApplications
             .AsNoTracking()
             .Where(a => a.ProjectId == projectId
-                        && EligibleStatuses.Contains(a.ApplicationStatus)
-                        && a.LotteryResult != null)
+                        && a.LotteryResult != null
+                        && a.LotteryResult != LotteryResultConstants.Pending)
             .ToListAsync(ct);
 
         return new LotteryDrawResultDto

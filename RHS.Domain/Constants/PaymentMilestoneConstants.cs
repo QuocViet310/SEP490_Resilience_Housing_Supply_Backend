@@ -17,13 +17,13 @@ public static class CalculationTypeConstants
 /// <summary>Sự kiện kích hoạt sinh PaymentInstallment từ milestone template.</summary>
 public static class TriggerEventConstants
 {
-    /// <summary>Khi hồ sơ được SXD phê duyệt (APPROVED) → dùng cho đợt cọc</summary>
+    /// <summary>Khi hồ sơ được SXD phê duyệt (APPROVED) — legacy / tùy chọn</summary>
     public const string OnApproved = "ON_APPROVED";
 
-    /// <summary>Khi trúng bốc thăm (WON/PRIORITY_WON) + đã gán loại căn</summary>
+    /// <summary>Khi trúng bốc thăm (WON/PRIORITY_WON) hoặc chốt danh sách + đã gán loại căn → đợt 1, đợt 2</summary>
     public const string OnLotteryWon = "ON_LOTTERY_WON";
 
-    /// <summary>Khi ký hợp đồng mua bán chính thức (mở rộng tương lai)</summary>
+    /// <summary>Khi người dân ký hợp đồng nguyên tắc → đợt đặt cọc</summary>
     public const string OnContractSigned = "ON_CONTRACT_SIGNED";
 
     public static readonly IReadOnlyList<string> All =
