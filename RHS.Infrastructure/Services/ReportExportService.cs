@@ -472,6 +472,7 @@ public class ReportExportService : IReportExportService
         var project = await _dbContext.HousingProjects
             .AsNoTracking()
             .Include(p => p.Developer)
+            .Include(p => p.LotterySupervisor)
             .FirstOrDefaultAsync(p => p.Id == projectId);
 
         var draw = await _dbContext.LotteryDraws
@@ -510,6 +511,11 @@ public class ReportExportService : IReportExportService
                     col.Item().Text($"Địa điểm / kênh: {project?.LotteryLocation ?? "-"}");
                     col.Item().Text($"Trạng thái phiên: {project?.LotterySessionStatus ?? "-"}");
                     col.Item().Text($"Chủ đầu tư: {project?.Developer?.FullName ?? "-"}");
+                    col.Item().Text(
+                        $"Đại diện Sở giám sát: {project?.LotterySupervisor?.FullName ?? "(chưa ghi nhận)"}" +
+                        (project?.LotterySupervisedAt != null
+                            ? $" — có mặt từ {project.LotterySupervisedAt:dd/MM/yyyy HH:mm:ss} UTC"
+                            : ""));
                     if (draw != null)
                     {
                         col.Item().PaddingTop(6).Text($"Mã phiên (DrawId): {draw.DrawId}");

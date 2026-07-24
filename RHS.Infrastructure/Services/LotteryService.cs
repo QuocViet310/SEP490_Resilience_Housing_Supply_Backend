@@ -168,6 +168,15 @@ public class LotteryService : ILotteryService
     {
         var participants = await GetEligibleParticipantsAsync(project.Id, ct);
 
+        string? supervisorName = project.LotterySupervisor?.FullName;
+        if (project.LotterySupervisorId.HasValue && string.IsNullOrWhiteSpace(supervisorName))
+        {
+            supervisorName = await _db.Users.AsNoTracking()
+                .Where(u => u.Id == project.LotterySupervisorId.Value)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync(ct);
+        }
+
         return new LotteryScheduleDetailDto
         {
             ProjectId = project.Id,
@@ -182,8 +191,19 @@ public class LotteryService : ILotteryService
             TotalEligibleParticipants = participants.Count,
             EligibleParticipants = participants,
             SessionStatus = project.LotterySessionStatus,
-            JoinCode = project.IsLotteryApproved == true ? project.LotteryJoinCode : null
+            JoinCode = project.IsLotteryApproved == true ? project.LotteryJoinCode : null,
+            SxdOnlineCount = LotteryHub.GetSxdOnlineCount(project.Id),
+            SupervisorId = project.LotterySupervisorId,
+            SupervisorName = supervisorName
         };
+    }
+
+    /// <summary>Đòi hỏi ≥1 SXD online trong Hub (Đ36.2.b NĐ 100/2024).</summary>
+    private static void RequireSxdOnline(Guid projectId, string action)
+    {
+        if (LotteryHub.GetSxdOnlineCount(projectId) < 1)
+            throw new InvalidOperationException(
+                $"Không thể {action}: cần ít nhất 1 đại diện Sở Xây dựng đang online giám sát trong sảnh (NĐ 100/2024 Đ36.2.b).");
     }
 
     public async Task<LotteryDrawResultDto> RunLotteryAsync(
@@ -445,6 +465,8 @@ public class LotteryService : ILotteryService
                 throw new InvalidOperationException(
                     $"Chưa tới lúc bốc thăm. Trạng thái phiên hiện tại: {project.LotterySessionStatus ?? "(chưa mở)"}. Cần trạng thái Live.");
 
+            RequireSxdOnline(projectId, "bốc thăm");
+
             var app = await _db.HousingApplications
                 .Include(a => a.Applicant)
                 .Include(a => a.PrincipleAgreement)
@@ -613,6 +635,8 @@ public class LotteryService : ILotteryService
             throw new InvalidOperationException(
                 $"Chỉ mở Live từ WaitingLobby/Scheduled. Hiện tại: {project.LotterySessionStatus}");
 
+        RequireSxdOnline(projectId, "bắt đầu Live");
+
         project.LotterySessionStatus = LotterySessionStatusConstants.Live;
         project.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -631,6 +655,8 @@ public class LotteryService : ILotteryService
             var project = await RequireApprovedSessionAsync(projectId, ct);
             if (project.LotterySessionStatus == LotterySessionStatusConstants.Published)
                 throw new InvalidOperationException("Phiên đã công bố.");
+
+            RequireSxdOnline(projectId, "kết thúc phiên");
 
             var now = DateTime.UtcNow;
             var pending = await _db.HousingApplications
@@ -719,6 +745,10 @@ public class LotteryService : ILotteryService
         if (project.LotterySessionStatus is not (LotterySessionStatusConstants.Finished
             or LotterySessionStatusConstants.Published))
             throw new InvalidOperationException("Chỉ công bố sau khi phiên Finished.");
+
+        if (!project.LotterySupervisorId.HasValue)
+            throw new InvalidOperationException(
+                "Chưa ghi nhận SXD giám sát phiên — không thể công bố biên bản (NĐ 100/2024 Đ36.2.b).");
 
         project.LotterySessionStatus = LotterySessionStatusConstants.Published;
         project.UpdatedAt = DateTime.UtcNow;
@@ -827,6 +857,22 @@ public class LotteryService : ILotteryService
             Message = "OTP hợp lệ — được vào sảnh.",
             SessionStatus = project.LotterySessionStatus
         };
+    }
+
+    public async Task RecordSupervisorAsync(Guid projectId, Guid sxdUserId, CancellationToken ct = default)
+    {
+        var project = await _db.HousingProjects
+            .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, ct);
+        if (project == null) return;
+
+        if (project.LotterySupervisorId.HasValue) return;
+
+        project.LotterySupervisorId = sxdUserId;
+        project.LotterySupervisedAt = DateTime.UtcNow;
+        project.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation(
+            "Lottery supervisor recorded for {ProjectId}: {SxdUserId}", projectId, sxdUserId);
     }
 
     private async Task<HousingProject> RequireApprovedSessionAsync(Guid projectId, CancellationToken ct)

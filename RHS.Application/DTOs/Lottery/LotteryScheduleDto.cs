@@ -36,6 +36,14 @@ public class LotteryScheduleDetailDto
 
     /// <summary>Mã OTP 6 số vào sảnh (chỉ trả khi đã duyệt lịch).</summary>
     public string? JoinCode { get; set; }
+
+    /// <summary>Số đại diện Sở đang online trong Hub (giám sát Đ36.2.b).</summary>
+    public int SxdOnlineCount { get; set; }
+
+    /// <summary>Đã ghi nhận SXD giám sát (userId).</summary>
+    public Guid? SupervisorId { get; set; }
+
+    public string? SupervisorName { get; set; }
 }
 
 public class LotteryParticipantDto

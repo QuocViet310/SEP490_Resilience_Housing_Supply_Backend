@@ -179,9 +179,9 @@ public class LotteryController : ControllerBase
         }
     }
 
-    /// <summary>[CĐT/Sở] Công bố kết quả (Published).</summary>
+    /// <summary>[Sở/Admin] Công bố kết quả (Published) — CĐT không tự công bố (Đ36.2.b).</summary>
     [HttpPost("session/publish")]
-    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    [Authorize(Roles = $"{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
     public async Task<IActionResult> PublishSession(Guid projectId, CancellationToken ct)
     {
         try

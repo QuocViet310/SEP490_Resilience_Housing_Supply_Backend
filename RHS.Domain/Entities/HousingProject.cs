@@ -39,6 +39,13 @@ public class HousingProject
     /// <summary>Mã OTP/join code 6 số để vào sảnh chờ (công bố khi Sở duyệt lịch).</summary>
     public string? LotteryJoinCode { get; set; }
 
+    /// <summary>SXD giám sát phiên live (Đ36.2.b NĐ 100/2024) — ghi nhận khi Sở join Hub.</summary>
+    public Guid? LotterySupervisorId { get; set; }
+
+    public DateTime? LotterySupervisedAt { get; set; }
+
+    public User? LotterySupervisor { get; set; }
+
     public decimal DepositAmount { get; set; }
 
     public decimal MinPrice { get; set; }

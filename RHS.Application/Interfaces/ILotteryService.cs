@@ -21,10 +21,13 @@ public interface ILotteryService
     /// <summary>CĐT kết thúc phiên → Finished + chốt người chưa bốc</summary>
     Task<LotteryScheduleDetailDto> FinishSessionAsync(Guid projectId, Guid actorId, CancellationToken ct = default);
 
-    /// <summary>CĐT/SXD công bố → Published</summary>
+    /// <summary>CĐT/SXD công bố → Published (API chỉ cho SXD/Admin).</summary>
     Task<LotteryScheduleDetailDto> PublishSessionAsync(Guid projectId, Guid actorId, CancellationToken ct = default);
 
     /// <summary>Xác thực OTP vào sảnh (Applicant). Staff luôn pass.</summary>
     Task<VerifyLotteryJoinCodeResultDto> VerifyJoinCodeAsync(
         Guid projectId, Guid userId, string? joinCode, bool isStaff, CancellationToken ct = default);
+
+    /// <summary>Ghi nhận SXD giám sát phiên (khi join Hub) — Đ36.2.b NĐ 100/2024.</summary>
+    Task RecordSupervisorAsync(Guid projectId, Guid sxdUserId, CancellationToken ct = default);
 }

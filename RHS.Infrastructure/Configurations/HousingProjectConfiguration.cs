@@ -59,6 +59,11 @@ public class HousingProjectConfiguration : IEntityTypeConfiguration<HousingProje
             .IsRequired(false)
             .HasMaxLength(10);
 
+        builder.HasOne(x => x.LotterySupervisor)
+            .WithMany()
+            .HasForeignKey(x => x.LotterySupervisorId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.Property(x => x.DepositAmount)
             .HasPrecision(18, 2);
 

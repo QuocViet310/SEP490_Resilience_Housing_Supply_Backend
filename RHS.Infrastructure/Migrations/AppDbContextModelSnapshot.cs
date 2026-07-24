@@ -735,6 +735,12 @@ namespace RHS.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
 
+                    b.Property<DateTime?>("LotterySupervisedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("LotterySupervisorId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("LotteryType")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -794,6 +800,8 @@ namespace RHS.Infrastructure.Migrations
                     b.HasIndex("District");
 
                     b.HasIndex("HousingProjectStatusId");
+
+                    b.HasIndex("LotterySupervisorId");
 
                     b.HasIndex("Province");
 
@@ -1740,9 +1748,16 @@ namespace RHS.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("RHS.Domain.Entities.User", "LotterySupervisor")
+                        .WithMany()
+                        .HasForeignKey("LotterySupervisorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Developer");
 
                     b.Navigation("HousingProjectStatus");
+
+                    b.Navigation("LotterySupervisor");
                 });
 
             modelBuilder.Entity("RHS.Domain.Entities.HousingQuota", b =>
