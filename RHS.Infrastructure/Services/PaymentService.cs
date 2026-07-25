@@ -98,17 +98,50 @@ public class PaymentService : IPaymentService
             };
         }
 
-        // Kiểm tra không có payment Pending hoặc Success nào cho application này
+        // Giao dịch Pending / đã thanh toán cho hồ sơ này
         var existingPayment = await _context.Payments
-            .AnyAsync(p => p.ApplicationId == dto.ApplicationId
-                        && (p.Status == "Pending" || p.Status == "Success"));
+            .Where(p => p.ApplicationId == dto.ApplicationId
+                        && (p.Status == "Pending"
+                            || p.Status == "Success"
+                            || p.Status == "Paid"))
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
 
-        if (existingPayment)
+        if (existingPayment != null)
         {
+            // Đã thanh toán thành công → không tạo mới
+            if (string.Equals(existingPayment.Status, "Success", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(existingPayment.Status, "Paid", StringComparison.OrdinalIgnoreCase))
+            {
+                return new PaymentResponseDto
+                {
+                    Success = false,
+                    Message = "Hồ sơ này đã thanh toán đặt cọc thành công."
+                };
+            }
+
+            // Pending: tạo lại URL VNPay cho cùng OrderId (user thoát giữa chừng rồi ấn lại)
+            var resumeRequest = new VnPaymentRequest
+            {
+                OrderId     = existingPayment.OrderId,
+                OrderInfo   = existingPayment.OrderInfo ?? $"Dat coc ho so {existingPayment.OrderId}",
+                OrderType   = "deposit",
+                Amount      = existingPayment.Amount,
+                CreatedDate = DateTime.Now
+            };
+            var resumeUrl = _vnPayService.CreatePaymentUrl(httpContext, resumeRequest);
+
+            _logger.LogInformation(
+                "Resuming pending payment: OrderId={OrderId}, AppId={AppId}.",
+                existingPayment.OrderId, dto.ApplicationId);
+
             return new PaymentResponseDto
             {
-                Success = false,
-                Message = "Hồ sơ này đã có giao dịch thanh toán đang chờ hoặc đã thành công."
+                Success    = true,
+                Message    = "Tiếp tục giao dịch thanh toán đang chờ",
+                PaymentUrl = resumeUrl,
+                OrderId    = existingPayment.OrderId,
+                Amount     = existingPayment.Amount
             };
         }
 
