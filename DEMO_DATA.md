@@ -13,18 +13,21 @@ Người dân: đăng ký tài khoản mới trên mobile rồi eKYC + nộp h�
 
 ## Dự án (chỉ **Thành phố Hồ Chí Minh**)
 
-Format địa chỉ khớp `assets/tinh_thanh.json` + `quan_huyen.json`:
-- `Province` = `Thành phố Hồ Chí Minh`
-- `District` = `name_with_type` (vd `Thành phố Thủ Đức`, `Quận Bình Tân`, `Huyện Nhà Bè`)
+Địa giới theo [provinces.open-api.vn API v2](https://provinces.open-api.vn) (Tỉnh → Phường/Xã):
 
-| Tên | Status | District | Mục đích |
+- `Province` = `Thành phố Hồ Chí Minh`
+- `District` = `Ward` = tên phường/xã chuẩn v2 (vd `Phường Tân Thuận`, `Phường Thủ Đức`)
+
+| Tên | Status | Phường/Xã (v2) | Mục đích |
 |---|---|---|---|
-| NOXH Bình Minh — Thủ Đức | OPEN | Thành phố Thủ Đức | 80 suất |
-| NOXH An Phú — Thủ Đức | OPEN | Thành phố Thủ Đức | 120 suất |
-| NOXH Bình Tân — An Lạc | OPEN | Quận Bình Tân | 50 suất |
-| NOXH Phước Long B — Thủ Đức | OPEN | Thành phố Thủ Đức | 30 suất (oversubscribe) |
-| NOXH Tân Phú — Sắp mở | UPCOMING | Quận Tân Phú | Đ38.1.b |
-| NOXH Nhà Bè — Đã đóng | CLOSED | Huyện Nhà Bè | Đã đóng |
+| NOXH Bình Minh — Thủ Đức | OPEN | Phường Thủ Đức | 80 suất |
+| NOXH An Phú — Thủ Đức | OPEN | Phường An Phú | 120 suất |
+| NOXH Bình Tân — An Lạc | OPEN | Phường An Lạc | 50 suất |
+| NOXH Phước Long — Thủ Đức | OPEN | Phường Phước Long | 30 suất (oversubscribe) |
+| NOXH Nhà Ở Xã Hội — Tân Thuận | OPEN | Phường Tân Thuận | test filter phường + sort |
+| NOXH Nhà Ở Xã Hội — Trung Mỹ Tây | OPEN | Phường Trung Mỹ Tây | giá thấp — test sort |
+| NOXH Tân Phú — Sắp mở | UPCOMING | Phường Tân Sơn Nhì | Đ38.1.b |
+| NOXH Nhà Bè — Đã đóng | CLOSED | Xã Nhà Bè | Đã đóng |
 
 Tất cả dự án gắn CĐT demo, đã `IsConfirmed`, có `PublicAnnounceAt` đủ ngày (trừ UPCOMING), có `HousingQuota` cho `URBAN_POOR` / `URBAN_NEAR_POOR`.
 

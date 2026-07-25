@@ -201,31 +201,35 @@ public static class DemoDataSeeder
         var now = DateTime.UtcNow;
         var defs = BuildProjectDefs(now, statuses, developerId);
 
-        // Đồng bộ Province/District/Ward/Street về format name_with_type (khớp mobile filter)
+        // Đồng bộ theo Id cố định → Province/District/Ward = tên phường API v2
+        var demoIds = defs.Select(d => d.Project.Id).ToList();
         var existingDemos = await db.HousingProjects
-            .Where(p => p.Description.Contains(SeedMarker) && !p.IsDeleted)
+            .Where(p => demoIds.Contains(p.Id) && !p.IsDeleted)
             .ToListAsync(ct);
-        var existingByName = existingDemos.ToDictionary(p => p.ProjectName, p => p);
+        var existingById = existingDemos.ToDictionary(p => p.Id, p => p);
 
         var updated = 0;
         var added = 0;
         foreach (var def in defs)
         {
-            if (existingByName.TryGetValue(def.Project.ProjectName, out var existing))
+            if (existingById.TryGetValue(def.Project.Id, out var existing))
             {
                 var changed =
-                    existing.Province != def.Project.Province
+                    existing.ProjectName != def.Project.ProjectName
+                    || existing.Province != def.Project.Province
                     || existing.District != def.Project.District
                     || existing.Ward != def.Project.Ward
                     || existing.Street != def.Project.Street;
 
                 if (changed)
                 {
+                    existing.ProjectName = def.Project.ProjectName;
                     existing.Province = def.Project.Province;
                     existing.District = def.Project.District;
                     existing.Ward = def.Project.Ward;
                     existing.Street = def.Project.Street;
                     existing.LotteryLocation = def.Project.LotteryLocation;
+                    existing.Description = def.Project.Description;
                     existing.UpdatedAt = DateTime.UtcNow;
                     updated++;
                 }
@@ -421,11 +425,11 @@ public static class DemoDataSeeder
         var p7 = Guid.Parse("b1000001-0001-0001-0001-000000000007");
         var p8 = Guid.Parse("b1000001-0001-0001-0001-000000000008");
 
-        // Format địa chỉ khớp mobile assets: Province/District = name_with_type
+        // Địa giới API v2 (Tỉnh → Phường/Xã): District = Ward = tên phường/xã chuẩn từ provinces.open-api.vn
         return
         [
             (
-                Make(p1, "NOXH Bình Minh — Thủ Đức", "Thành phố Hồ Chí Minh", "Thành phố Thủ Đức", "Phường Long Thạnh Mỹ",
+                Make(p1, "NOXH Bình Minh — Thủ Đức", "Thành phố Hồ Chí Minh", "Phường Thủ Đức", "Phường Thủ Đức",
                     "12 Đại lộ Mai Chí Thọ", openId, 80, 5_000_000m, 480_000_000m, 780_000_000m, 28, 52,
                     now.AddDays(-10), now.AddDays(60), now.AddDays(-40),
                     "Dự án OPEN demo Thủ Đức — đang nhận hồ sơ."),
@@ -433,7 +437,7 @@ public static class DemoDataSeeder
                 Images(p1, 0, 1)
             ),
             (
-                Make(p2, "NOXH An Phú — Thủ Đức", "Thành phố Hồ Chí Minh", "Thành phố Thủ Đức", "Phường An Phú",
+                Make(p2, "NOXH An Phú — Thủ Đức", "Thành phố Hồ Chí Minh", "Phường An Phú", "Phường An Phú",
                     "88 Đường Song Hành", openId, 120, 3_000_000m, 520_000_000m, 920_000_000m, 30, 60,
                     now.AddDays(-5), now.AddDays(90), now.AddDays(-35),
                     "Dự án OPEN demo khu An Phú (TP.HCM)."),
@@ -441,7 +445,7 @@ public static class DemoDataSeeder
                 Images(p2, 2, 3)
             ),
             (
-                Make(p3, "NOXH Bình Tân — An Lạc", "Thành phố Hồ Chí Minh", "Quận Bình Tân", "Phường An Lạc A",
+                Make(p3, "NOXH Bình Tân — An Lạc", "Thành phố Hồ Chí Minh", "Phường An Lạc", "Phường An Lạc",
                     "45 Đường Kinh Dương Vương", openId, 50, 2_500_000m, 390_000_000m, 650_000_000m, 25, 48,
                     now.AddDays(-3), now.AddDays(45), now.AddDays(-33),
                     "Dự án OPEN demo Bình Tân (TP.HCM)."),
@@ -449,7 +453,7 @@ public static class DemoDataSeeder
                 Images(p3, 4, 5)
             ),
             (
-                Make(p4, "NOXH Phước Long B — Thủ Đức", "Thành phố Hồ Chí Minh", "Thành phố Thủ Đức", "Phường Phước Long B",
+                Make(p4, "NOXH Phước Long — Thủ Đức", "Thành phố Hồ Chí Minh", "Phường Phước Long", "Phường Phước Long",
                     "210 Đường Đỗ Xuân Hợp", openId, 30, 5_000_000m, 450_000_000m, 700_000_000m, 26, 45,
                     now.AddDays(-1), now.AddDays(30), now.AddDays(-31),
                     "Dự án OPEN số suất ít — test oversubscribe."),
@@ -457,23 +461,23 @@ public static class DemoDataSeeder
                 Images(p4, 6)
             ),
             (
-                Make(p7, "NOXH Nhà Ở Xã Hội — Quận 7", "Thành phố Hồ Chí Minh", "Quận 7", "Phường Tân Thuận",
+                Make(p7, "NOXH Nhà Ở Xã Hội — Tân Thuận", "Thành phố Hồ Chí Minh", "Phường Tân Thuận", "Phường Tân Thuận",
                     "120 Nguyễn Văn Linh", openId, 90, 4_000_000m, 550_000_000m, 980_000_000m, 32, 58,
                     now.AddDays(-7), now.AddDays(75), now.AddDays(-38),
-                    "Dự án OPEN Quận 7 — test filter quận + sort giá."),
+                    "Dự án OPEN Tân Thuận — test filter phường + sort giá."),
                 Quotas(p7, 90),
                 Images(p7, 1, 7)
             ),
             (
-                Make(p8, "NOXH Nhà Ở Xã Hội — Quận 12", "Thành phố Hồ Chí Minh", "Quận 12", "Phường Trung Mỹ Tây",
+                Make(p8, "NOXH Nhà Ở Xã Hội — Trung Mỹ Tây", "Thành phố Hồ Chí Minh", "Phường Trung Mỹ Tây", "Phường Trung Mỹ Tây",
                     "55 Quốc lộ 1A", openId, 70, 2_000_000m, 320_000_000m, 580_000_000m, 24, 42,
                     now.AddDays(-2), now.AddDays(50), now.AddDays(-32),
-                    "Dự án OPEN Quận 12 — giá thấp hơn để test sort."),
+                    "Dự án OPEN Trung Mỹ Tây — giá thấp hơn để test sort."),
                 Quotas(p8, 70),
                 Images(p8, 3, 5)
             ),
             (
-                Make(p5, "NOXH Tân Phú — Sắp mở", "Thành phố Hồ Chí Minh", "Quận Tân Phú", "Phường Tân Sơn Nhì",
+                Make(p5, "NOXH Tân Phú — Sắp mở", "Thành phố Hồ Chí Minh", "Phường Tân Sơn Nhì", "Phường Tân Sơn Nhì",
                     "15 Đường Lũy Bán Bích", upcomingId, 60, 4_000_000m, 450_000_000m, 850_000_000m, 25, 55,
                     now.AddDays(7), now.AddDays(70), now.AddDays(-5),
                     "Dự án UPCOMING — chưa mở đăng ký (mobile sẽ ẩn)."),
@@ -481,7 +485,7 @@ public static class DemoDataSeeder
                 Images(p5, 0)
             ),
             (
-                Make(p6, "NOXH Nhà Bè — Đã đóng", "Thành phố Hồ Chí Minh", "Huyện Nhà Bè", "Xã Phước Kiển",
+                Make(p6, "NOXH Nhà Bè — Đã đóng", "Thành phố Hồ Chí Minh", "Xã Nhà Bè", "Xã Nhà Bè",
                     "01 Đường Nguyễn Văn Tạo", closedId, 0, 2_000_000m, 400_000_000m, 700_000_000m, 25, 50,
                     now.AddDays(-90), now.AddDays(-10), now.AddDays(-120),
                     "Dự án CLOSED — hết hạn nhận hồ sơ."),

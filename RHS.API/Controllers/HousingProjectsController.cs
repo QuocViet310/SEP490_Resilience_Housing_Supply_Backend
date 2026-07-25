@@ -35,7 +35,8 @@ public class HousingProjectsController : ControllerBase
     /// <param name="pageSize">Items per page (default: 12, max: 100)</param>
     /// <param name="search">Search by project name</param>
     /// <param name="province">Filter by province</param>
-    /// <param name="district">Filter by district</param>
+    /// <param name="district">Filter by district (legacy)</param>
+    /// <param name="ward">Filter by phường/xã (địa giới API v2)</param>
     /// <param name="minPrice">Minimum price</param>
     /// <param name="maxPrice">Maximum price</param>
     /// <param name="minArea">Minimum area</param>
@@ -53,6 +54,7 @@ public class HousingProjectsController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] string? province = null,
         [FromQuery] string? district = null,
+        [FromQuery] string? ward = null,
         [FromQuery] decimal? minPrice = null,
         [FromQuery] decimal? maxPrice = null,
         [FromQuery] double? minArea = null,
@@ -69,6 +71,7 @@ public class HousingProjectsController : ControllerBase
                 Search = search,
                 Province = province,
                 District = district,
+                Ward = ward,
                 MinPrice = minPrice,
                 MaxPrice = maxPrice,
                 MinArea = minArea,

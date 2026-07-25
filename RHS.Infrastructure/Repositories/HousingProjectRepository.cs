@@ -60,15 +60,13 @@ public class HousingProjectRepository : IHousingProjectRepository
             query = query.Where(x => x.District == request.District);
         }
 
-        // Apply ward filter (địa giới v2: phường/xã) — khớp Ward hoặc District
+        // Apply ward filter (địa giới v2) — exact match Ward hoặc District (CRUD đồng bộ cùng tên)
         if (!string.IsNullOrWhiteSpace(request.Ward))
         {
             var ward = request.Ward.Trim();
             query = query.Where(x =>
                 (x.Ward != null && x.Ward == ward)
-                || (x.District != null && x.District == ward)
-                || (x.Ward != null && x.Ward.Contains(ward))
-                || (x.District != null && x.District.Contains(ward)));
+                || (x.District != null && x.District == ward));
         }
 
         // Apply min price filter
