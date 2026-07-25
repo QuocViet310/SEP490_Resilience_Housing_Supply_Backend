@@ -17,7 +17,7 @@ public static class DemoDataSeeder
 
     public const string DemoDeveloperEmail = "cdt.demo@rhs.local";
     public const string DemoSxdEmail = "sxd.demo@rhs.local";
-    public const string DemoPassword = "Demo@123456";
+    public const string DemoPassword = "123456";
 
     /// <summary>Account trống — dùng test tạo hồ sơ / rào 1 tài khoản 1 hồ sơ.</summary>
     public const string DemoApplicantFreeEmail = "dan.free@rhs.local";
@@ -104,6 +104,12 @@ public static class DemoDataSeeder
                 if (string.IsNullOrWhiteSpace(user.Address))
                 {
                     user.Address = "Số 1 Đại Cồ Việt, Hai Bà Trưng, Hà Nội";
+                    changed = true;
+                }
+                if (user.PasswordHash == null ||
+                    !BCrypt.Net.BCrypt.Verify(DemoPassword, user.PasswordHash))
+                {
+                    user.PasswordHash = passwordHash;
                     changed = true;
                 }
                 if (changed)
@@ -563,6 +569,12 @@ public static class DemoDataSeeder
                 if (user.Status != "Active")
                 {
                     user.Status = "Active";
+                    changed = true;
+                }
+                if (user.PasswordHash == null ||
+                    !BCrypt.Net.BCrypt.Verify(DemoPassword, user.PasswordHash))
+                {
+                    user.PasswordHash = passwordHash;
                     changed = true;
                 }
                 if (changed)

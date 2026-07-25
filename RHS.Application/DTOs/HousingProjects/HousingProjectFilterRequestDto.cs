@@ -7,6 +7,8 @@ public class HousingProjectFilterRequestDto
     public string? Search { get; set; }
     public string? Province { get; set; }
     public string? District { get; set; }
+    /// <summary>Phường/xã (API địa giới v2). Khớp Ward hoặc District (legacy).</summary>
+    public string? Ward { get; set; }
     public decimal? MinPrice { get; set; }
     public decimal? MaxPrice { get; set; }
     public double? MinArea { get; set; }

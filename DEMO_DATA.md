@@ -6,8 +6,8 @@ Mỗi lần start `RHS.API`, `DemoDataSeeder` chạy **idempotent** (không nhâ
 
 | Vai trò | Email | Mật khẩu |
 |---|---|---|
-| Housing Developer (CĐT) | `cdt.demo@rhs.local` | `Demo@123456` |
-| Department Of Construction (SXD) | `sxd.demo@rhs.local` | `Demo@123456` |
+| Housing Developer (CĐT) | `cdt.demo@rhs.local` | `123456` |
+| Department Of Construction (SXD) | `sxd.demo@rhs.local` | `123456` |
 
 Người dân: đăng ký tài khoản mới trên mobile rồi eKYC + nộp hồ sơ vào dự án **OPEN**.
 

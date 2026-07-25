@@ -36,11 +36,16 @@ public class HousingProjectRepository : IHousingProjectRepository
             (currentUserRole == "Department Of Construction" || currentUserRole == "System Administrator")
         );
 
-        // Apply search filter (by project name)
+        // Apply search filter (tên + địa chỉ — đồng bộ web/mobile)
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
             var searchTerm = request.Search.ToLower();
-            query = query.Where(x => x.ProjectName.ToLower().Contains(searchTerm));
+            query = query.Where(x =>
+                x.ProjectName.ToLower().Contains(searchTerm)
+                || (x.District != null && x.District.ToLower().Contains(searchTerm))
+                || (x.Ward != null && x.Ward.ToLower().Contains(searchTerm))
+                || (x.Street != null && x.Street.ToLower().Contains(searchTerm))
+                || (x.Description != null && x.Description.ToLower().Contains(searchTerm)));
         }
 
         // Apply province filter
@@ -49,10 +54,21 @@ public class HousingProjectRepository : IHousingProjectRepository
             query = query.Where(x => x.Province == request.Province);
         }
 
-        // Apply district filter
+        // Apply district filter (legacy quận/huyện)
         if (!string.IsNullOrWhiteSpace(request.District))
         {
             query = query.Where(x => x.District == request.District);
+        }
+
+        // Apply ward filter (địa giới v2: phường/xã) — khớp Ward hoặc District
+        if (!string.IsNullOrWhiteSpace(request.Ward))
+        {
+            var ward = request.Ward.Trim();
+            query = query.Where(x =>
+                (x.Ward != null && x.Ward == ward)
+                || (x.District != null && x.District == ward)
+                || (x.Ward != null && x.Ward.Contains(ward))
+                || (x.District != null && x.District.Contains(ward)));
         }
 
         // Apply min price filter
