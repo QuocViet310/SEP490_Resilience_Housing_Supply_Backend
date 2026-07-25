@@ -14,13 +14,16 @@ public class PaymentController : ControllerBase
 {
     private readonly IPaymentService _paymentService;
     private readonly IInstallmentService _installmentService;
+    private readonly IConfiguration _configuration;
 
     public PaymentController(
         IPaymentService paymentService,
-        IInstallmentService installmentService)
+        IInstallmentService installmentService,
+        IConfiguration configuration)
     {
         _paymentService = paymentService;
         _installmentService = installmentService;
+        _configuration = configuration;
     }
 
     /// <summary>
@@ -88,6 +91,8 @@ public class PaymentController : ControllerBase
 
     /// <summary>
     /// [Bước 2] ReturnUrl — browser redirect sau thanh toán (UX).
+    /// Browser → 302 về Frontend (#/payments?payment=...).
+    /// Mobile/API (Accept: application/json hoặc ?format=json) → JSON.
     /// IPN (`payment-ipn`) là nguồn xác nhận authoritative hơn.
     /// </summary>
     [HttpGet("payment-callback")]
@@ -99,6 +104,26 @@ public class PaymentController : ControllerBase
             var queryParams = HttpContext.Request.Query;
             var isHandled   = await _paymentService.HandleCallbackAsync(queryParams);
 
+            var responseCode = queryParams["vnp_ResponseCode"].ToString();
+            var orderId      = queryParams["vnp_TxnRef"].ToString();
+            var paymentNotice = !isHandled
+                ? "error"
+                : responseCode == "00"
+                    ? "success"
+                    : responseCode == "24"
+                        ? "cancelled"
+                        : "failed";
+
+            // Browser (VNPay redirect): đưa user về FE, không để kẹt trang JSON API
+            if (!WantsJsonCallbackResponse())
+            {
+                var frontend = (_configuration["Frontend:BaseUrl"] ?? "http://localhost:5173").TrimEnd('/');
+                var redirect =
+                    $"{frontend}/#/payments?payment={Uri.EscapeDataString(paymentNotice)}" +
+                    (string.IsNullOrEmpty(orderId) ? "" : $"&orderId={Uri.EscapeDataString(orderId)}");
+                return Redirect(redirect);
+            }
+
             if (!isHandled)
             {
                 return BadRequest(new
@@ -108,9 +133,8 @@ public class PaymentController : ControllerBase
                 });
             }
 
-            var responseCode = queryParams["vnp_ResponseCode"].ToString();
-            var orderId      = queryParams["vnp_TxnRef"].ToString();
-            var amount       = long.Parse(queryParams["vnp_Amount"].ToString()) / 100;
+            var amountRaw = queryParams["vnp_Amount"].ToString();
+            var amount = long.TryParse(amountRaw, out var amt) ? amt / 100 : 0L;
 
             if (responseCode == "00")
             {
@@ -151,6 +175,12 @@ public class PaymentController : ControllerBase
         }
         catch (Exception ex)
         {
+            if (!WantsJsonCallbackResponse())
+            {
+                var frontend = (_configuration["Frontend:BaseUrl"] ?? "http://localhost:5173").TrimEnd('/');
+                return Redirect($"{frontend}/#/payments?payment=error");
+            }
+
             return StatusCode(500, new
             {
                 success = false,
@@ -158,6 +188,18 @@ public class PaymentController : ControllerBase
                 error   = ex.Message
             });
         }
+    }
+
+    /// <summary>
+    /// Mobile gọi callback bằng fetch + Accept JSON; browser từ VNPay nhận HTML → redirect FE.
+    /// </summary>
+    private bool WantsJsonCallbackResponse()
+    {
+        if (string.Equals(Request.Query["format"], "json", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var accept = Request.Headers.Accept.ToString();
+        return accept.Contains("application/json", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
