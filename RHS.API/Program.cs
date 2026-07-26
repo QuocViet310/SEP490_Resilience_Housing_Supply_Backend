@@ -304,8 +304,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// CORS trước Authentication — SignalR negotiate từ Vite (:5173) cần header CORS sớm.
+// Dev: không HTTPS-redirect (tránh browser follow sang :7085 khi chỉ listen :5112).
 app.UseCors("AllowAll");
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
