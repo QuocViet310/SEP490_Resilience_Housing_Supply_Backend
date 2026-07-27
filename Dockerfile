@@ -28,15 +28,17 @@ WORKDIR /app
 
 # Tối ưu cho .NET 8 chạy trên Render Container (tránh FileWatcher inotify crash 139 & giới hạn RAM 512MB)
 ENV DOTNET_USE_POLLING_FILE_WATCHER=true
-ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 ENV DOTNET_GCHeapHardLimit=0x1C000000
 
-# Cài đặt thư viện native đồ họa & font chữ Linux (bắt buộc cho QuestPDF, SkiaSharp & EPPlus)
+# Cài đặt thư viện native đồ họa, font chữ & ICU Globalization cho Linux (bắt buộc cho SQL Client, QuestPDF, SkiaSharp & EPPlus)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libfontconfig1 \
     libgdiplus \
     fonts-liberation \
     libicu-dev \
+    icu-devtools \
+    locales \
     && rm -rf /var/lib/apt-get/lists/*
 
 COPY --from=publish /app/publish .
