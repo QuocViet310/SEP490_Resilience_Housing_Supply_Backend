@@ -147,9 +147,10 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.SetIsOriginAllowed(_ => true) // Cho phép tất cả origin (localhost:5173, localhost:3000, Vercel, Netlify...)
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials(); // Cho phép gửi cookies, Authorization header & SignalR WebSockets
     });
 });
 
