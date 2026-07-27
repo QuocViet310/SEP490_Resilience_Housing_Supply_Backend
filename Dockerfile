@@ -26,6 +26,11 @@ RUN dotnet publish "RHS.API.csproj" -c Release -o /app/publish /p:UseAppHost=fal
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 
+# Tối ưu cho .NET 8 chạy trên Render Container (tránh FileWatcher inotify crash 139 & giới hạn RAM 512MB)
+ENV DOTNET_USE_POLLING_FILE_WATCHER=true
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+ENV DOTNET_GCHeapHardLimit=0x1C000000
+
 # Cài đặt thư viện native đồ họa & font chữ Linux (bắt buộc cho QuestPDF, SkiaSharp & EPPlus)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libfontconfig1 \
