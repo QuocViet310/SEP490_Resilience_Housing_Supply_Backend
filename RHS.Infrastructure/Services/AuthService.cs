@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using RHS.Application.DTOs.Auth;
 using RHS.Application.Interfaces;
 using RHS.Domain.Entities;
@@ -17,6 +18,7 @@ public class AuthService : IAuthService
     private readonly IGoogleAuthService _googleAuthService;
     private readonly IOtpService _otpService;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<AuthService> _logger;
 
     public AuthService(
         IUserRepository userRepository,
@@ -26,7 +28,8 @@ public class AuthService : IAuthService
         ITokenService tokenService,
         IGoogleAuthService googleAuthService,
         IOtpService otpService,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ILogger<AuthService> logger)
     {
         _userRepository = userRepository;
         _refreshTokenRepository = refreshTokenRepository;
@@ -36,6 +39,7 @@ public class AuthService : IAuthService
         _googleAuthService = googleAuthService;
         _otpService = otpService;
         _configuration = configuration;
+        _logger = logger;
     }
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterDto registerDto)
@@ -91,7 +95,19 @@ public class AuthService : IAuthService
         };
 
         await _otpRepository.CreateAsync(otp);
-        await _otpService.SendOtpEmailAsync(user.Email, otpCode, user.FullName);
+
+        // Gửi email OTP ngầm (background) để không làm chậm response của API Đăng ký
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _otpService.SendOtpEmailAsync(user.Email, otpCode, user.FullName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Background error sending OTP email to {Email}", user.Email);
+            }
+        });
 
         return new AuthResponseDto
         {
@@ -533,7 +549,20 @@ public class AuthService : IAuthService
         };
 
         await _otpRepository.CreateAsync(otp);
-        return await _otpService.SendPasswordResetOtpEmailAsync(user.Email, otpCode, user.FullName);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _otpService.SendPasswordResetOtpEmailAsync(user.Email, otpCode, user.FullName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Background error sending password reset OTP email to {Email}", user.Email);
+            }
+        });
+
+        return true;
     }
 
     public async Task<AuthResponseDto> ResetPasswordAsync(ResetPasswordDto resetPasswordDto)
