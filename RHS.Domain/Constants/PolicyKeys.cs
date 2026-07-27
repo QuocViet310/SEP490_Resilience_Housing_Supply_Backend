@@ -21,7 +21,7 @@ public static class PolicyKeys
             (TacitApprovalDays, "20", "Automation",
                 "Số ngày SXD im lặng trước khi tự động phê duyệt (Đ38.1.đ)."),
             (DepositPaymentHours, "24", "Automation",
-                "Số giờ phải thanh toán đặt cọc sau khi APPROVED."),
+                "Số giờ phải thanh toán đặt cọc sau khi ký hợp đồng nguyên tắc (CONTRACT_SIGNED), tính từ SignedAt."),
             (MaxAreaPerPersonM2, "15", "Eligibility",
                 "Diện tích nhà ở bình quân đầu người tối đa (m²) — Đ29.2."),
             (IncomeSingleMaxVnd, "15000000", "Eligibility",
@@ -35,6 +35,6 @@ public static class PolicyKeys
             (SxdCrosscheckSilenceDays, "20", "Sales",
                 "Số ngày SXD không phản hồi sau khi nhận danh sách (đồng bộ tacit approval) — Đ38.1.đ."),
             (ContractSigningDeadlineDays, "15", "Sales",
-                "Số ngày làm việc/hạn chót để người dân thực hiện ký hợp đồng nguyên tắc và đóng tiền cọc kể từ khi được duyệt/trúng bốc thăm."),
+                "Số ngày hạn chót để người dân ký hợp đồng nguyên tắc kể từ khi vào CONTRACT_PENDING (ưu tiên / trúng bốc thăm)."),
         };
 }

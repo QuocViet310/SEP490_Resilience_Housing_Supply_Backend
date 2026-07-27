@@ -9,6 +9,12 @@ using RHS.Infrastructure.Data;
 
 namespace RHS.API.BackgroundServices;
 
+/// <summary>
+/// Hết hạn theo luồng chuẩn:
+/// - CONTRACT_PENDING quá hạn ký HĐ → EXPIRED
+/// - CONTRACT_SIGNED quá hạn đặt cọc (từ SignedAt) → EXPIRED
+/// Không expire APPROVED: sau duyệt còn chờ CĐT chốt / bốc thăm, chưa đến bước cọc.
+/// </summary>
 public class PaymentTimeoutWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -51,79 +57,130 @@ public class PaymentTimeoutWorker : BackgroundService
         var depositHours = await policyService.GetValueAsync(PolicyKeys.DepositPaymentHours, 24, stoppingToken);
         var contractDays = await policyService.GetValueAsync(PolicyKeys.ContractSigningDeadlineDays, 15, stoppingToken);
 
-        var cutoffTime = DateTime.UtcNow.AddHours(-depositHours);
-        var contractCutoffTime = DateTime.UtcNow.AddDays(-contractDays);
+        var depositCutoff = DateTime.UtcNow.AddHours(-depositHours);
+        var contractCutoff = DateTime.UtcNow.AddDays(-contractDays);
 
-        var expiredApplications = await context.HousingApplications
-            .Where(x => ((x.ApplicationStatus == ApplicationStatusConstants.Approved || x.ApplicationStatus == ApplicationStatusConstants.ApprovedByTimeout)
-                         && x.FinalDecisionDate.HasValue && x.FinalDecisionDate.Value < cutoffTime)
-                     || (x.ApplicationStatus == ApplicationStatusConstants.ContractPending
-                         && (x.UpdatedAt ?? x.SubmittedAt) < contractCutoffTime))
+        // Quá hạn ký HĐ nguyên tắc (sau khi được chốt danh sách / trúng bốc thăm)
+        var pendingSignExpired = await context.HousingApplications
+            .Where(x =>
+                x.ApplicationStatus == ApplicationStatusConstants.ContractPending &&
+                (x.UpdatedAt ?? x.SubmittedAt) < contractCutoff)
             .ToListAsync(stoppingToken);
 
-        if (!expiredApplications.Any())
+        // Quá hạn đặt cọc — chỉ sau khi đã ký HĐ (mốc SignedAt)
+        var signedUnpaidExpired = await context.HousingApplications
+            .Where(x =>
+                x.ApplicationStatus == ApplicationStatusConstants.ContractSigned &&
+                x.PrincipleAgreement != null &&
+                x.PrincipleAgreement.IsSigned &&
+                x.PrincipleAgreement.SignedAt.HasValue &&
+                x.PrincipleAgreement.SignedAt.Value < depositCutoff)
+            .ToListAsync(stoppingToken);
+
+        if (pendingSignExpired.Count == 0 && signedUnpaidExpired.Count == 0)
             return;
 
         _logger.LogInformation(
-            "Found {Count} potentially expired approved applications (deadline={Hours}h).",
-            expiredApplications.Count, depositHours);
+            "Timeout candidates: {PendingCount} CONTRACT_PENDING (>{Days}d), {SignedCount} CONTRACT_SIGNED unpaid (>{Hours}h).",
+            pendingSignExpired.Count, contractDays, signedUnpaidExpired.Count, depositHours);
 
-        foreach (var app in expiredApplications)
+        foreach (var app in pendingSignExpired)
+        {
+            await ExpireAsync(
+                context,
+                notificationService,
+                app,
+                action: ReviewActionConstants.PaymentTimeout,
+                note: $"Tự động hủy do quá hạn ký hợp đồng nguyên tắc ({contractDays} ngày — PolicyConfig CONTRACT_SIGNING_DEADLINE_DAYS).",
+                notifTitle: "Hồ sơ đã hết hạn ký hợp đồng",
+                notifBody: $"Hồ sơ của bạn đã bị hủy do không ký hợp đồng nguyên tắc trong vòng {contractDays} ngày.",
+                stoppingToken);
+        }
+
+        foreach (var app in signedUnpaidExpired)
         {
             var isPaid = await context.Payments.AnyAsync(p =>
                 p.ApplicationId == app.ApplicationId &&
                 p.Status == "Success",
                 stoppingToken);
 
-            if (!isPaid)
+            if (isPaid)
+                continue;
+
+            await ExpireAsync(
+                context,
+                notificationService,
+                app,
+                action: ReviewActionConstants.PaymentTimeout,
+                note: $"Tự động hủy do quá hạn thanh toán đặt cọc sau khi ký HĐ ({depositHours} giờ — PolicyConfig DEPOSIT_PAYMENT_HOURS).",
+                notifTitle: "Hồ sơ đã hết hạn thanh toán",
+                notifBody: $"Hồ sơ của bạn đã bị hủy do không thanh toán đặt cọc trong vòng {depositHours} giờ sau khi ký hợp đồng nguyên tắc.",
+                stoppingToken);
+        }
+    }
+
+    private async Task ExpireAsync(
+        AppDbContext context,
+        INotificationService notificationService,
+        HousingApplication app,
+        string action,
+        string note,
+        string notifTitle,
+        string notifBody,
+        CancellationToken stoppingToken)
+    {
+        // Tránh race nếu status đã đổi giữa lúc query và xử lý
+        if (app.ApplicationStatus is not (
+            ApplicationStatusConstants.ContractPending or
+            ApplicationStatusConstants.ContractSigned))
+        {
+            return;
+        }
+
+        _logger.LogInformation(
+            "Expiring application {AppId} from {Status}.",
+            app.ApplicationId, app.ApplicationStatus);
+
+        await using var transaction = await context.Database.BeginTransactionAsync(stoppingToken);
+        try
+        {
+            var oldStatus = app.ApplicationStatus;
+            app.ApplicationStatus = ApplicationStatusConstants.Expired;
+            app.UpdatedAt = DateTime.UtcNow;
+            context.HousingApplications.Update(app);
+
+            context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
             {
-                _logger.LogInformation(
-                    "Application {AppId} unpaid after {Hours}h. Expiring (no unit hold to release — Hướng A).",
-                    app.ApplicationId, depositHours);
+                HistoryId = Guid.NewGuid(),
+                ApplicationId = app.ApplicationId,
+                ChangedBy = app.ApplicantId,
+                Action = action,
+                OldStatus = oldStatus,
+                NewStatus = ApplicationStatusConstants.Expired,
+                Note = note,
+                ChangedAt = DateTime.UtcNow
+            });
 
-                using var transaction = await context.Database.BeginTransactionAsync(stoppingToken);
-                try
-                {
-                    var oldStatus = app.ApplicationStatus;
-                    app.ApplicationStatus = ApplicationStatusConstants.Expired;
-                    app.UpdatedAt = DateTime.UtcNow;
-                    context.HousingApplications.Update(app);
+            await context.SaveChangesAsync(stoppingToken);
+            await transaction.CommitAsync(stoppingToken);
 
-                    var history = new ApplicationStatusHistory
-                    {
-                        HistoryId = Guid.NewGuid(),
-                        ApplicationId = app.ApplicationId,
-                        ChangedBy = app.ApplicantId,
-                        Action = ReviewActionConstants.PaymentTimeout,
-                        OldStatus = oldStatus,
-                        NewStatus = ApplicationStatusConstants.Expired,
-                        Note = $"Tự động hủy do quá hạn thanh toán đặt cọc ({depositHours} giờ — PolicyConfig DEPOSIT_PAYMENT_HOURS).",
-                        ChangedAt = DateTime.UtcNow
-                    };
-                    context.ApplicationStatusHistories.Add(history);
-
-                    await context.SaveChangesAsync(stoppingToken);
-                    await transaction.CommitAsync(stoppingToken);
-
-                    try
-                    {
-                        await notificationService.SendAsync(
-                            app.ApplicantId,
-                            "Hồ sơ đã hết hạn thanh toán",
-                            $"Hồ sơ của bạn đã bị hủy do không thanh toán đặt cọc trong vòng {depositHours} giờ.",
-                            NotificationTypeConstants.ApplicationExpired);
-                    }
-                    catch (Exception notifEx)
-                    {
-                        _logger.LogWarning(notifEx, "Failed to send expiry notification for AppId {AppId}.", app.ApplicationId);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    await transaction.RollbackAsync(stoppingToken);
-                    _logger.LogError(ex, "Failed to expire application {AppId}.", app.ApplicationId);
-                }
+            try
+            {
+                await notificationService.SendAsync(
+                    app.ApplicantId,
+                    notifTitle,
+                    notifBody,
+                    NotificationTypeConstants.ApplicationExpired);
             }
+            catch (Exception notifEx)
+            {
+                _logger.LogWarning(notifEx, "Failed to send expiry notification for AppId {AppId}.", app.ApplicationId);
+            }
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync(stoppingToken);
+            _logger.LogError(ex, "Failed to expire application {AppId}.", app.ApplicationId);
         }
     }
 }
