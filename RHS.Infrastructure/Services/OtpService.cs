@@ -1,10 +1,11 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using RHS.Application.Interfaces;
-using System.Net;
-using System.Net.Mail;
 using System.Text;
 using System.Text.Json;
+using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
 
 namespace RHS.Infrastructure.Services;
 
@@ -51,23 +52,22 @@ public class OtpService : IOtpService
             </body>
             </html>";
 
-        // 1️⃣ ƯU TIÊN 1: Dùng Brevo REST API (Cho phép gửi tới BẤT KỲ email nào, 300 mail/ngày miễn phí)
+        // 1️⃣ ƯU TIÊN 1: Dùng Brevo REST API (Nếu có cấu hình BrevoApiKey)
         if (!string.IsNullOrEmpty(brevoApiKey))
         {
             var brevoSuccess = await TrySendViaBrevoApiAsync(brevoApiKey, email, subject, bodyHtml, senderName);
             if (brevoSuccess) return true;
         }
 
-        // 2️⃣ ƯU TIÊN 2: Dùng Resend HTTP REST API (Gửi qua HTTPS Cổng 443)
+        // 2️⃣ ƯU TIÊN 2: Dùng Resend REST API (Nếu có cấu hình ResendApiKey)
         if (!string.IsNullOrEmpty(resendApiKey))
         {
             var resendSuccess = await TrySendViaResendApiAsync(resendApiKey, email, subject, bodyHtml, senderName);
             if (resendSuccess) return true;
         }
 
-        // 2️⃣ ƯU TIÊN 2: Kiểm tra nếu bật Mock hoặc cấu hình mặc định
+        // 3️⃣ ƯU TIÊN 3: Kiểm tra nếu bật Mock hoặc cấu hình mặc định chưa đổi
         var enableMock = _configuration["EmailSettings:EnableMock"];
-        var smtpServer = _configuration["EmailSettings:SmtpServer"];
         var senderEmail = _configuration["EmailSettings:SenderEmail"];
         var senderPassword = _configuration["EmailSettings:SenderPassword"];
 
@@ -77,39 +77,18 @@ public class OtpService : IOtpService
             string.IsNullOrEmpty(senderPassword) ||
             senderPassword == "YOUR_EMAIL_APP_PASSWORD")
         {
-            _logger.LogInformation("💡 [MOCK OTP MODE] Skipping SMTP call. OTP code for {Email} is: {OtpCode}", email, otpCode);
+            _logger.LogInformation("💡 [MOCK OTP MODE] Skipping Email call. OTP code for {Email} is: {OtpCode}", email, otpCode);
             return true;
         }
 
-        // 3️⃣ ƯU TIÊN 3: Gửi qua SMTP (Timeout ngắn 3 giây tránh làm đơ app nếu Render chặn cổng 587)
+        // 4️⃣ ƯU TIÊN 4: Gửi qua Gmail / SMTP bằng MailKit (Dùng Cổng 465 SSL mở trên Cloud/Render)
         try
         {
-            var smtpPort = int.Parse(_configuration["EmailSettings:SmtpPort"] ?? "587");
-            _logger.LogInformation("📧 Attempting to send OTP email via SMTP to {Email} ({Server}:{Port})", email, smtpServer, smtpPort);
-
-            using var client = new SmtpClient(smtpServer, smtpPort)
-            {
-                EnableSsl = true,
-                Credentials = new NetworkCredential(senderEmail, senderPassword),
-                Timeout = 3000 // Timeout ngắn 3 giây
-            };
-
-            var mailMessage = new MailMessage
-            {
-                From = new MailAddress(senderEmail, senderName),
-                Subject = subject,
-                Body = bodyHtml,
-                IsBodyHtml = true
-            };
-            mailMessage.To.Add(email);
-
-            await client.SendMailAsync(mailMessage);
-            _logger.LogInformation("✅ OTP email sent successfully to {Email} via SMTP", email);
-            return true;
+            return await SendViaMailKitAsync(email, subject, bodyHtml, fullName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Failed to send OTP email to {Email}. Render/SMTP error: {ErrorMessage}. Fallback OTP code: {OtpCode}", email, ex.Message, otpCode);
+            _logger.LogError(ex, "❌ MailKit SMTP error sending to {Email}: {ErrorMessage}. Fallback OTP: {OtpCode}", email, ex.Message, otpCode);
             return true;
         }
     }
@@ -121,6 +100,7 @@ public class OtpService : IOtpService
         Console.WriteLine($"=================================================");
         _logger.LogInformation("🔑 [RESET OTP GENERATED] Target Email: {Email} | OTP Code: {OtpCode}", email, otpCode);
 
+        var brevoApiKey = _configuration["EmailSettings:BrevoApiKey"] ?? _configuration["BrevoApiKey"];
         var resendApiKey = _configuration["EmailSettings:ResendApiKey"] ?? _configuration["ResendApiKey"];
         var senderName = _configuration["EmailSettings:SenderName"] ?? "Resilience Housing Supply";
         var subject = "Đặt lại mật khẩu - Resilience Housing Supply";
@@ -139,6 +119,12 @@ public class OtpService : IOtpService
             </body>
             </html>";
 
+        if (!string.IsNullOrEmpty(brevoApiKey))
+        {
+            var brevoSuccess = await TrySendViaBrevoApiAsync(brevoApiKey, email, subject, bodyHtml, senderName);
+            if (brevoSuccess) return true;
+        }
+
         if (!string.IsNullOrEmpty(resendApiKey))
         {
             var resendSuccess = await TrySendViaResendApiAsync(resendApiKey, email, subject, bodyHtml, senderName);
@@ -146,7 +132,6 @@ public class OtpService : IOtpService
         }
 
         var enableMock = _configuration["EmailSettings:EnableMock"];
-        var smtpServer = _configuration["EmailSettings:SmtpServer"];
         var senderEmail = _configuration["EmailSettings:SenderEmail"];
         var senderPassword = _configuration["EmailSettings:SenderPassword"];
 
@@ -156,38 +141,65 @@ public class OtpService : IOtpService
             string.IsNullOrEmpty(senderPassword) ||
             senderPassword == "YOUR_EMAIL_APP_PASSWORD")
         {
-            _logger.LogInformation("💡 [MOCK OTP MODE] Skipping SMTP call for Password Reset. OTP code for {Email} is: {OtpCode}", email, otpCode);
+            _logger.LogInformation("💡 [MOCK OTP MODE] Skipping Email call for Reset. OTP code for {Email} is: {OtpCode}", email, otpCode);
             return true;
         }
 
         try
         {
-            var smtpPort = int.Parse(_configuration["EmailSettings:SmtpPort"] ?? "587");
-            using var client = new SmtpClient(smtpServer, smtpPort)
-            {
-                EnableSsl = true,
-                Credentials = new NetworkCredential(senderEmail, senderPassword),
-                Timeout = 3000
-            };
-
-            var mailMessage = new MailMessage
-            {
-                From = new MailAddress(senderEmail, senderName),
-                Subject = subject,
-                Body = bodyHtml,
-                IsBodyHtml = true
-            };
-            mailMessage.To.Add(email);
-
-            await client.SendMailAsync(mailMessage);
-            _logger.LogInformation("✅ Password reset OTP email sent successfully to {Email} via SMTP", email);
-            return true;
+            return await SendViaMailKitAsync(email, subject, bodyHtml, fullName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Failed to send password reset OTP email to {Email}. Render/SMTP error: {ErrorMessage}. Fallback OTP code: {OtpCode}", email, ex.Message, otpCode);
+            _logger.LogError(ex, "❌ MailKit SMTP error sending to {Email}: {ErrorMessage}. Fallback OTP: {OtpCode}", email, ex.Message, otpCode);
             return true;
         }
+    }
+
+    private async Task<bool> SendViaMailKitAsync(string toEmail, string subject, string bodyHtml, string fullName)
+    {
+        var smtpServer = _configuration["EmailSettings:SmtpServer"] ?? "smtp.gmail.com";
+        var portStr = _configuration["EmailSettings:SmtpPort"];
+        
+        // Mặc định cổng 465 (SSL) nếu dùng Gmail hoặc nếu không chỉ định cổng (Cổng 465 không bị Render chặn)
+        int smtpPort = !string.IsNullOrEmpty(portStr) ? int.Parse(portStr) : 465;
+        if (smtpServer.Contains("gmail") && smtpPort == 587)
+        {
+            // Tự động chuyển cổng 587 -> 465 trên Cloud để không bị chặn kết nối
+            smtpPort = 465;
+        }
+
+        var senderEmail = _configuration["EmailSettings:SenderEmail"];
+        var senderPassword = _configuration["EmailSettings:SenderPassword"];
+        var senderName = _configuration["EmailSettings:SenderName"] ?? "Resilience Housing Supply";
+
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress(senderName, senderEmail));
+        message.To.Add(new MailboxAddress(fullName, toEmail));
+        message.Subject = subject;
+
+        var bodyBuilder = new BodyBuilder { HtmlBody = bodyHtml };
+        message.Body = bodyBuilder.ToMessageBody();
+
+        using var client = new MailKit.Net.Smtp.SmtpClient();
+        
+        SecureSocketOptions options = smtpPort switch
+        {
+            465 => SecureSocketOptions.SslOnConnect, // Cổng SSL 465 không bị Render chặn
+            587 => SecureSocketOptions.StartTls,
+            _ => SecureSocketOptions.Auto
+        };
+
+        _logger.LogInformation("📧 MailKit connecting to {Server}:{Port} ({Options})", smtpServer, smtpPort, options);
+
+        client.Timeout = 10000; // 10s
+        await client.ConnectAsync(smtpServer, smtpPort, options);
+        await client.AuthenticateAsync(senderEmail, senderPassword);
+        await client.SendAsync(message);
+        await client.DisconnectAsync(true);
+
+        _logger.LogInformation("✅ OTP email sent successfully to {Email} via MailKit (Port {Port})", toEmail, smtpPort);
+        return true;
     }
 
     private async Task<bool> TrySendViaResendApiAsync(string apiKey, string toEmail, string subject, string bodyHtml, string senderName)
@@ -200,7 +212,6 @@ public class OtpService : IOtpService
             var resendFrom = _configuration["EmailSettings:ResendFromEmail"];
             string fromAddress;
 
-            // Resend bắt buộc dùng onboarding@resend.dev ngoại trừ khi bạn đã verify domain riêng trên Resend
             if (!string.IsNullOrEmpty(resendFrom) && !resendFrom.EndsWith("@gmail.com", StringComparison.OrdinalIgnoreCase))
             {
                 fromAddress = $"{senderName} <{resendFrom}>";
