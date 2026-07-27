@@ -100,10 +100,11 @@ public class LotteryService : ILotteryService
             .Distinct()
             .ToListAsync(ct);
 
-        var notifTitle = "Lịch bốc thăm đã được phê duyệt & công bố";
+        var notifTitle = "Sở đã phê duyệt & công bố lịch bốc thăm";
         var notifContent =
-            $"Dự án '{project.ProjectName}' đã chốt lịch bốc thăm vào lúc {project.LotteryDate:dd/MM/yyyy HH:mm} tại {project.LotteryLocation}. " +
-            $"Hình thức: {project.LotteryType}. Mã OTP vào sảnh: {project.LotteryJoinCode}.";
+            $"Dự án '{project.ProjectName}': lịch bốc thăm chính thức vào lúc {project.LotteryDate:dd/MM/yyyy HH:mm} tại {project.LotteryLocation}. " +
+            $"Hình thức: {project.LotteryType}. Mã OTP vào sảnh: {project.LotteryJoinCode}. " +
+            "Lịch do chủ đầu tư đề xuất và đã được Sở Xây dựng phê duyệt.";
 
         foreach (var applicantId in eligibleApplicants)
         {

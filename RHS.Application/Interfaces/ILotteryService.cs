@@ -21,7 +21,7 @@ public interface ILotteryService
     /// <summary>CĐT kết thúc phiên → Finished + chốt người chưa bốc</summary>
     Task<LotteryScheduleDetailDto> FinishSessionAsync(Guid projectId, Guid actorId, CancellationToken ct = default);
 
-    /// <summary>CĐT/SXD công bố → Published (API chỉ cho SXD/Admin).</summary>
+    /// <summary>SXD/Admin công bố kết quả phiên → Published (API chỉ cho SXD/Admin, không phải CĐT).</summary>
     Task<LotteryScheduleDetailDto> PublishSessionAsync(Guid projectId, Guid actorId, CancellationToken ct = default);
 
     /// <summary>Xác thực OTP vào sảnh (Applicant). Staff luôn pass.</summary>
