@@ -33,6 +33,7 @@ public class OtpService : IOtpService
         Console.WriteLine($"=================================================");
         _logger.LogInformation("🔑 [OTP GENERATED] Target Email: {Email} | OTP Code: {OtpCode}", email, otpCode);
 
+        var brevoApiKey = _configuration["EmailSettings:BrevoApiKey"] ?? _configuration["BrevoApiKey"];
         var resendApiKey = _configuration["EmailSettings:ResendApiKey"] ?? _configuration["ResendApiKey"];
         var senderName = _configuration["EmailSettings:SenderName"] ?? "Resilience Housing Supply";
         var subject = "Mã xác thực OTP - Resilience Housing Supply";
@@ -50,7 +51,14 @@ public class OtpService : IOtpService
             </body>
             </html>";
 
-        // 1️⃣ ƯU TIÊN 1: Dùng Resend HTTP REST API (Gửi qua HTTPS Cổng 443 - Không bao giờ bị Render chặn)
+        // 1️⃣ ƯU TIÊN 1: Dùng Brevo REST API (Cho phép gửi tới BẤT KỲ email nào, 300 mail/ngày miễn phí)
+        if (!string.IsNullOrEmpty(brevoApiKey))
+        {
+            var brevoSuccess = await TrySendViaBrevoApiAsync(brevoApiKey, email, subject, bodyHtml, senderName);
+            if (brevoSuccess) return true;
+        }
+
+        // 2️⃣ ƯU TIÊN 2: Dùng Resend HTTP REST API (Gửi qua HTTPS Cổng 443)
         if (!string.IsNullOrEmpty(resendApiKey))
         {
             var resendSuccess = await TrySendViaResendApiAsync(resendApiKey, email, subject, bodyHtml, senderName);
@@ -189,10 +197,18 @@ public class OtpService : IOtpService
             using var client = new HttpClient();
             client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
 
-            var customSender = _configuration["EmailSettings:SenderEmail"];
-            var fromAddress = string.IsNullOrEmpty(customSender) || customSender.Contains("example.com")
-                ? $"{senderName} <onboarding@resend.dev>"
-                : $"{senderName} <{customSender}>";
+            var resendFrom = _configuration["EmailSettings:ResendFromEmail"];
+            string fromAddress;
+
+            // Resend bắt buộc dùng onboarding@resend.dev ngoại trừ khi bạn đã verify domain riêng trên Resend
+            if (!string.IsNullOrEmpty(resendFrom) && !resendFrom.EndsWith("@gmail.com", StringComparison.OrdinalIgnoreCase))
+            {
+                fromAddress = $"{senderName} <{resendFrom}>";
+            }
+            else
+            {
+                fromAddress = $"{senderName} <onboarding@resend.dev>";
+            }
 
             var payload = new
             {
@@ -221,6 +237,49 @@ public class OtpService : IOtpService
         catch (Exception ex)
         {
             _logger.LogError(ex, "❌ Exception sending email via Resend HTTPS API to {Email}", toEmail);
+            return false;
+        }
+    }
+
+    private async Task<bool> TrySendViaBrevoApiAsync(string apiKey, string toEmail, string subject, string bodyHtml, string senderName)
+    {
+        try
+        {
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.Add("api-key", apiKey);
+
+            var customSender = _configuration["EmailSettings:SenderEmail"];
+            var senderEmail = string.IsNullOrEmpty(customSender) || customSender.Contains("example.com")
+                ? "no-reply@rhs.local"
+                : customSender;
+
+            var payload = new
+            {
+                sender = new { name = senderName, email = senderEmail },
+                to = new[] { new { email = toEmail } },
+                subject = subject,
+                htmlContent = bodyHtml
+            };
+
+            var json = JsonSerializer.Serialize(payload);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            _logger.LogInformation("🚀 Attempting to send email via Brevo HTTPS API to {Email}", toEmail);
+            var response = await client.PostAsync("https://api.brevo.com/v3/smtp/email", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("✅ Email sent successfully via Brevo HTTPS API to {Email}", toEmail);
+                return true;
+            }
+
+            var errorBody = await response.Content.ReadAsStringAsync();
+            _logger.LogWarning("⚠️ Brevo HTTPS API returned status {StatusCode}: {Error}", response.StatusCode, errorBody);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Exception sending email via Brevo HTTPS API to {Email}", toEmail);
             return false;
         }
     }
