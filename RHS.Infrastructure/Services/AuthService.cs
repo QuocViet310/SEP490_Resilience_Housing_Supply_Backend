@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using RHS.Application.DTOs.Auth;
 using RHS.Application.Interfaces;
@@ -19,6 +20,7 @@ public class AuthService : IAuthService
     private readonly IOtpService _otpService;
     private readonly IConfiguration _configuration;
     private readonly ILogger<AuthService> _logger;
+    private readonly Microsoft.Extensions.DependencyInjection.IServiceScopeFactory _serviceScopeFactory;
 
     public AuthService(
         IUserRepository userRepository,
@@ -29,7 +31,8 @@ public class AuthService : IAuthService
         IGoogleAuthService googleAuthService,
         IOtpService otpService,
         IConfiguration configuration,
-        ILogger<AuthService> logger)
+        ILogger<AuthService> logger,
+        Microsoft.Extensions.DependencyInjection.IServiceScopeFactory serviceScopeFactory)
     {
         _userRepository = userRepository;
         _refreshTokenRepository = refreshTokenRepository;
@@ -40,6 +43,7 @@ public class AuthService : IAuthService
         _otpService = otpService;
         _configuration = configuration;
         _logger = logger;
+        _serviceScopeFactory = serviceScopeFactory;
     }
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterDto registerDto)
@@ -96,16 +100,25 @@ public class AuthService : IAuthService
 
         await _otpRepository.CreateAsync(otp);
 
-        // Gửi email OTP ngầm (background) để không làm chậm response của API Đăng ký
+        // Gửi email OTP ngầm trong Scope riêng độc lập (tránh bị Dispose khi HTTP Request kết thúc)
+        var scopeFactory = _serviceScopeFactory;
+        var targetEmail = user.Email;
+        var targetName = user.FullName;
+        var targetOtp = otpCode;
+
         _ = Task.Run(async () =>
         {
+            using var scope = scopeFactory.CreateScope();
+            var otpService = scope.ServiceProvider.GetRequiredService<IOtpService>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<AuthService>>();
             try
             {
-                await _otpService.SendOtpEmailAsync(user.Email, otpCode, user.FullName);
+                logger.LogInformation("🚀 Background task sending OTP email to {Email}", targetEmail);
+                await otpService.SendOtpEmailAsync(targetEmail, targetOtp, targetName);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Background error sending OTP email to {Email}", user.Email);
+                logger.LogError(ex, "❌ Background error sending OTP email to {Email}", targetEmail);
             }
         });
 
@@ -550,15 +563,24 @@ public class AuthService : IAuthService
 
         await _otpRepository.CreateAsync(otp);
 
+        var scopeFactory = _serviceScopeFactory;
+        var targetEmail = user.Email;
+        var targetName = user.FullName;
+        var targetOtp = otpCode;
+
         _ = Task.Run(async () =>
         {
+            using var scope = scopeFactory.CreateScope();
+            var otpService = scope.ServiceProvider.GetRequiredService<IOtpService>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<AuthService>>();
             try
             {
-                await _otpService.SendPasswordResetOtpEmailAsync(user.Email, otpCode, user.FullName);
+                logger.LogInformation("🚀 Background task sending password reset OTP email to {Email}", targetEmail);
+                await otpService.SendPasswordResetOtpEmailAsync(targetEmail, targetOtp, targetName);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Background error sending password reset OTP email to {Email}", user.Email);
+                logger.LogError(ex, "❌ Background error sending password reset OTP email to {Email}", targetEmail);
             }
         });
 
