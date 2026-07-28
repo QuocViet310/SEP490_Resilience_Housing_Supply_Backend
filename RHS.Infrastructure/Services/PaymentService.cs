@@ -94,7 +94,7 @@ public class PaymentService : IPaymentService
             return new PaymentResponseDto
             {
                 Success = false,
-                Message = $"Hồ sơ chưa ký hợp đồng nguyên tắc. Trạng thái hiện tại: {application.ApplicationStatus}"
+                Message = $"Hồ sơ chưa ký hợp đồng mua bán nhà ở xã hội. Trạng thái hiện tại: {application.ApplicationStatus}"
             };
         }
 

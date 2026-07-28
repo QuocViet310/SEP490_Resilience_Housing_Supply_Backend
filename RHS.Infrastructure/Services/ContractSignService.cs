@@ -114,7 +114,7 @@ public class ContractSignService : IContractSignService
             return new ContractSignResponseDto
             {
                 Success = false,
-                Message = "Hợp đồng nguyên tắc chưa được tạo. Vui lòng liên hệ hỗ trợ."
+                Message = "Hợp đồng mua bán nhà ở xã hội chưa được tạo. Vui lòng liên hệ hỗ trợ."
             };
         }
 
@@ -160,7 +160,7 @@ public class ContractSignService : IContractSignService
                 Action        = ReviewActionConstants.ContractSigned,
                 OldStatus     = oldStatus,
                 NewStatus     = ApplicationStatusConstants.ContractSigned,
-                Note          = $"Người dân đồng ý điều khoản hợp đồng nguyên tắc. IP: {ipAddress ?? "N/A"}",
+                Note          = $"Người dân đồng ý điều khoản hợp đồng mua bán nhà ở xã hội. IP: {ipAddress ?? "N/A"}",
                 ChangedAt     = signedAt
             };
             await _context.ApplicationStatusHistories.AddAsync(history);
@@ -203,7 +203,7 @@ public class ContractSignService : IContractSignService
         return new ContractSignResponseDto
         {
             Success  = true,
-            Message  = "Ký hợp đồng nguyên tắc thành công.",
+            Message  = "Ký hợp đồng mua bán nhà ở xã hội thành công.",
             SignedAt = signedAt
         };
     }

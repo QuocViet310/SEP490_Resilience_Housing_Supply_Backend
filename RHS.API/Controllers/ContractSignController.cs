@@ -108,7 +108,7 @@ public class ContractSignController : ControllerBase
                 return NotFound(new
                 {
                     success = false,
-                    message = "Không tìm thấy hợp đồng nguyên tắc cho hồ sơ này."
+                    message = "Không tìm thấy hợp đồng mua bán nhà ở xã hội cho hồ sơ này."
                 });
 
             return Ok(new

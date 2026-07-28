@@ -35,8 +35,10 @@ public class VnPayService : IVnPayService
         var baseUrl    = _configuration["VnPay:BaseUrl"]!;
         var returnUrl  = _configuration["VnPay:ReturnUrl"]!;
 
-        var now        = request.CreatedDate;
-        var expireDate = now.AddMinutes(15);
+        // VNPay yêu cầu CreateDate/ExpireDate theo giờ Việt Nam (GMT+7).
+        // Không dùng DateTime.Now (UTC trên Docker) — sẽ làm ExpireDate quá hạn ngay.
+        var now = GetVietnamNow();
+        var expireDate = now.AddMinutes(30);
 
         // ── Build Dictionary tham số vnp_* (sẽ được sort & ký) ──────────
         // IPN URL cấu hình trên Merchant Admin VNPay → /api/payment/payment-ipn (VnPay:IpnUrl)
@@ -99,6 +101,26 @@ public class VnPayService : IVnPayService
     }
 
     // ── Private helpers ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Giờ Việt Nam (GMT+7) — bắt buộc cho vnp_CreateDate / vnp_ExpireDate.
+    /// </summary>
+    private static DateTime GetVietnamNow()
+    {
+        try
+        {
+            var tzId = OperatingSystem.IsWindows()
+                ? "SE Asia Standard Time"
+                : "Asia/Ho_Chi_Minh";
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+        }
+        catch (Exception)
+        {
+            // Container thiếu tzdata → cộng cố định +7
+            return DateTime.UtcNow.AddHours(7);
+        }
+    }
 
     /// <summary>
     /// Ghép các cặp key=value theo thứ tự alphabet (SortedDictionary),
