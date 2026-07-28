@@ -4,6 +4,7 @@ using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Data;
+using RHS.Infrastructure.Helpers;
 
 namespace RHS.Infrastructure.Repositories;
 
@@ -179,6 +180,13 @@ public class HousingProjectRepository : IHousingProjectRepository
         entity.CreatedAt = DateTime.UtcNow;
         _context.HousingProjects.Add(entity);
         await _context.SaveChangesAsync();
+
+        if (entity.Apartments.Count > 0)
+        {
+            await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_context, entity.Id);
+            await _context.SaveChangesAsync();
+        }
+
         return entity;
     }
 
@@ -230,6 +238,10 @@ public class HousingProjectRepository : IHousingProjectRepository
             .ToList();
 
         _context.HousingProjects.Update(entity);
+        await _context.SaveChangesAsync();
+
+        // AvailableUnits = Count(AVAILABLE) − soft-hold
+        await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_context, entity.Id);
         await _context.SaveChangesAsync();
     }
 

@@ -197,7 +197,7 @@ public class ContractSignService : IContractSignService
         await _notificationService.SendAsync(
             applicantId,
             "Ký hợp đồng thành công",
-            "Bạn đã đồng ý điều khoản hợp đồng nguyên tắc. Lịch đặt cọc đã được tạo — vui lòng thanh toán đúng hạn.",
+            "Bạn đã đồng ý điều khoản hợp đồng mua bán nhà ở xã hội. Lịch thanh toán Đợt 1 đã được tạo — vui lòng thanh toán đúng hạn.",
             NotificationTypeConstants.ContractSigned);
 
         return new ContractSignResponseDto

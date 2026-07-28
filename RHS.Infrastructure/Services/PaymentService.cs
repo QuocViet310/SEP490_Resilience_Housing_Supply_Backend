@@ -116,7 +116,7 @@ public class PaymentService : IPaymentService
                 return new PaymentResponseDto
                 {
                     Success = false,
-                    Message = "Hồ sơ này đã thanh toán đặt cọc thành công."
+                    Message = "Hồ sơ này đã thanh toán Đợt 1 thành công."
                 };
             }
 
@@ -124,7 +124,7 @@ public class PaymentService : IPaymentService
             var resumeRequest = new VnPaymentRequest
             {
                 OrderId     = existingPayment.OrderId,
-                OrderInfo   = existingPayment.OrderInfo ?? $"Dat coc ho so {existingPayment.OrderId}",
+                OrderInfo   = existingPayment.OrderInfo ?? $"Thanh toan Dot 1 ho so {existingPayment.OrderId}",
                 OrderType   = "deposit",
                 Amount      = existingPayment.Amount,
                 CreatedDate = DateTime.Now
@@ -162,14 +162,14 @@ public class PaymentService : IPaymentService
             return new PaymentResponseDto
             {
                 Success = false,
-                Message = "Dự án chưa cấu hình số tiền đặt cọc."
+                Message = "Dự án chưa cấu hình số tiền Đợt 1."
             };
         }
 
         // ── 3. Tạo mã đơn hàng + lưu Payment ──────────────────────────────
         var orderId = GenerateOrderId();
         var orderInfo = dto.OrderInfo
-            ?? $"Dat coc ho so {orderId} - Du an {RemoveDiacritics(project.ProjectName)}";
+            ?? $"Thanh toan Dot 1 ho so {orderId} - Du an {RemoveDiacritics(project.ProjectName)}";
 
         var payment = new Payment
         {
@@ -474,7 +474,7 @@ public class PaymentService : IPaymentService
                 Action        = ReviewActionConstants.DepositPayment,
                 OldStatus     = oldStatus,
                 NewStatus     = ApplicationStatusConstants.DepositPaid,
-                Note          = $"Thanh toán đặt cọc thành công. OrderId: {payment.OrderId}, SlotCode: {slotCode}",
+                Note          = $"Thanh toán Đợt 1 thành công. OrderId: {payment.OrderId}, SlotCode: {slotCode}",
                 ChangedAt     = DateTime.UtcNow
             });
 
@@ -505,8 +505,8 @@ public class PaymentService : IPaymentService
 
             await _notificationService.SendAsync(
                 application.ApplicantId,
-                "Thanh toán đặt cọc thành công",
-                $"Mã giao dịch/suất: {slotCode}. Hồ sơ đã chuyển sang trạng thái đặt cọc thành công.",
+                "Thanh toán Đợt 1 thành công",
+                $"Mã giao dịch/suất: {slotCode}. Hồ sơ đã ghi nhận thanh toán Đợt 1 thành công.",
                 NotificationTypeConstants.DepositPaid);
         }
         catch (Exception ex)

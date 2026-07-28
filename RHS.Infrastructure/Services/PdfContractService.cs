@@ -99,7 +99,7 @@ public class PdfContractService : IPdfContractService
             ? $"{apartment!.UnitName} ({apartment.Area:0.##} m²)"
             : $"Theo phương án giá dự án (mã suất: {slotCode})";
 
-        // Giá bán: ưu tiên giá loại căn đã gán; không thì khoảng giá dự án / cọc tạm
+        // Giá bán: ưu tiên giá căn đã cấp; không thì khoảng giá dự án / số tiền đợt tạm
         var salePrice = hasApartment
             ? apartment!.Price
             : (project.MinPrice > 0 ? project.MinPrice : paymentAmount);
@@ -206,7 +206,7 @@ public class PdfContractService : IPdfContractService
                     Bullet(col, $"1. Loại nhà ở: {houseType}");
                     Bullet(col, $"2. Địa chỉ nhà ở / dự án: {projectAddress}");
                     Bullet(col, $"3. Diện tích sử dụng: {areaText} m² (căn hộ chung cư tính theo diện tích thông thủy)");
-                    Bullet(col, $"4. Loại căn / mã suất: {unitLabel}");
+                    Bullet(col, $"4. Căn hộ / mã suất: {unitLabel}");
                     Bullet(col, "5. Phần sở hữu chung, sử dụng chung; thời hạn sử dụng nhà chung cư; diện tích sở hữu riêng; mục đích sử dụng phần chung: theo hồ sơ thiết kế đã được phê duyệt của dự án.");
                     Bullet(col, "6. Các trang thiết bị chủ yếu gắn liền với nhà ở: theo biên bản bàn giao và hồ sơ kỹ thuật dự án.");
                     Bullet(col, $"7. Đặc điểm về đất xây dựng / vị trí: {project.Ward}, {project.Province}.");
@@ -214,7 +214,7 @@ public class PdfContractService : IPdfContractService
                     if (!hasApartment)
                     {
                         col.Item().PaddingLeft(12).Text(
-                            "Ghi chú: Chi tiết loại căn, diện tích và đơn giá chính thức được chốt khi Chủ đầu tư/Sở gán loại căn trên hệ thống; phụ lục điều chỉnh (nếu có) đính kèm hợp đồng này.")
+                            "Ghi chú: Chi tiết căn, diện tích và đơn giá chính thức được chốt khi Chủ đầu tư cấp căn trên hệ thống trước khi ký; phụ lục điều chỉnh (nếu có) đính kèm hợp đồng này.")
                             .Italic().FontSize(9).FontColor(Colors.Grey.Darken2);
                     }
 
@@ -227,8 +227,8 @@ public class PdfContractService : IPdfContractService
                     if (!string.IsNullOrWhiteSpace(vnpTransactionNo))
                         Bullet(col, $"   Mã giao dịch gần nhất: {vnpTransactionNo}");
                     Bullet(col, "5. Thời hạn thực hiện thanh toán (trả chậm / trả dần):");
-                    Bullet(col, $"   - Đợt đặt cọc / đợt 1: {depositFmt} đồng (Bằng chữ: {depositWords} đồng), trong thời hạn theo chính sách dự án sau ngày ký Hợp đồng này.");
-                    Bullet(col, "   - Các đợt tiếp theo: theo lịch PaymentInstallment / phương án thanh toán do Chủ đầu tư công bố trên hệ thống (Đợt 1, Đợt 2…), không thu quá 95% giá trị hợp đồng trước khi cấp Giấy chứng nhận.");
+                    Bullet(col, $"   - Đợt 1 (sau ký HĐ): {depositFmt} đồng (Bằng chữ: {depositWords} đồng), trong thời hạn theo chính sách dự án.");
+                    Bullet(col, "   - Các đợt tiếp theo: theo lịch thanh toán trên hệ thống (Đợt 2, Đợt 3…), không thu quá 95% giá trị hợp đồng trước khi cấp Giấy chứng nhận.");
                     Bullet(col, "6. Mức phí và nguyên tắc điều chỉnh phí quản lý vận hành nhà chung cư trong thời gian chưa thành lập Ban Quản trị: theo quy chế quản lý vận hành dự án.");
 
                     // ── Điều 3 ──
@@ -276,7 +276,7 @@ public class PdfContractService : IPdfContractService
                     Bullet(col, "3. Nội dung không trái quy định pháp luật về dân sự và nhà ở.");
 
                     Section(col, "Điều 12. Hiệu lực của hợp đồng");
-                    Bullet(col, $"1. Hợp đồng có hiệu lực kể từ ngày Bên mua ký xác nhận trên hệ thống ({now:dd/MM/yyyy}) hoặc ngày ghi nhận thanh toán đặt cọc thành công (nếu muộn hơn).");
+                    Bullet(col, $"1. Hợp đồng có hiệu lực kể từ ngày Bên mua ký xác nhận trên hệ thống ({now:dd/MM/yyyy}) hoặc ngày ghi nhận thanh toán Đợt 1 thành công (nếu muộn hơn).");
                     Bullet(col, "2. Hợp đồng được lập thành chứng từ điện tử có giá trị pháp lý tương đương bản giấy; mỗi bên được tải/lưu bản PDF; bản lưu tại hệ thống phục vụ cơ quan thuế / cấp Giấy chứng nhận khi có yêu cầu.");
 
                     col.Item().PaddingTop(20).Row(row =>

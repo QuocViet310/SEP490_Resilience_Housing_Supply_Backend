@@ -446,10 +446,40 @@ public class InstallmentService : IInstallmentService
     /// </summary>
     /// <summary>
     /// Nếu dự án chưa có milestone active → seed mặc định 3 đợt:
-    /// đặt cọc (FIXED / ON_CONTRACT_SIGNED), đợt 1 &amp; đợt 2 (% giá căn / ON_LOTTERY_WON).
+    /// Đợt 1 (FIXED / ON_CONTRACT_SIGNED), Đợt 2 &amp; Đợt 3 (% giá căn / ON_LOTTERY_WON).
+    /// Đồng thời chuẩn hóa tên milestone cũ "Đặt cọc" → "Đợt 1/2/3".
     /// </summary>
     private async Task EnsureDefaultMilestonesAsync(Guid projectId)
     {
+        // Chuẩn hóa nhãn cũ "Đặt cọc" / Đợt lệch số → Đợt 1/2/3 theo PhaseOrder
+        var legacy = await _db.PaymentMilestones
+            .Where(m => m.ProjectId == projectId && m.IsActive)
+            .OrderBy(m => m.PhaseOrder)
+            .ToListAsync();
+        if (legacy.Count > 0)
+        {
+            var touched = false;
+            foreach (var m in legacy)
+            {
+                if (m.PhaseOrder is < 1 or > 3) continue;
+                var expected = $"Đợt {m.PhaseOrder}";
+                if (m.PhaseName != expected)
+                {
+                    m.PhaseName = expected;
+                    touched = true;
+                }
+                if (m.PhaseOrder == 1 &&
+                    (m.Description?.Contains("đặt cọc", StringComparison.OrdinalIgnoreCase) == true
+                     || m.Description?.Contains("nguyên tắc", StringComparison.OrdinalIgnoreCase) == true))
+                {
+                    m.Description = "Đợt 1 — thanh toán sau khi ký hợp đồng mua bán nhà ở xã hội";
+                    touched = true;
+                }
+            }
+            if (touched)
+                await _db.SaveChangesAsync();
+        }
+
         var hasActive = await _db.PaymentMilestones
             .AnyAsync(m => m.ProjectId == projectId && m.IsActive);
         if (hasActive)
@@ -460,7 +490,7 @@ public class InstallmentService : IInstallmentService
         if (project == null)
             return;
 
-        var deposit = project.DepositAmount > 0 ? project.DepositAmount : 50_000_000m;
+        var phase1Fixed = project.DepositAmount > 0 ? project.DepositAmount : 50_000_000m;
         var now = DateTime.UtcNow;
 
         _db.PaymentMilestones.AddRange(
@@ -469,12 +499,12 @@ public class InstallmentService : IInstallmentService
                 Id = Guid.NewGuid(),
                 ProjectId = projectId,
                 PhaseOrder = 1,
-                PhaseName = "Đặt cọc",
+                PhaseName = "Đợt 1",
                 CalculationType = CalculationTypeConstants.FixedAmount,
-                FixedAmount = deposit,
+                FixedAmount = phase1Fixed,
                 TriggerEvent = TriggerEventConstants.OnContractSigned,
                 DueDays = 7,
-                Description = "Đợt đặt cọc sau khi ký hợp đồng mua bán nhà ở xã hội",
+                Description = "Đợt 1 — thanh toán sau khi ký hợp đồng mua bán nhà ở xã hội",
                 IsActive = true,
                 CreatedAt = now
             },
@@ -483,12 +513,12 @@ public class InstallmentService : IInstallmentService
                 Id = Guid.NewGuid(),
                 ProjectId = projectId,
                 PhaseOrder = 2,
-                PhaseName = "Đợt 1",
+                PhaseName = "Đợt 2",
                 CalculationType = CalculationTypeConstants.Percentage,
                 Percentage = 40m,
                 TriggerEvent = TriggerEventConstants.OnLotteryWon,
                 DueDays = 30,
-                Description = "Đợt 1 theo đơn giá căn đã thẩm định (sau gán loại căn)",
+                Description = "Đợt 2 theo đơn giá căn đã thẩm định (sau cấp căn)",
                 IsActive = true,
                 CreatedAt = now
             },
@@ -497,19 +527,18 @@ public class InstallmentService : IInstallmentService
                 Id = Guid.NewGuid(),
                 ProjectId = projectId,
                 PhaseOrder = 3,
-                PhaseName = "Đợt 2",
+                PhaseName = "Đợt 3",
                 CalculationType = CalculationTypeConstants.Percentage,
                 Percentage = 60m,
                 TriggerEvent = TriggerEventConstants.OnLotteryWon,
                 DueDays = 90,
-                Description = "Đợt 2 theo đơn giá căn đã thẩm định (sau gán loại căn)",
+                Description = "Đợt 3 theo đơn giá căn đã thẩm định",
                 IsActive = true,
                 CreatedAt = now
             });
-
         await _db.SaveChangesAsync();
         _logger.LogInformation(
-            "Seeded default payment milestones (cọc / đợt 1 / đợt 2) for Project={ProjectId}.",
+            "Seeded default payment milestones (Đợt 1/2/3) for Project={ProjectId}.",
             projectId);
     }
 

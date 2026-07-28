@@ -9,6 +9,7 @@ using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Data;
 using RHS.Infrastructure.Exceptions;
+using RHS.Infrastructure.Helpers;
 
 namespace RHS.Infrastructure.Services;
 
@@ -613,6 +614,11 @@ public class HousingApplicationService : IHousingApplicationService
     /// <inheritdoc/>
     public async Task<ProjectApplicationEvaluationDto> GetProjectApplicationEvaluationAsync(Guid projectId)
     {
+        // Căn cứ = đếm căn AVAILABLE − soft-hold (không tin counter cũ)
+        var availableUnits = await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(
+            _context, projectId, _logger);
+        await _context.SaveChangesAsync();
+
         var project = await _context.HousingProjects
             .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == projectId)
@@ -634,13 +640,13 @@ public class HousingApplicationService : IHousingApplicationService
         var priorityApps = apps.Where(a => !string.IsNullOrWhiteSpace(a.PriorityGroup)).Select(MapToSummaryItem).ToList();
         var nonPriorityApps = apps.Where(a => string.IsNullOrWhiteSpace(a.PriorityGroup)).Select(MapToSummaryItem).ToList();
 
-        var scenario = apps.Count <= project.AvailableUnits ? "LESS_OR_EQUAL_AVAILABLE" : "GREATER_THAN_AVAILABLE";
+        var scenario = apps.Count <= availableUnits ? "LESS_OR_EQUAL_AVAILABLE" : "GREATER_THAN_AVAILABLE";
 
         return new ProjectApplicationEvaluationDto
         {
             ProjectId = projectId,
             ProjectName = project.ProjectName,
-            AvailableUnits = project.AvailableUnits,
+            AvailableUnits = availableUnits,
             TotalQualifiedApplications = apps.Count,
             PriorityCount = priorityApps.Count,
             NonPriorityCount = nonPriorityApps.Count,
@@ -679,6 +685,9 @@ public class HousingApplicationService : IHousingApplicationService
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
+            // Đồng bộ suất từ số căn AVAILABLE trước khi quyết định
+            await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_context, projectId, _logger);
+
             if (request.DecisionType == "CLOSE_AND_SIGN")
             {
                 if (project.AvailableUnits <= 0)
@@ -712,9 +721,7 @@ public class HousingApplicationService : IHousingApplicationService
                     appsNeedingInstallments.Add(app.ApplicationId);
                 }
 
-                project.AvailableUnits = await _context.Apartments.CountAsync(a =>
-                    a.ProjectId == projectId
-                    && a.Status == ApartmentStatusConstants.Available);
+                await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_context, projectId, _logger);
                 project.UpdatedAt = now;
 
                 if (request.CloseProject)
@@ -792,9 +799,7 @@ public class HousingApplicationService : IHousingApplicationService
                     appsNeedingInstallments.Add(app.ApplicationId);
                 }
 
-                project.AvailableUnits = await _context.Apartments.CountAsync(a =>
-                    a.ProjectId == projectId
-                    && a.Status == ApartmentStatusConstants.Available);
+                await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_context, projectId, _logger);
                 project.UpdatedAt = now;
             }
             else
@@ -945,7 +950,7 @@ public class HousingApplicationService : IHousingApplicationService
 
         pendingNotify.Add((
             app.ApplicantId,
-            "Hồ sơ của bạn đã được chốt suất. Vui lòng xem và ký hợp đồng mua bán nhà ở xã hội trên ứng dụng; sau khi ký mới đặt cọc VNPay."));
+            "Hồ sơ của bạn đã được chốt suất. Vui lòng xem và ký hợp đồng mua bán nhà ở xã hội trên ứng dụng; sau khi ký sẽ thanh toán Đợt 1 qua VNPay."));
     }
 
     private static ApplicationSummaryItemDto MapToSummaryItem(HousingApplication a)

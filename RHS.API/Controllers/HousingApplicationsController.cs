@@ -7,6 +7,7 @@ using RHS.Application.DTOs.HousingApplications.Dashboard;
 using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
 using RHS.Infrastructure.Exceptions;
+using RHS.Infrastructure.Helpers;
 using System.Security.Claims;
 
 namespace RHS.API.Controllers;
@@ -744,9 +745,8 @@ public class HousingApplicationsController : ControllerBase
             app.UpdatedAt = DateTime.UtcNow;
             apartment.Status = ApartmentStatusConstants.Assigned;
 
-            var project = await context.HousingProjects.FindAsync(app.ProjectId);
-            if (project != null && project.AvailableUnits > 0)
-                project.AvailableUnits--;
+            // Không AvailableUnits-- thủ công: đồng bộ từ Count(AVAILABLE) − soft-hold
+            await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(context, app.ProjectId, _logger);
 
             context.ApplicationStatusHistories.Add(new Domain.Entities.ApplicationStatusHistory
             {
@@ -755,7 +755,7 @@ public class HousingApplicationsController : ControllerBase
                 OldStatus     = app.ApplicationStatus,
                 NewStatus     = app.ApplicationStatus,
                 Action        = ReviewActionConstants.AssignApartment,
-                Note          = $"Bàn giao căn: {apartment.UnitName} {apartment.Area}m² - {apartment.Price:N0} VND",
+                Note          = $"Cấp căn: {apartment.UnitName} {apartment.Area}m² - {apartment.Price:N0} VND",
                 ChangedAt     = DateTime.UtcNow,
                 ChangedBy     = GetCurrentUserId()
             });

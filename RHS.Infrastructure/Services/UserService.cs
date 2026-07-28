@@ -5,6 +5,7 @@ using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Data;
+using RHS.Infrastructure.Helpers;
 using BCrypt.Net;
 
 namespace RHS.Infrastructure.Services;
@@ -209,7 +210,7 @@ public class UserService : IUserService
         user.Email = $"deleted+{userId:N}@{SanitizeEmailDomain(originalEmail)}";
         user.UpdatedAt = DateTime.UtcNow;
 
-        // Hủy hồ sơ còn mở (không đụng DEPOSIT_PAID / APPROVED đã hỗ trợ — Đ38.1.đ vẫn dựa CitizenId trên hồ sơ)
+        // Hủy hồ sơ còn mở (kể cả đang giữ suất CONTRACT_PENDING / CONTRACT_SIGNED)
         var openStatuses = new[]
         {
             ApplicationStatusConstants.Draft,
@@ -217,7 +218,10 @@ public class UserService : IUserService
             ApplicationStatusConstants.Reviewing,
             ApplicationStatusConstants.NeedMoreDocuments,
             ApplicationStatusConstants.PendingSxdReview,
-            ApplicationStatusConstants.Approved
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout,
+            ApplicationStatusConstants.ContractPending,
+            ApplicationStatusConstants.ContractSigned,
         };
 
         var openApps = await _db.HousingApplications
@@ -228,7 +232,9 @@ public class UserService : IUserService
         foreach (var app in openApps)
         {
             var oldStatus = app.ApplicationStatus;
+            var apartmentId = app.ApartmentId;
             app.ApplicationStatus = ApplicationStatusConstants.Canceled;
+            app.ApartmentId = null;
             app.UpdatedAt = now;
             _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
             {
@@ -241,6 +247,9 @@ public class UserService : IUserService
                 Note = "Tự động hủy do người dùng xóa tài khoản.",
                 ChangedAt = now
             });
+
+            await ProjectUnitSeatHelper.TryReleaseReservedUnitAsync(
+                _db, app.ProjectId, oldStatus, apartmentId);
         }
 
         await _userRepository.UpdateAsync(user);

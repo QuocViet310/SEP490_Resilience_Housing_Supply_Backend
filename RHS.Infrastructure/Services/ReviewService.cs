@@ -785,20 +785,23 @@ public class ReviewService : IReviewService
         try
         {
             // APPROVED không giữ suất → không hoàn.
-            // CONTRACT_PENDING (đã chốt/trúng) giữ suất → hoàn 1 căn khi huỷ.
+            // CONTRACT_PENDING (đã chốt/trúng + có thể đã cấp căn) → hoàn căn AVAILABLE khi huỷ.
             // CONTRACT_SIGNED thuộc ClosedStatuses nên không vào đây.
 
+            var apartmentId = application.ApartmentId;
+
             application.ApplicationStatus = ApplicationStatusConstants.Canceled;
+            application.ApartmentId = null;
             application.UpdatedAt = now;
 
             await _applicationRepo.UpdateAsync(application);
 
             var released = await ProjectUnitSeatHelper.TryReleaseReservedUnitAsync(
-                _context, application.ProjectId, oldStatus, _logger);
+                _context, application.ProjectId, oldStatus, apartmentId, _logger);
 
             var cancelNote = request.CancelReason.Trim();
             if (released)
-                cancelNote = $"{cancelNote} | Đã hoàn 1 suất căn về dự án.";
+                cancelNote = $"{cancelNote} | Đã hoàn căn về dự án (AVAILABLE).";
 
             await AppendHistoryAsync(
                 applicationId: applicationId,

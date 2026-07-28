@@ -117,9 +117,9 @@ public class PaymentTimeoutWorker : BackgroundService
                 notificationService,
                 app,
                 action: ReviewActionConstants.PaymentTimeout,
-                note: $"Tự động hủy do quá hạn thanh toán đặt cọc sau khi ký HĐ ({depositHours} giờ — PolicyConfig DEPOSIT_PAYMENT_HOURS).",
+                note: $"Tự động hủy do quá hạn thanh toán Đợt 1 sau khi ký HĐ ({depositHours} giờ — PolicyConfig DEPOSIT_PAYMENT_HOURS).",
                 notifTitle: "Hồ sơ đã hết hạn thanh toán",
-                notifBody: $"Hồ sơ của bạn đã bị hủy do không thanh toán đặt cọc trong vòng {depositHours} giờ sau khi ký hợp đồng nguyên tắc.",
+                notifBody: $"Hồ sơ của bạn đã bị hủy do không thanh toán Đợt 1 trong vòng {depositHours} giờ sau khi ký hợp đồng mua bán nhà ở xã hội.",
                 stoppingToken);
         }
     }
@@ -150,15 +150,17 @@ public class PaymentTimeoutWorker : BackgroundService
         try
         {
             var oldStatus = app.ApplicationStatus;
+            var apartmentId = app.ApartmentId;
             app.ApplicationStatus = ApplicationStatusConstants.Expired;
+            app.ApartmentId = null;
             app.UpdatedAt = DateTime.UtcNow;
             context.HousingApplications.Update(app);
 
             var released = await ProjectUnitSeatHelper.TryReleaseReservedUnitAsync(
-                context, app.ProjectId, oldStatus, _logger, stoppingToken);
+                context, app.ProjectId, oldStatus, apartmentId, _logger, stoppingToken);
 
             var historyNote = released
-                ? $"{note} Đã hoàn 1 suất căn về dự án."
+                ? $"{note} Đã hoàn căn về dự án (AVAILABLE)."
                 : note;
 
             context.ApplicationStatusHistories.Add(new ApplicationStatusHistory

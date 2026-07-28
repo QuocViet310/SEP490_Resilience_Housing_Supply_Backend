@@ -8,6 +8,7 @@ using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Data;
+using RHS.Infrastructure.Helpers;
 using RHS.Infrastructure.Hubs;
 
 namespace RHS.Infrastructure.Services;
@@ -60,6 +61,9 @@ public class LotteryService : ILotteryService
         if (dto.LotteryDate.ToUniversalTime() < DateTime.UtcNow.AddMinutes(-1))
             throw new InvalidOperationException("Thời gian bốc thăm phải ở tương lai.");
 
+        // Căn cứ suất = đếm căn AVAILABLE − soft-hold
+        await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
+
         if (project.AvailableUnits <= 0)
             throw new InvalidOperationException("Dự án đã hết suất — không cần đề xuất lịch bốc thăm.");
 
@@ -95,7 +99,7 @@ public class LotteryService : ILotteryService
             if (dto.TotalUnits.Value > project.AvailableUnits)
                 throw new InvalidOperationException(
                     $"Số căn mở bốc thăm không được vượt số căn còn lại ({project.AvailableUnits}).");
-            project.AvailableUnits = dto.TotalUnits.Value;
+            // Không ghi đè AvailableUnits — TotalUnits chỉ là trần phiên bốc thăm (lưu ở draw lúc chạy).
         }
 
         await _db.SaveChangesAsync(ct);
@@ -267,23 +271,42 @@ public class LotteryService : ILotteryService
         if (participants.Count == 0)
             throw new InvalidOperationException("Không có hồ sơ đủ điều kiện (APPROVED / APPROVED_BY_TIMEOUT) để bốc thăm.");
 
-        // Hướng A: nếu đã bốc thăm trước đó, hoàn suất của người từng trúng trước khi phân bổ lại.
+        // Re-run: hoàn căn + giải phóng soft-hold của lần trúng trước (nếu còn sót trong pool)
         var wonResults = new[]
         {
             LotteryResultConstants.Won,
             LotteryResultConstants.PriorityWon
         };
-        var previousWinners = participants.Count(a =>
-            a.LotteryResult != null && wonResults.Contains(a.LotteryResult));
-        if (previousWinners > 0)
+        var previousWinners = participants
+            .Where(a => a.LotteryResult != null && wonResults.Contains(a.LotteryResult))
+            .ToList();
+        if (previousWinners.Count > 0)
         {
-            project.AvailableUnits += previousWinners;
+            foreach (var app in previousWinners)
+            {
+                if (app.ApartmentId.HasValue)
+                {
+                    var apt = await _db.Apartments.FirstOrDefaultAsync(
+                        a => a.Id == app.ApartmentId.Value && a.ProjectId == projectId, ct);
+                    if (apt != null
+                        && string.Equals(apt.Status, ApartmentStatusConstants.Assigned, StringComparison.OrdinalIgnoreCase))
+                    {
+                        apt.Status = ApartmentStatusConstants.Available;
+                    }
+                    app.ApartmentId = null;
+                }
+                app.LotteryResult = LotteryResultConstants.Pending;
+                app.SlotCode = null;
+            }
+
             _logger.LogInformation(
-                "Lottery re-run for project {ProjectId}: restored {Count} units before redraw. AvailableUnits={Units}.",
-                projectId, previousWinners, project.AvailableUnits);
+                "Lottery re-run for project {ProjectId}: reset {Count} previous winner(s) before redraw.",
+                projectId, previousWinners.Count);
         }
 
-        // Trần phân bổ = AvailableUnits (số căn công bố / còn lại), không mặc định = số người nộp.
+        // Căn cứ phân bổ = đếm căn AVAILABLE − soft-hold
+        await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
+
         if (project.AvailableUnits <= 0)
             throw new InvalidOperationException(
                 "Dự án đã hết suất để phân bổ qua bốc thăm (AvailableUnits = 0).");
@@ -430,11 +453,8 @@ public class LotteryService : ILotteryService
             quota.RemainingSlots = Math.Max(0, quota.AllocatedSlots - used);
         }
 
-        // Trừ suất khi chính thức trúng (WON / PRIORITY_WON)
-        var winnerCount = priorityWinners.Count + randomWinners.Count;
-        project.AvailableUnits -= winnerCount;
-        if (project.AvailableUnits < 0)
-            project.AvailableUnits = 0;
+        // Trừ suất = soft-hold (CONTRACT_PENDING chưa gán căn) — sync từ đếm căn
+        await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
         project.UpdatedAt = DateTime.UtcNow;
 
         var draw = new LotteryDraw
@@ -525,9 +545,12 @@ public class LotteryService : ILotteryService
             var now = DateTime.UtcNow;
             var oldStatus = app.ApplicationStatus;
 
-            if (project.AvailableUnits > 0)
+            // Căn cứ = đếm căn AVAILABLE − soft-hold (không AvailableUnits-- tay)
+            var remainingBefore = await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(
+                _db, projectId, _logger, ct);
+
+            if (remainingBefore > 0)
             {
-                project.AvailableUnits--;
                 bool isPriority = !string.IsNullOrWhiteSpace(app.PriorityGroup);
                 resultStatus = isPriority ? LotteryResultConstants.PriorityWon : LotteryResultConstants.Won;
 
@@ -561,6 +584,8 @@ public class LotteryService : ILotteryService
                     Note = "Trúng bốc thăm live, chuyển sang ký hợp đồng nguyên tắc.",
                     ChangedAt = now
                 });
+
+                await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
             }
             else
             {
@@ -591,7 +616,7 @@ public class LotteryService : ILotteryService
                     await _notificationService.SendAsync(
                         applicantId,
                         "Trúng bốc thăm — vui lòng ký hợp đồng",
-                        "Bạn đã trúng bốc thăm. Vui lòng xem và ký hợp đồng mua bán nhà ở xã hội; sau khi ký mới đặt cọc VNPay.",
+                        "Bạn đã trúng bốc thăm. Vui lòng xem và ký hợp đồng mua bán nhà ở xã hội; sau khi ký sẽ thanh toán Đợt 1 qua VNPay.",
                         NotificationTypeConstants.ContractPending);
                 }
                 else if (resultStatus == LotteryResultConstants.Lost)

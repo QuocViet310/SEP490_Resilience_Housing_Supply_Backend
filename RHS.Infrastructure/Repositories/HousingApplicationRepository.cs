@@ -66,6 +66,7 @@ public class HousingApplicationRepository : IHousingApplicationRepository
         existingApplication.SpouseMonthlyIncome = application.SpouseMonthlyIncome;
         existingApplication.AverageHousingAreaPerPerson = application.AverageHousingAreaPerPerson;
         existingApplication.LotteryResult = application.LotteryResult;
+        existingApplication.ApartmentId = application.ApartmentId;
         existingApplication.LatestAssessmentId = application.LatestAssessmentId;
         existingApplication.IsViolation = application.IsViolation;
         existingApplication.ViolationReason = application.ViolationReason;

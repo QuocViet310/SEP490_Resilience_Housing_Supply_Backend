@@ -164,19 +164,20 @@ public class HousingProjectService : IHousingProjectService
         }
         else
         {
-            var deposit = request.DepositAmount > 0 ? request.DepositAmount : 50_000_000m;
+            // DepositAmount (API) = số tiền cố định Đợt 1 sau ký HĐ (lần thanh toán đầu).
+            var phase1Fixed = request.DepositAmount > 0 ? request.DepositAmount : 50_000_000m;
             var now = DateTime.UtcNow;
             housingProject.PaymentMilestones.Add(new PaymentMilestone
             {
                 Id = Guid.NewGuid(),
                 ProjectId = housingProject.Id,
                 PhaseOrder = 1,
-                PhaseName = "Đặt cọc",
+                PhaseName = "Đợt 1",
                 CalculationType = CalculationTypeConstants.FixedAmount,
-                FixedAmount = deposit,
+                FixedAmount = phase1Fixed,
                 TriggerEvent = TriggerEventConstants.OnContractSigned,
                 DueDays = 7,
-                Description = "Đợt đặt cọc sau khi ký hợp đồng nguyên tắc",
+                Description = "Đợt 1 — thanh toán sau khi ký hợp đồng mua bán nhà ở xã hội (≤ 30% giá trị HĐ theo Luật KD BĐS)",
                 IsActive = true,
                 CreatedAt = now
             });
@@ -185,12 +186,12 @@ public class HousingProjectService : IHousingProjectService
                 Id = Guid.NewGuid(),
                 ProjectId = housingProject.Id,
                 PhaseOrder = 2,
-                PhaseName = "Đợt 1",
+                PhaseName = "Đợt 2",
                 CalculationType = CalculationTypeConstants.Percentage,
                 Percentage = 40m,
                 TriggerEvent = TriggerEventConstants.OnLotteryWon,
                 DueDays = 30,
-                Description = "Đợt 1 theo đơn giá căn đã thẩm định",
+                Description = "Đợt 2 theo đơn giá căn đã thẩm định",
                 IsActive = true,
                 CreatedAt = now
             });
@@ -199,12 +200,12 @@ public class HousingProjectService : IHousingProjectService
                 Id = Guid.NewGuid(),
                 ProjectId = housingProject.Id,
                 PhaseOrder = 3,
-                PhaseName = "Đợt 2",
+                PhaseName = "Đợt 3",
                 CalculationType = CalculationTypeConstants.Percentage,
                 Percentage = 60m,
                 TriggerEvent = TriggerEventConstants.OnLotteryWon,
                 DueDays = 90,
-                Description = "Đợt 2 theo đơn giá căn đã thẩm định",
+                Description = "Đợt 3 theo đơn giá căn đã thẩm định",
                 IsActive = true,
                 CreatedAt = now
             });
