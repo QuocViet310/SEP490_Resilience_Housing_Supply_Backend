@@ -301,6 +301,11 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             ApplicationStatusConstants.Reviewing,
             ApplicationStatusConstants.NeedMoreDocuments,
             ApplicationStatusConstants.PendingSxdReview,
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout,
+            ApplicationStatusConstants.ContractPending,
+            ApplicationStatusConstants.ContractSigned,
+            ApplicationStatusConstants.DepositPaid,
             ApplicationStatusConstants.Rejected
         };
 
@@ -339,6 +344,7 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             var term = query.Search.Trim().ToLower();
             baseQuery = baseQuery.Where(x =>
                 x.FullName.ToLower().Contains(term) ||
+                x.CitizenId.ToLower().Contains(term) ||
                 x.Applicant.Email.ToLower().Contains(term) ||
                 x.HousingProject.ProjectName.ToLower().Contains(term));
         }
@@ -350,7 +356,10 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             .OrderBy(x =>
                 x.ApplicationStatus == ApplicationStatusConstants.Submitted ? 0 :
                 x.ApplicationStatus == ApplicationStatusConstants.Reviewing ? 1 :
-                x.ApplicationStatus == ApplicationStatusConstants.NeedMoreDocuments ? 2 : 3)
+                x.ApplicationStatus == ApplicationStatusConstants.NeedMoreDocuments ? 2 :
+                x.ApplicationStatus == ApplicationStatusConstants.PendingSxdReview ? 3 :
+                x.ApplicationStatus == ApplicationStatusConstants.Approved
+                    || x.ApplicationStatus == ApplicationStatusConstants.ApprovedByTimeout ? 4 : 5)
             .ThenByDescending(x => x.SubmittedAt);
 
         var pageIndex = Math.Max(query.PageIndex, 1);
@@ -363,7 +372,10 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             .Select(x => new HousingApplicationDashboardItemDto
             {
                 ApplicationId = x.ApplicationId,
+                ProjectId = x.ProjectId,
                 ApplicantName = x.FullName,
+                ApplicantFullName = x.FullName,
+                CitizenId = x.CitizenId,
                 ApplicantEmail = x.Applicant.Email,
                 ProjectName = x.HousingProject.ProjectName,
                 ApplicationStatus = x.ApplicationStatus,
@@ -426,6 +438,7 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             var term = query.Search.Trim().ToLower();
             baseQuery = baseQuery.Where(x =>
                 x.FullName.ToLower().Contains(term) ||
+                x.CitizenId.ToLower().Contains(term) ||
                 x.Applicant.Email.ToLower().Contains(term) ||
                 x.HousingProject.ProjectName.ToLower().Contains(term));
         }
@@ -448,7 +461,10 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             .Select(x => new HousingApplicationDashboardItemDto
             {
                 ApplicationId = x.ApplicationId,
+                ProjectId = x.ProjectId,
                 ApplicantName = x.FullName,
+                ApplicantFullName = x.FullName,
+                CitizenId = x.CitizenId,
                 ApplicantEmail = x.Applicant.Email,
                 ProjectName = x.HousingProject.ProjectName,
                 ApplicationStatus = x.ApplicationStatus,
