@@ -97,6 +97,16 @@ public class ContractSignService : IContractSignService
             };
         }
 
+        // Bắt buộc đã được cấp căn cụ thể trước khi ký (để HĐ có tên căn / diện tích / giá)
+        if (!application.ApartmentId.HasValue)
+        {
+            return new ContractSignResponseDto
+            {
+                Success = false,
+                Message = "Hồ sơ chưa được cấp căn. Vui lòng chờ Chủ đầu tư bàn giao căn trước khi ký hợp đồng."
+            };
+        }
+
         // ── 2. Load PrincipleAgreement ──────────────────────────────────────
         var agreement = await _agreementRepo.GetByApplicationIdAsync(applicationId);
         if (agreement == null)

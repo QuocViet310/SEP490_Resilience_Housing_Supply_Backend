@@ -90,7 +90,7 @@ public class HousingApplication
     public string? ViolationReason { get; set; }
 
     /// <summary>Loại căn hộ được phân sau bốc thăm trúng</summary>
-    public Guid? ApartmentTypeId { get; set; }
+    public Guid? ApartmentId { get; set; }
 
     // ─────────────────────────────────────────────────────────────
     // Navigation properties
@@ -102,7 +102,7 @@ public class HousingApplication
 
     public HousingProject HousingProject { get; set; } = null!;
 
-    public ApartmentType? ApartmentType { get; set; }
+    public Apartment? Apartment { get; set; }
 
     public ICollection<ApplicationDocument> Documents { get; set; }
         = new List<ApplicationDocument>();

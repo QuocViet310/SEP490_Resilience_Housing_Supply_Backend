@@ -262,18 +262,90 @@ public static class DemoDataSeeder
 
         // Bổ sung ảnh demo nếu dự án seed đã có nhưng chưa có ProjectImage
         var imageAdded = await EnsureDemoImagesAsync(db, defs, ct);
+        var aptAdded = await EnsureDemoApartmentsAsync(db, defs, logger, ct);
 
-        if (added > 0 || updated > 0 || imageAdded > 0)
+        if (added > 0 || updated > 0 || imageAdded > 0 || aptAdded > 0)
         {
             await db.SaveChangesAsync(ct);
             logger?.LogInformation(
-                "Demo seed: added {Added} projects, updated address on {Updated}, images +{Images}.",
-                added, updated, imageAdded);
+                "Demo seed: added {Added} projects, updated address on {Updated}, images +{Images}, apartments +{Apts}.",
+                added, updated, imageAdded, aptAdded);
         }
         else
         {
             logger?.LogInformation("Demo seed: housing projects already present — skip.");
         }
+    }
+
+    /// <summary>
+    /// Seed 4–5 căn cụ thể / dự án OPEN (tên + diện tích + giá + AVAILABLE).
+    /// </summary>
+    private static async Task<int> EnsureDemoApartmentsAsync(
+        AppDbContext db,
+        List<(HousingProject Project, List<HousingQuota> Quotas, List<ProjectImage> Images)> defs,
+        ILogger? logger,
+        CancellationToken ct)
+    {
+        var openProjects = defs
+            .Select(d => d.Project)
+            .Where(p => p.AvailableUnits > 0)
+            .ToList();
+
+        var templates = new (string UnitName, double Area, decimal Price)[]
+        {
+            ("A-101", 38.5, 720_000_000m),
+            ("A-205", 45.2, 860_000_000m),
+            ("B-312", 52.0, 980_000_000m),
+            ("B-408", 58.7, 1_120_000_000m),
+            ("C-501", 66.3, 1_280_000_000m),
+        };
+
+        var added = 0;
+        var now = DateTime.UtcNow;
+
+        foreach (var project in openProjects)
+        {
+            var count = await db.Apartments.CountAsync(a => a.ProjectId == project.Id, ct);
+            if (count > 0)
+                continue;
+
+            // 4 hoặc 5 căn tùy AvailableUnits (clamp 4–5)
+            var n = Math.Clamp(project.AvailableUnits, 4, 5);
+            if (project.AvailableUnits != n)
+            {
+                var tracked = await db.HousingProjects.FirstOrDefaultAsync(p => p.Id == project.Id, ct);
+                if (tracked != null)
+                {
+                    tracked.AvailableUnits = n;
+                    tracked.MinArea = templates.Take(n).Min(t => t.Area);
+                    tracked.MaxArea = templates.Take(n).Max(t => t.Area);
+                    tracked.MinPrice = templates.Take(n).Min(t => t.Price);
+                    tracked.MaxPrice = templates.Take(n).Max(t => t.Price);
+                }
+            }
+
+            for (var i = 0; i < n; i++)
+            {
+                var t = templates[i];
+                db.Apartments.Add(new Apartment
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = project.Id,
+                    UnitName = t.UnitName,
+                    Area = t.Area,
+                    Price = t.Price,
+                    Status = ApartmentStatusConstants.Available,
+                    Description = $"{SeedMarker} Căn demo {t.UnitName}",
+                    CreatedAt = now
+                });
+                added++;
+            }
+        }
+
+        if (added > 0)
+            logger?.LogInformation("Demo seed: apartments +{Count}.", added);
+
+        return added;
     }
 
     private static async Task<int> EnsureDemoImagesAsync(
@@ -454,58 +526,58 @@ public static class DemoDataSeeder
         [
             (
                 Make(p1, "NOXH Bình Minh — Thủ Đức", "Thành phố Hồ Chí Minh", "Phường Thủ Đức", "Phường Thủ Đức",
-                    "12 Đại lộ Mai Chí Thọ", openId, 80, 5_000_000m, 480_000_000m, 780_000_000m, 28, 52,
+                    "12 Đại lộ Mai Chí Thọ", openId, 5, 5_000_000m, 720_000_000m, 1_280_000_000m, 38, 67,
                     now.AddDays(-10), now.AddDays(60), now.AddDays(-40),
                     "Dự án OPEN demo Thủ Đức — đang nhận hồ sơ."),
-                Quotas(p1, 80),
+                Quotas(p1, 5),
                 Images(p1, 0, 1)
             ),
             (
                 Make(p2, "NOXH An Phú — Thủ Đức", "Thành phố Hồ Chí Minh", "Phường An Phú", "Phường An Phú",
-                    "88 Đường Song Hành", openId, 120, 3_000_000m, 520_000_000m, 920_000_000m, 30, 60,
+                    "88 Đường Song Hành", openId, 5, 3_000_000m, 720_000_000m, 1_280_000_000m, 38, 67,
                     now.AddDays(-5), now.AddDays(90), now.AddDays(-35),
                     "Dự án OPEN demo khu An Phú (TP.HCM)."),
-                Quotas(p2, 120),
+                Quotas(p2, 5),
                 Images(p2, 2, 3)
             ),
             (
                 Make(p3, "NOXH Bình Tân — An Lạc", "Thành phố Hồ Chí Minh", "Phường An Lạc", "Phường An Lạc",
-                    "45 Đường Kinh Dương Vương", openId, 50, 2_500_000m, 390_000_000m, 650_000_000m, 25, 48,
+                    "45 Đường Kinh Dương Vương", openId, 4, 2_500_000m, 720_000_000m, 1_120_000_000m, 38, 59,
                     now.AddDays(-3), now.AddDays(45), now.AddDays(-33),
                     "Dự án OPEN demo Bình Tân (TP.HCM)."),
-                Quotas(p3, 50),
+                Quotas(p3, 4),
                 Images(p3, 4, 5)
             ),
             (
                 Make(p4, "NOXH Phước Long — Thủ Đức", "Thành phố Hồ Chí Minh", "Phường Phước Long", "Phường Phước Long",
-                    "210 Đường Đỗ Xuân Hợp", openId, 30, 5_000_000m, 450_000_000m, 700_000_000m, 26, 45,
+                    "210 Đường Đỗ Xuân Hợp", openId, 4, 5_000_000m, 720_000_000m, 1_120_000_000m, 38, 59,
                     now.AddDays(-1), now.AddDays(30), now.AddDays(-31),
                     "Dự án OPEN số suất ít — test oversubscribe."),
-                Quotas(p4, 30),
+                Quotas(p4, 4),
                 Images(p4, 6)
             ),
             (
                 Make(p7, "NOXH Nhà Ở Xã Hội — Tân Thuận", "Thành phố Hồ Chí Minh", "Phường Tân Thuận", "Phường Tân Thuận",
-                    "120 Nguyễn Văn Linh", openId, 90, 4_000_000m, 550_000_000m, 980_000_000m, 32, 58,
+                    "120 Nguyễn Văn Linh", openId, 5, 4_000_000m, 720_000_000m, 1_280_000_000m, 38, 67,
                     now.AddDays(-7), now.AddDays(75), now.AddDays(-38),
                     "Dự án OPEN Tân Thuận — test filter phường + sort giá."),
-                Quotas(p7, 90),
+                Quotas(p7, 5),
                 Images(p7, 1, 7)
             ),
             (
                 Make(p8, "NOXH Nhà Ở Xã Hội — Trung Mỹ Tây", "Thành phố Hồ Chí Minh", "Phường Trung Mỹ Tây", "Phường Trung Mỹ Tây",
-                    "55 Quốc lộ 1A", openId, 70, 2_000_000m, 320_000_000m, 580_000_000m, 24, 42,
+                    "55 Quốc lộ 1A", openId, 4, 2_000_000m, 720_000_000m, 1_120_000_000m, 38, 59,
                     now.AddDays(-2), now.AddDays(50), now.AddDays(-32),
                     "Dự án OPEN Trung Mỹ Tây — giá thấp hơn để test sort."),
-                Quotas(p8, 70),
+                Quotas(p8, 4),
                 Images(p8, 3, 5)
             ),
             (
                 Make(p5, "NOXH Tân Phú — Sắp mở", "Thành phố Hồ Chí Minh", "Phường Tân Sơn Nhì", "Phường Tân Sơn Nhì",
-                    "15 Đường Lũy Bán Bích", upcomingId, 60, 4_000_000m, 450_000_000m, 850_000_000m, 25, 55,
+                    "15 Đường Lũy Bán Bích", upcomingId, 5, 4_000_000m, 720_000_000m, 1_280_000_000m, 38, 67,
                     now.AddDays(7), now.AddDays(70), now.AddDays(-5),
                     "Dự án UPCOMING — chưa mở đăng ký (mobile sẽ ẩn)."),
-                Quotas(p5, 60),
+                Quotas(p5, 5),
                 Images(p5, 0)
             ),
             (

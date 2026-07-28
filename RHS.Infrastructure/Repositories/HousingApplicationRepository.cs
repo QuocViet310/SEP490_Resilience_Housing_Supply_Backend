@@ -91,6 +91,7 @@ public class HousingApplicationRepository : IHousingApplicationRepository
             .Include(x => x.StatusHistories.OrderByDescending(h => h.ChangedAt))
                 .ThenInclude(h => h.ChangedByUser)
             .Include(x => x.HouseholdMembers)
+            .Include(x => x.Apartment)
             .FirstOrDefaultAsync(x => x.ApplicationId == applicationId);
     }
 

@@ -591,7 +591,7 @@ public class LotteryService : ILotteryService
                     await _notificationService.SendAsync(
                         applicantId,
                         "Trúng bốc thăm — vui lòng ký hợp đồng",
-                        "Bạn đã trúng bốc thăm. Vui lòng xem và ký hợp đồng nguyên tắc; sau khi ký mới đặt cọc VNPay.",
+                        "Bạn đã trúng bốc thăm. Vui lòng xem và ký hợp đồng mua bán nhà ở xã hội; sau khi ký mới đặt cọc VNPay.",
                         NotificationTypeConstants.ContractPending);
                 }
                 else if (resultStatus == LotteryResultConstants.Lost)

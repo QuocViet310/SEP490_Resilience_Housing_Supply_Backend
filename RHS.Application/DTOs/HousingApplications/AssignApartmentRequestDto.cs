@@ -1,10 +1,10 @@
 namespace RHS.Application.DTOs.HousingApplications;
 
 /// <summary>
-/// Request DTO cho API gán loại căn hộ cho hồ sơ đã trúng bốc thăm.
+/// Request DTO: gán một căn hộ cụ thể cho hồ sơ đã trúng / chốt suất.
 /// </summary>
 public class AssignApartmentRequestDto
 {
-    /// <summary>ID loại căn hộ (ApartmentType) được gán</summary>
-    public Guid ApartmentTypeId { get; set; }
+    /// <summary>ID căn hộ (Apartment) còn AVAILABLE trong dự án</summary>
+    public Guid ApartmentId { get; set; }
 }

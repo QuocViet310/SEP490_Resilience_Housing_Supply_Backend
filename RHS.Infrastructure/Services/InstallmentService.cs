@@ -50,7 +50,7 @@ public class InstallmentService : IInstallmentService
             applicationId, triggerEvent, eventDate);
 
         var app = await _db.HousingApplications
-            .Include(a => a.ApartmentType)
+            .Include(a => a.Apartment)
             .FirstOrDefaultAsync(a => a.ApplicationId == applicationId)
             ?? throw new InvalidOperationException($"Hồ sơ {applicationId} không tồn tại.");
 
@@ -91,7 +91,7 @@ public class InstallmentService : IInstallmentService
                 continue;
             }
 
-            var amount = CalculateAmount(milestone, app.ApartmentType);
+            var amount = CalculateAmount(milestone, app.Apartment);
             var dueDate = eventDate.AddDays(milestone.DueDays);
 
             newInstallments.Add(new PaymentInstallment
@@ -146,7 +146,7 @@ public class InstallmentService : IInstallmentService
     {
         var app = await _db.HousingApplications
             .AsNoTracking()
-            .Include(a => a.ApartmentType)
+            .Include(a => a.Apartment)
             .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
 
         if (app == null) return null;
@@ -177,9 +177,9 @@ public class InstallmentService : IInstallmentService
         return new InstallmentSummaryDto
         {
             ApplicationId     = applicationId,
-            ApartmentTypeName = app.ApartmentType?.TypeName,
-            ApartmentArea     = app.ApartmentType?.Area,
-            ApartmentPrice    = app.ApartmentType?.Price,
+            ApartmentTypeName = app.Apartment?.UnitName, // legacy field name = tên căn đã bàn giao
+            ApartmentArea     = app.Apartment?.Area,
+            ApartmentPrice    = app.Apartment?.Price,
             TotalAmount       = phases.Sum(p => p.Amount),
             TotalPaid         = phases.Where(p => p.Status == InstallmentStatusConstants.Paid).Sum(p => p.Amount),
             TotalRemaining    = phases.Where(p => p.Status != InstallmentStatusConstants.Paid
@@ -442,7 +442,7 @@ public class InstallmentService : IInstallmentService
     /// <summary>
     /// Tính số tiền dựa trên CalculationType của milestone.
     /// FIXED_AMOUNT: dùng FixedAmount trực tiếp.
-    /// PERCENTAGE:   dùng Percentage × ApartmentType.Price.
+    /// PERCENTAGE:   dùng Percentage × Apartment.Price.
     /// </summary>
     /// <summary>
     /// Nếu dự án chưa có milestone active → seed mặc định 3 đợt:
@@ -474,7 +474,7 @@ public class InstallmentService : IInstallmentService
                 FixedAmount = deposit,
                 TriggerEvent = TriggerEventConstants.OnContractSigned,
                 DueDays = 7,
-                Description = "Đợt đặt cọc sau khi ký hợp đồng nguyên tắc",
+                Description = "Đợt đặt cọc sau khi ký hợp đồng mua bán nhà ở xã hội",
                 IsActive = true,
                 CreatedAt = now
             },
@@ -513,7 +513,7 @@ public class InstallmentService : IInstallmentService
             projectId);
     }
 
-    private static decimal CalculateAmount(PaymentMilestone milestone, ApartmentType? apartmentType)
+    private static decimal CalculateAmount(PaymentMilestone milestone, Domain.Entities.Apartment? apartment)
     {
         return milestone.CalculationType switch
         {
@@ -524,11 +524,11 @@ public class InstallmentService : IInstallmentService
                     + "dùng FIXED_AMOUNT nhưng FixedAmount chưa được cấu hình."),
 
             CalculationTypeConstants.Percentage =>
-                (apartmentType != null && milestone.Percentage.HasValue)
-                    ? Math.Round(apartmentType.Price * milestone.Percentage.Value / 100m, 0)
+                (apartment != null && milestone.Percentage.HasValue)
+                    ? Math.Round(apartment.Price * milestone.Percentage.Value / 100m, 0)
                     : throw new InvalidOperationException(
                         $"Milestone '{milestone.PhaseName}' (PhaseOrder={milestone.PhaseOrder}) "
-                        + "dùng PERCENTAGE nhưng thiếu ApartmentType hoặc Percentage."),
+                        + "dùng PERCENTAGE nhưng thiếu Apartment hoặc Percentage."),
 
             _ => throw new InvalidOperationException(
                 $"CalculationType không hợp lệ: '{milestone.CalculationType}' "

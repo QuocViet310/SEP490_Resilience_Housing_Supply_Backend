@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using RHS.Application.DTOs.HousingProjects;
 using RHS.Application.Interfaces;
+using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Data;
 
@@ -186,7 +187,7 @@ public class HousingProjectRepository : IHousingProjectRepository
         return await _context.HousingProjects
             .Include(x => x.HousingProjectStatus)
             .Include(x => x.ProjectImages)
-            .Include(x => x.ApartmentTypes)
+            .Include(x => x.Apartments)
             .Include(x => x.PaymentMilestones)
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id);
@@ -201,16 +202,32 @@ public class HousingProjectRepository : IHousingProjectRepository
             .ToListAsync();
         _context.ProjectImages.RemoveRange(existingImages);
 
-        // Clear old ApartmentTypes and PaymentMilestones before adding new ones
-        var existingApartmentTypes = await _context.ApartmentTypes
-            .Where(x => x.ProjectId == entity.Id)
+        // Chỉ xóa căn còn AVAILABLE; giữ căn đã ASSIGNED
+        var availableApartments = await _context.Apartments
+            .Where(x => x.ProjectId == entity.Id
+                        && x.Status == ApartmentStatusConstants.Available)
             .ToListAsync();
-        _context.ApartmentTypes.RemoveRange(existingApartmentTypes);
+        _context.Apartments.RemoveRange(availableApartments);
 
         var existingMilestones = await _context.PaymentMilestones
             .Where(x => x.ProjectId == entity.Id)
             .ToListAsync();
         _context.PaymentMilestones.RemoveRange(existingMilestones);
+
+        // Chỉ attach căn mới (AVAILABLE) từ entity — bỏ qua ASSIGNED đã giữ trong DB
+        foreach (var apt in entity.Apartments
+                     .Where(a => a.Status == ApartmentStatusConstants.Available)
+                     .ToList())
+        {
+            if (apt.Id == Guid.Empty) apt.Id = Guid.NewGuid();
+            apt.ProjectId = entity.Id;
+            _context.Apartments.Add(apt);
+        }
+
+        // Tránh EF track lại collection ASSIGNED cũ
+        entity.Apartments = entity.Apartments
+            .Where(a => a.Status == ApartmentStatusConstants.Available)
+            .ToList();
 
         _context.HousingProjects.Update(entity);
         await _context.SaveChangesAsync();

@@ -47,7 +47,7 @@ public class AppDbContext : DbContext
     public DbSet<Wishlist> Wishlists { get; set; }
     public DbSet<PrincipleAgreement> PrincipleAgreements { get; set; }
     public DbSet<LotteryDraw> LotteryDraws { get; set; }
-    public DbSet<ApartmentType> ApartmentTypes { get; set; }
+    public DbSet<Apartment> Apartments { get; set; }
     public DbSet<PaymentMilestone> PaymentMilestones { get; set; }
     public DbSet<PaymentInstallment> PaymentInstallments { get; set; }
     public DbSet<HouseholdMember> HouseholdMembers { get; set; }
@@ -78,7 +78,7 @@ public class AppDbContext : DbContext
         modelBuilder.ApplyConfiguration(new WishlistConfiguration());
         modelBuilder.ApplyConfiguration(new PrincipleAgreementConfiguration());
         modelBuilder.ApplyConfiguration(new LotteryDrawConfiguration());
-        modelBuilder.ApplyConfiguration(new ApartmentTypeConfiguration());
+        modelBuilder.ApplyConfiguration(new ApartmentConfiguration());
         modelBuilder.ApplyConfiguration(new PaymentMilestoneConfiguration());
         modelBuilder.ApplyConfiguration(new PaymentInstallmentConfiguration());
         modelBuilder.ApplyConfiguration(new HouseholdMemberConfiguration());

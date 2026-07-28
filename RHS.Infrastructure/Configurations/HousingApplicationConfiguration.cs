@@ -131,9 +131,9 @@ public class HousingApplicationConfiguration : IEntityTypeConfiguration<HousingA
             .HasForeignKey(x => x.ApplicationId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasOne(x => x.ApartmentType)
-            .WithMany()
-            .HasForeignKey(x => x.ApartmentTypeId)
+        builder.HasOne(x => x.Apartment)
+            .WithMany(a => a.HousingApplications)
+            .HasForeignKey(x => x.ApartmentId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasMany(x => x.PaymentInstallments)

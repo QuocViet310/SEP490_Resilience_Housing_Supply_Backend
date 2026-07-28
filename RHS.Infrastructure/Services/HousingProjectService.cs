@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using RHS.Application.DTOs.ApartmentType;
+using RHS.Application.DTOs.Apartment;
 using RHS.Application.DTOs.HousingProjects;
 using RHS.Application.DTOs.Milestone;
 using RHS.Application.Interfaces;
@@ -114,24 +114,25 @@ public class HousingProjectService : IHousingProjectService
             });
         }
 
-        // Add ApartmentTypes if provided
-        if (request.ApartmentTypes != null)
+        // Add individual apartments if provided
+        if (request.Apartments != null && request.Apartments.Count > 0)
         {
-            foreach (var at in request.ApartmentTypes)
+            foreach (var apt in request.Apartments)
             {
-                housingProject.ApartmentTypes.Add(new Domain.Entities.ApartmentType
+                housingProject.Apartments.Add(new Domain.Entities.Apartment
                 {
-                    Id                = Guid.NewGuid(),
-                    ProjectId         = housingProject.Id,
-                    TypeName          = at.TypeName,
-                    Area              = at.Area,
-                    Price             = at.Price,
-                    Quantity          = at.Quantity,
-                    RemainingQuantity = at.Quantity,
-                    Description       = at.Description,
-                    CreatedAt         = DateTime.UtcNow
+                    Id          = Guid.NewGuid(),
+                    ProjectId   = housingProject.Id,
+                    UnitName    = apt.UnitName,
+                    Area        = apt.Area,
+                    Price       = apt.Price,
+                    Status      = ApartmentStatusConstants.Available,
+                    Description = apt.Description,
+                    CreatedAt   = DateTime.UtcNow
                 });
             }
+
+            ApplyApartmentAggregates(housingProject, housingProject.Apartments);
         }
 
         // Add PaymentMilestones if provided; otherwise seed mặc định 3 đợt
@@ -311,25 +312,30 @@ public class HousingProjectService : IHousingProjectService
             });
         }
 
-        // Sync ApartmentTypes (replace all)
-        if (request.ApartmentTypes != null)
+        // Sync apartments: keep ASSIGNED; replace AVAILABLE with request list
+        if (request.Apartments != null)
         {
-            existingProject.ApartmentTypes.Clear();
-            foreach (var at in request.ApartmentTypes)
+            var keptAssigned = existingProject.Apartments
+                .Where(a => a.Status == ApartmentStatusConstants.Assigned)
+                .ToList();
+
+            existingProject.Apartments = keptAssigned;
+            foreach (var apt in request.Apartments)
             {
-                existingProject.ApartmentTypes.Add(new Domain.Entities.ApartmentType
+                existingProject.Apartments.Add(new Domain.Entities.Apartment
                 {
-                    Id                = Guid.NewGuid(),
-                    ProjectId         = existingProject.Id,
-                    TypeName          = at.TypeName,
-                    Area              = at.Area,
-                    Price             = at.Price,
-                    Quantity          = at.Quantity,
-                    RemainingQuantity = at.Quantity,
-                    Description       = at.Description,
-                    CreatedAt         = DateTime.UtcNow
+                    Id          = Guid.NewGuid(),
+                    ProjectId   = existingProject.Id,
+                    UnitName    = apt.UnitName,
+                    Area        = apt.Area,
+                    Price       = apt.Price,
+                    Status      = ApartmentStatusConstants.Available,
+                    Description = apt.Description,
+                    CreatedAt   = DateTime.UtcNow
                 });
             }
+
+            ApplyApartmentAggregates(existingProject, existingProject.Apartments);
         }
 
         // Sync PaymentMilestones (replace all)
@@ -458,16 +464,28 @@ public class HousingProjectService : IHousingProjectService
             throw new ArgumentException("MaxPrice must be greater than or equal to MinPrice.");
         }
 
-        // MinArea > 0
-        if (request.MinArea <= 0)
-        {
-            throw new ArgumentException("MinArea must be greater than 0.");
-        }
+        var hasApartments = request.Apartments != null && request.Apartments.Count > 0;
 
-        // MaxArea >= MinArea
-        if (request.MaxArea < request.MinArea)
+        // Khi có danh sách căn: Min/Max area + AvailableUnits được suy ra từ căn — bỏ qua validate cứng.
+        if (!hasApartments)
         {
-            throw new ArgumentException("MaxArea must be greater than or equal to MinArea.");
+            if (request.MinArea <= 0)
+                throw new ArgumentException("MinArea must be greater than 0.");
+
+            if (request.MaxArea < request.MinArea)
+                throw new ArgumentException("MaxArea must be greater than or equal to MinArea.");
+        }
+        else
+        {
+            foreach (var apt in request.Apartments!)
+            {
+                if (string.IsNullOrWhiteSpace(apt.UnitName))
+                    throw new ArgumentException("Mỗi căn phải có tên (UnitName).");
+                if (apt.Area <= 0)
+                    throw new ArgumentException($"Căn '{apt.UnitName}': diện tích phải > 0.");
+                if (apt.Price <= 0)
+                    throw new ArgumentException($"Căn '{apt.UnitName}': giá phải > 0.");
+            }
         }
 
         // AvailableUnits >= 0
@@ -537,16 +555,16 @@ public class HousingProjectService : IHousingProjectService
                     DisplayOrder = x.DisplayOrder
                 })
                 .ToList(),
-            ApartmentTypes = project.ApartmentTypes
-                .Select(at => new ApartmentTypeDto
+            Apartments = project.Apartments
+                .OrderBy(a => a.UnitName)
+                .Select(a => new ApartmentDto
                 {
-                    Id                = at.Id,
-                    TypeName          = at.TypeName,
-                    Area              = at.Area,
-                    Price             = at.Price,
-                    Quantity          = at.Quantity,
-                    RemainingQuantity = at.RemainingQuantity,
-                    Description       = at.Description
+                    Id          = a.Id,
+                    UnitName    = a.UnitName,
+                    Area        = a.Area,
+                    Price       = a.Price,
+                    Status      = a.Status,
+                    Description = a.Description
                 })
                 .ToList(),
             Milestones = project.PaymentMilestones
@@ -566,6 +584,22 @@ public class HousingProjectService : IHousingProjectService
                 })
                 .ToList()
         };
+    }
+
+    /// <summary>Đồng bộ AvailableUnits / khoảng giá-diện tích từ danh sách căn.</summary>
+    private static void ApplyApartmentAggregates(
+        HousingProject project,
+        IEnumerable<Domain.Entities.Apartment> apartments)
+    {
+        var list = apartments.ToList();
+        if (list.Count == 0) return;
+
+        project.AvailableUnits = list.Count(a =>
+            string.Equals(a.Status, ApartmentStatusConstants.Available, StringComparison.OrdinalIgnoreCase));
+        project.MinArea = list.Min(a => a.Area);
+        project.MaxArea = list.Max(a => a.Area);
+        project.MinPrice = list.Min(a => a.Price);
+        project.MaxPrice = list.Max(a => a.Price);
     }
 
     public async Task<HousingProjectResponseDto> UpdateProjectStatusAsync(Guid id, string action, string? rejectReason)

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using RHS.Application.DTOs.HouseholdMember;
 using RHS.Application.DTOs.HousingApplications;
 using RHS.Application.DTOs.HousingApplications.Dashboard;
@@ -692,7 +693,15 @@ public class HousingApplicationsController : ControllerBase
             if (app == null)
                 return NotFound(new { success = false, message = "Không tìm thấy hồ sơ." });
 
-            // Cho phép: trúng bốc thăm HOẶC đã chốt danh sách (CONTRACT_PENDING/SIGNED/DEPOSIT_PAID)
+            if (app.ApartmentId.HasValue)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "Hồ sơ đã được gán căn. Không gán lại."
+                });
+            }
+
             var wonLottery = app.LotteryResult == LotteryResultConstants.Won
                 || app.LotteryResult == LotteryResultConstants.PriorityWon;
             var finalizedForContract = app.ApplicationStatus is
@@ -710,34 +719,35 @@ public class HousingApplicationsController : ControllerBase
                 });
             }
 
-            // Validate ApartmentType thuộc cùng project
-            var apartmentType = await context.ApartmentTypes
-                .FindAsync(request.ApartmentTypeId);
+            var apartment = await context.Apartments
+                .FirstOrDefaultAsync(a => a.Id == request.ApartmentId);
 
-            if (apartmentType == null || apartmentType.ProjectId != app.ProjectId)
+            if (apartment == null || apartment.ProjectId != app.ProjectId)
             {
                 return BadRequest(new
                 {
                     success = false,
-                    message = "Loại căn hộ không hợp lệ hoặc không thuộc dự án này."
+                    message = "Căn hộ không hợp lệ hoặc không thuộc dự án này."
                 });
             }
 
-            if (apartmentType.RemainingQuantity <= 0)
+            if (!string.Equals(apartment.Status, ApartmentStatusConstants.Available, StringComparison.OrdinalIgnoreCase))
             {
                 return BadRequest(new
                 {
                     success = false,
-                    message = $"Loại căn '{apartmentType.TypeName}' đã hết suất."
+                    message = $"Căn '{apartment.UnitName}' đã được bàn giao (Status={apartment.Status})."
                 });
             }
 
-            // Gán loại căn
-            app.ApartmentTypeId = request.ApartmentTypeId;
+            app.ApartmentId = apartment.Id;
             app.UpdatedAt = DateTime.UtcNow;
-            apartmentType.RemainingQuantity--;
+            apartment.Status = ApartmentStatusConstants.Assigned;
 
-            // Ghi lịch sử
+            var project = await context.HousingProjects.FindAsync(app.ProjectId);
+            if (project != null && project.AvailableUnits > 0)
+                project.AvailableUnits--;
+
             context.ApplicationStatusHistories.Add(new Domain.Entities.ApplicationStatusHistory
             {
                 HistoryId     = Guid.NewGuid(),
@@ -745,33 +755,34 @@ public class HousingApplicationsController : ControllerBase
                 OldStatus     = app.ApplicationStatus,
                 NewStatus     = app.ApplicationStatus,
                 Action        = ReviewActionConstants.AssignApartment,
-                Note          = $"Gán loại căn: {apartmentType.TypeName} {apartmentType.Area}m² - {apartmentType.Price:N0} VND",
+                Note          = $"Bàn giao căn: {apartment.UnitName} {apartment.Area}m² - {apartment.Price:N0} VND",
                 ChangedAt     = DateTime.UtcNow,
                 ChangedBy     = GetCurrentUserId()
             });
 
             await context.SaveChangesAsync();
 
-            // Fire trigger ON_LOTTERY_WON → sinh installments cho Phase 1, Phase 2...
             await installmentService.FireTriggerEventAsync(
                 id,
                 TriggerEventConstants.OnLotteryWon,
                 DateTime.UtcNow);
 
             _logger.LogInformation(
-                "Assigned ApartmentType={TypeName} to App={AppId}. Installments generated.",
-                apartmentType.TypeName, id);
+                "Assigned Apartment={UnitName} to App={AppId}. Installments generated.",
+                apartment.UnitName, id);
 
             return Ok(new
             {
                 success = true,
-                message = $"Đã gán căn {apartmentType.TypeName} {apartmentType.Area}m² và sinh lịch đóng tiền.",
+                message = $"Đã bàn giao căn {apartment.UnitName} {apartment.Area}m² và sinh lịch đóng tiền.",
                 data = new
                 {
                     applicationId = id,
-                    apartmentTypeName = apartmentType.TypeName,
-                    area = apartmentType.Area,
-                    price = apartmentType.Price
+                    apartmentId = apartment.Id,
+                    unitName = apartment.UnitName,
+                    area = apartment.Area,
+                    price = apartment.Price,
+                    status = apartment.Status
                 }
             });
         }
@@ -781,7 +792,7 @@ public class HousingApplicationsController : ControllerBase
             return StatusCode(500, new
             {
                 success = false,
-                message = "Lỗi khi gán loại căn hộ.",
+                message = "Lỗi khi bàn giao căn hộ.",
                 error = ex.Message
             });
         }

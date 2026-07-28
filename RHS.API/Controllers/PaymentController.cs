@@ -293,8 +293,8 @@ public class PaymentController : ControllerBase
     }
 
     /// <summary>
-    /// Tải hợp đồng nguyên tắc dưới dạng PDF.
-    /// PDF được sinh on-demand từ dữ liệu hồ sơ trong DB (không lưu trên Cloudinary).
+    /// Tải Hợp đồng mua bán nhà ở xã hội (PDF) — Mẫu số 01 Phụ lục VI TT 05/2024/TT-BXD.
+    /// PDF sinh on-demand từ dữ liệu hồ sơ trong DB.
     /// </summary>
     [HttpGet("download-contract/{applicationId}")]
     [Authorize]
@@ -312,21 +312,25 @@ public class PaymentController : ControllerBase
 
             var application = await context.HousingApplications
                 .Include(a => a.Officer)
+                .Include(a => a.Applicant)
+                .Include(a => a.Apartment)
                 .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
 
             if (application == null)
                 return NotFound(new { success = false, message = "Không tìm thấy hồ sơ" });
 
-            // Chỉ cho phép applicant sở hữu hoặc officer/admin
+            // Chỉ cho phép applicant sở hữu hoặc officer/admin/CĐT/SXD
             var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
-            if (application.ApplicantId != userId
-                && !userRole.Contains("Admin")
-                && !userRole.Contains("Officer"))
+            var isStaff = userRole.Contains("Admin")
+                          || userRole.Contains("Officer")
+                          || userRole.Contains("Developer")
+                          || userRole.Contains("Construction");
+            if (application.ApplicantId != userId && !isStaff)
             {
                 return Forbid();
             }
 
-            // Cho tải PDF sau khi đã có HĐ nguyên tắc (CONTRACT_PENDING trở đi)
+            // Cho tải PDF từ CONTRACT_PENDING trở đi
             var previewStatuses = new[]
             {
                 ApplicationStatusConstants.ContractPending,
@@ -339,11 +343,12 @@ public class PaymentController : ControllerBase
                 return BadRequest(new
                 {
                     success = false,
-                    message = "Hồ sơ chưa đến bước hợp đồng nguyên tắc. Chỉ tải PDF sau khi được chốt/trúng và chuyển CONTRACT_PENDING."
+                    message = "Hồ sơ chưa đến bước hợp đồng mua bán. Chỉ tải PDF sau khi được chốt/trúng và chuyển CONTRACT_PENDING."
                 });
             }
 
             var project = await context.HousingProjects
+                .Include(p => p.Developer)
                 .FirstOrDefaultAsync(p => p.Id == application.ProjectId);
 
             if (project == null)
@@ -364,7 +369,8 @@ public class PaymentController : ControllerBase
                 .OrderByDescending(h => h.ChangedAt)
                 .FirstOrDefaultAsync();
 
-            var wardManagerName = approvedHistory?.ChangedByUser?.FullName
+            var wardManagerName = project.Developer?.FullName
+                ?? approvedHistory?.ChangedByUser?.FullName
                 ?? "Ban Quản lý Dự án";
 
             var slotCode = !string.IsNullOrEmpty(application.SlotCode)
@@ -377,7 +383,7 @@ public class PaymentController : ControllerBase
                 payment?.VnpTransactionNo,
                 wardManagerName);
 
-            var fileName = $"HopDong_{slotCode}.pdf";
+            var fileName = $"HopDongMuaBanNOXH_{slotCode}.pdf";
             return File(pdfBytes, "application/pdf", fileName);
         }
         catch (Exception ex)

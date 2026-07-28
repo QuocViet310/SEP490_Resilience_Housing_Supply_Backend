@@ -37,6 +37,11 @@ public class ApplicationDetailResponseDto
     public string? ReceiptUrl { get; set; }
     public string? SlotCode { get; set; }
     public string? LotteryResult { get; set; }
+    public Guid? ApartmentId { get; set; }
+    public string? ApartmentUnitName { get; set; }
+    public double? ApartmentArea { get; set; }
+    public decimal? ApartmentPrice { get; set; }
+    public string? ApartmentStatus { get; set; }
     public decimal? MonthlyIncome { get; set; }
     public decimal? SpouseMonthlyIncome { get; set; }
     public decimal? AverageHousingAreaPerPerson { get; set; }

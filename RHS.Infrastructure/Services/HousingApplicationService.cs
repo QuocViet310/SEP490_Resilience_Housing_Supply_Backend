@@ -20,6 +20,7 @@ public class HousingApplicationService : IHousingApplicationService
     private readonly IHousingApplicationRepository _applicationRepo;
     private readonly IEligibilityRuleEngine _eligibilityEngine;
     private readonly INotificationService _notificationService;
+    private readonly IInstallmentService _installmentService;
     private readonly AppDbContext _context;
     private readonly ILogger<HousingApplicationService> _logger;
 
@@ -27,12 +28,14 @@ public class HousingApplicationService : IHousingApplicationService
         IHousingApplicationRepository applicationRepo,
         IEligibilityRuleEngine eligibilityEngine,
         INotificationService notificationService,
+        IInstallmentService installmentService,
         AppDbContext context,
         ILogger<HousingApplicationService> logger)
     {
         _applicationRepo = applicationRepo;
         _eligibilityEngine = eligibilityEngine;
         _notificationService = notificationService;
+        _installmentService = installmentService;
         _context = context;
         _logger = logger;
     }
@@ -318,6 +321,11 @@ public class HousingApplicationService : IHousingApplicationService
             ReceiptUrl             = app.ReceiptUrl,
             SlotCode               = app.SlotCode,
             LotteryResult          = app.LotteryResult,
+            ApartmentId            = app.ApartmentId,
+            ApartmentUnitName      = app.Apartment?.UnitName,
+            ApartmentArea          = app.Apartment?.Area,
+            ApartmentPrice         = app.Apartment?.Price,
+            ApartmentStatus        = app.Apartment?.Status,
             MonthlyIncome          = app.MonthlyIncome,
             SpouseMonthlyIncome    = app.SpouseMonthlyIncome,
             AverageHousingAreaPerPerson = app.AverageHousingAreaPerPerson,
@@ -666,6 +674,7 @@ public class HousingApplicationService : IHousingApplicationService
 
         var now = DateTime.UtcNow;
         var pendingNotify = new List<(Guid ApplicantId, string Note)>();
+        var appsNeedingInstallments = new List<Guid>();
 
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
@@ -680,18 +689,32 @@ public class HousingApplicationService : IHousingApplicationService
                         $"Số hồ sơ đã duyệt ({apps.Count}) vượt số căn còn lại ({project.AvailableUnits}). " +
                         "Hãy dùng quyết định «Ưu tiên + bốc thăm» thay vì «Chốt & ký».");
 
+                await AssignApartmentsForAppsAsync(
+                    projectId, apps, request.ApartmentAssignments, developerUserId, now);
+
                 foreach (var app in apps)
                 {
+                    if (string.IsNullOrWhiteSpace(app.LotteryResult)
+                        || app.LotteryResult == LotteryResultConstants.Pending)
+                    {
+                        app.LotteryResult = !string.IsNullOrWhiteSpace(app.PriorityGroup)
+                            ? LotteryResultConstants.PriorityWon
+                            : LotteryResultConstants.Won;
+                    }
+
                     MoveToContractPending(
                         app,
                         developerUserId,
                         now,
                         ReviewActionConstants.DeveloperDecisionCloseAndSign,
-                        "CĐT chốt danh sách đủ điều kiện, chuyển sang bước ký hợp đồng nguyên tắc.",
+                        $"CĐT chốt danh sách + bàn giao căn {app.Apartment?.UnitName ?? ""}, chuyển ký hợp đồng mua bán NOXH.",
                         pendingNotify);
+                    appsNeedingInstallments.Add(app.ApplicationId);
                 }
 
-                project.AvailableUnits = Math.Max(0, project.AvailableUnits - apps.Count);
+                project.AvailableUnits = await _context.Apartments.CountAsync(a =>
+                    a.ProjectId == projectId
+                    && a.Status == ApartmentStatusConstants.Available);
                 project.UpdatedAt = now;
 
                 if (request.CloseProject)
@@ -750,18 +773,28 @@ public class HousingApplicationService : IHousingApplicationService
                     selectedPriority = priorityApps.Take(project.AvailableUnits).ToList();
                 }
 
+                if (selectedPriority.Count == 0)
+                    throw new InvalidOperationException("Không có hồ sơ ưu tiên nào được chọn để cấp căn.");
+
+                await AssignApartmentsForAppsAsync(
+                    projectId, selectedPriority, request.ApartmentAssignments, developerUserId, now);
+
                 foreach (var app in selectedPriority)
                 {
+                    app.LotteryResult = LotteryResultConstants.PriorityWon;
                     MoveToContractPending(
                         app,
                         developerUserId,
                         now,
                         ReviewActionConstants.PriorityDirectApproval,
-                        "Duyệt trực tiếp đối tượng thuộc diện ưu tiên (không qua bốc thăm), chuyển sang bước ký hợp đồng nguyên tắc.",
+                        $"Duyệt ưu tiên + bàn giao căn {app.Apartment?.UnitName ?? ""} (không qua bốc thăm), chuyển ký hợp đồng mua bán NOXH.",
                         pendingNotify);
+                    appsNeedingInstallments.Add(app.ApplicationId);
                 }
 
-                project.AvailableUnits = Math.Max(0, project.AvailableUnits - selectedPriority.Count);
+                project.AvailableUnits = await _context.Apartments.CountAsync(a =>
+                    a.ProjectId == projectId
+                    && a.Status == ApartmentStatusConstants.Available);
                 project.UpdatedAt = now;
             }
             else
@@ -779,13 +812,28 @@ public class HousingApplicationService : IHousingApplicationService
             throw;
         }
 
+        foreach (var appId in appsNeedingInstallments)
+        {
+            try
+            {
+                await _installmentService.FireTriggerEventAsync(
+                    appId,
+                    TriggerEventConstants.OnLotteryWon,
+                    DateTime.UtcNow);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi sinh lịch thanh toán sau cấp căn cho App {AppId}", appId);
+            }
+        }
+
         foreach (var (applicantId, note) in pendingNotify)
         {
             try
             {
                 await _notificationService.SendAsync(
                     applicantId,
-                    "Đã chốt suất — vui lòng ký hợp đồng nguyên tắc",
+                    "Đã chốt suất & cấp căn — vui lòng ký hợp đồng mua bán NOXH",
                     note,
                     NotificationTypeConstants.ContractPending);
             }
@@ -796,6 +844,68 @@ public class HousingApplicationService : IHousingApplicationService
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Gán căn AVAILABLE cho từng hồ sơ khi CĐT chốt / duyệt ưu tiên.
+    /// </summary>
+    private async Task AssignApartmentsForAppsAsync(
+        Guid projectId,
+        List<HousingApplication> apps,
+        List<ApartmentAssignmentItemDto>? assignments,
+        Guid changedBy,
+        DateTime now)
+    {
+        if (assignments == null || assignments.Count == 0)
+            throw new InvalidOperationException(
+                "Phải chọn căn cụ thể cho từng hồ sơ được cấp (ApartmentAssignments).");
+
+        if (assignments.Count != apps.Count)
+            throw new InvalidOperationException(
+                $"Số căn được chọn ({assignments.Count}) phải khớp số hồ sơ cấp ({apps.Count}).");
+
+        var appIds = apps.Select(a => a.ApplicationId).ToHashSet();
+        if (assignments.Any(x => !appIds.Contains(x.ApplicationId)))
+            throw new InvalidOperationException("Có hồ sơ trong danh sách gán căn không thuộc đợt cấp này.");
+
+        var aptIds = assignments.Select(x => x.ApartmentId).ToList();
+        if (aptIds.Distinct().Count() != aptIds.Count)
+            throw new InvalidOperationException("Không được gán cùng một căn cho nhiều hồ sơ.");
+
+        var apartments = await _context.Apartments
+            .Where(a => a.ProjectId == projectId && aptIds.Contains(a.Id))
+            .ToListAsync();
+
+        if (apartments.Count != aptIds.Count)
+            throw new InvalidOperationException("Một hoặc nhiều căn không thuộc dự án này.");
+
+        foreach (var item in assignments)
+        {
+            var app = apps.First(a => a.ApplicationId == item.ApplicationId);
+            var apt = apartments.First(a => a.Id == item.ApartmentId);
+
+            if (!string.Equals(apt.Status, ApartmentStatusConstants.Available, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Căn '{apt.UnitName}' không còn trống (Status={apt.Status}).");
+
+            if (app.ApartmentId.HasValue)
+                throw new InvalidOperationException($"Hồ sơ {app.FullName} đã được gán căn trước đó.");
+
+            app.ApartmentId = apt.Id;
+            app.Apartment = apt;
+            apt.Status = ApartmentStatusConstants.Assigned;
+
+            _context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+            {
+                HistoryId = Guid.NewGuid(),
+                ApplicationId = app.ApplicationId,
+                OldStatus = app.ApplicationStatus,
+                NewStatus = app.ApplicationStatus,
+                Action = ReviewActionConstants.AssignApartment,
+                Note = $"Cấp căn khi chốt đợt: {apt.UnitName} {apt.Area}m² - {apt.Price:N0} VND",
+                ChangedAt = now,
+                ChangedBy = changedBy
+            });
+        }
     }
 
     private void MoveToContractPending(
@@ -835,7 +945,7 @@ public class HousingApplicationService : IHousingApplicationService
 
         pendingNotify.Add((
             app.ApplicantId,
-            "Hồ sơ của bạn đã được chốt suất. Vui lòng xem và ký hợp đồng nguyên tắc trên ứng dụng; sau khi ký mới đặt cọc VNPay."));
+            "Hồ sơ của bạn đã được chốt suất. Vui lòng xem và ký hợp đồng mua bán nhà ở xã hội trên ứng dụng; sau khi ký mới đặt cọc VNPay."));
     }
 
     private static ApplicationSummaryItemDto MapToSummaryItem(HousingApplication a)

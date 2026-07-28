@@ -20,7 +20,19 @@ public class DeveloperWorkflowDecisionRequestDto
     public List<Guid>? SelectedPriorityApplicationIds { get; set; }
 
     /// <summary>
+    /// Gán căn cụ thể khi chốt / duyệt ưu tiên (bắt buộc với CLOSE_AND_SIGN và PROCESS_PRIORITY_AND_LOTTERY).
+    /// Mỗi hồ sơ được chuyển CONTRACT_PENDING phải có đúng 1 căn AVAILABLE trong dự án.
+    /// </summary>
+    public List<ApartmentAssignmentItemDto>? ApartmentAssignments { get; set; }
+
+    /// <summary>
     /// Tùy chọn đóng dự án (chuyển status CLOSED) sau khi chốt đợt hay không.
     /// </summary>
     public bool CloseProject { get; set; } = false;
+}
+
+public class ApartmentAssignmentItemDto
+{
+    public Guid ApplicationId { get; set; }
+    public Guid ApartmentId { get; set; }
 }
