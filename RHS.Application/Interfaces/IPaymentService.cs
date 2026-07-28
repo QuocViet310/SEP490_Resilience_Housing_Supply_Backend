@@ -11,9 +11,9 @@ namespace RHS.Application.Interfaces;
 public interface IPaymentService
 {
     /// <summary>
-    /// Tạo yêu cầu thanh toán đặt cọc cho hồ sơ đã APPROVED:
-    /// 1. Validate hồ sơ đang ở trạng thái APPROVED
-    /// 2. Lấy DepositAmount từ HousingProject
+    /// Tạo yêu cầu thanh toán Đợt 1 cho hồ sơ đã ký HĐ (CONTRACT_SIGNED):
+    /// 1. Validate trạng thái CONTRACT_SIGNED
+    /// 2. Lấy số tiền Đợt 1 từ installment (20% giá căn)
     /// 3. Lưu bản ghi Payment (Status=Pending) vào DB
     /// 4. Tạo URL redirect sang VNPay Sandbox
     /// </summary>

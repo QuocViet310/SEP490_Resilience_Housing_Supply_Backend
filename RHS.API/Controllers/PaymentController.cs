@@ -27,8 +27,7 @@ public class PaymentController : ControllerBase
     }
 
     /// <summary>
-    /// [Bước 1 luồng] Tạo URL thanh toán đặt cọc cho hồ sơ đã APPROVED.
-    /// Số tiền tự động lấy từ DepositAmount của dự án.
+    /// [Bước 1 luồng] Tạo URL thanh toán Đợt 1 (20% giá căn) sau khi ký HĐ.
     /// </summary>
     /// <remarks>
     /// **Body chỉ cần ApplicationId:**
@@ -377,9 +376,14 @@ public class PaymentController : ControllerBase
                 ? application.SlotCode
                 : $"PENDING-{application.ApplicationId.ToString()[..8].ToUpperInvariant()}";
 
+            var phase1Pct = project.Phase1Percentage;
+            var phase1Fallback = application.Apartment != null && phase1Pct > 0
+                ? Math.Round(application.Apartment.Price * phase1Pct / 100m, 0, MidpointRounding.AwayFromZero)
+                : 0m;
+
             var pdfBytes = pdfContractService.GeneratePdfBytesOnly(
                 application, project, slotCode,
-                payment?.Amount ?? project.DepositAmount,
+                payment?.Amount ?? phase1Fallback,
                 payment?.VnpTransactionNo,
                 wardManagerName);
 

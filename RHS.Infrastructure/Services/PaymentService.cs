@@ -145,7 +145,7 @@ public class PaymentService : IPaymentService
             };
         }
 
-        // ── 2. Lấy DepositAmount từ HousingProject ─────────────────────────
+        // ── 2. Số tiền Đợt 1 = installment Phase 1 (% giá căn theo Phase1Percentage) ──
         var project = await _projectRepo.GetByIdAsync(application.ProjectId);
         if (project == null)
         {
@@ -156,13 +156,13 @@ public class PaymentService : IPaymentService
             };
         }
 
-        var depositAmount = project.DepositAmount;
-        if (depositAmount <= 0)
+        var phase1Amount = await ResolvePhase1AmountAsync(application);
+        if (phase1Amount <= 0)
         {
             return new PaymentResponseDto
             {
                 Success = false,
-                Message = "Dự án chưa cấu hình số tiền Đợt 1."
+                Message = "Chưa xác định được số tiền Đợt 1 (cần cấp căn trước khi thanh toán)."
             };
         }
 
@@ -179,7 +179,7 @@ public class PaymentService : IPaymentService
             HousingProjectId = application.ProjectId,
             OrderId       = orderId,
             OrderInfo     = orderInfo,
-            Amount        = depositAmount,
+            Amount        = phase1Amount,
             Status        = "Pending",
             CreatedAt     = DateTime.UtcNow
         };
@@ -192,7 +192,7 @@ public class PaymentService : IPaymentService
             OrderId     = orderId,
             OrderInfo   = orderInfo,
             OrderType   = "deposit",
-            Amount      = depositAmount,
+            Amount      = phase1Amount,
             CreatedDate = DateTime.Now
         };
 
@@ -200,7 +200,7 @@ public class PaymentService : IPaymentService
 
         _logger.LogInformation(
             "Payment created: OrderId={OrderId}, Amount={Amount}, AppId={AppId}.",
-            orderId, depositAmount, dto.ApplicationId);
+            orderId, phase1Amount, dto.ApplicationId);
 
         return new PaymentResponseDto
         {
@@ -208,7 +208,7 @@ public class PaymentService : IPaymentService
             Message    = "Tạo URL thanh toán thành công",
             PaymentUrl = paymentUrl,
             OrderId    = orderId,
-            Amount     = depositAmount
+            Amount     = phase1Amount
         };
     }
 
@@ -521,6 +521,36 @@ public class PaymentService : IPaymentService
     // ═══════════════════════════════════════════════════════════════════════
     // Private helpers
     // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Đợt 1 = installment PhaseOrder 1; fallback Round(Phase1Percentage × giá căn).
+    /// </summary>
+    private async Task<decimal> ResolvePhase1AmountAsync(HousingApplication application)
+    {
+        var phase1 = await _context.PaymentInstallments
+            .AsNoTracking()
+            .Include(i => i.Milestone)
+            .Where(i => i.ApplicationId == application.ApplicationId
+                        && i.Milestone.PhaseOrder == 1
+                        && i.Status != InstallmentStatusConstants.Cancelled)
+            .OrderByDescending(i => i.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (phase1 != null && phase1.Amount > 0)
+            return phase1.Amount;
+
+        var price = application.Apartment?.Price ?? 0m;
+        if (price <= 0)
+            return 0m;
+
+        var project = await _context.HousingProjects
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == application.ProjectId);
+        if (project == null || project.Phase1Percentage <= 0 || project.Phase1Percentage > 30m)
+            return 0m;
+
+        return Math.Round(price * project.Phase1Percentage / 100m, 0, MidpointRounding.AwayFromZero);
+    }
 
     /// <summary>
     /// Sinh SlotCode: NOXH-{WardPrefix}-{Seq:000}

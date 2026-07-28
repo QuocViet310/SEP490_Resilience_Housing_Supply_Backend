@@ -139,7 +139,7 @@ public class HousingProjectRepository : IHousingProjectRepository
             Ward = x.Ward,
             LotteryDate = x.LotteryDate,
             LotteryLocation = x.LotteryLocation,
-            DepositAmount = x.DepositAmount,
+            Phase1Percentage = x.Phase1Percentage,
             MinPrice = x.MinPrice,
             MaxPrice = x.MaxPrice,
             MinArea = x.MinArea,
@@ -232,10 +232,19 @@ public class HousingProjectRepository : IHousingProjectRepository
             _context.Apartments.Add(apt);
         }
 
-        // Tránh EF track lại collection ASSIGNED cũ
+        // Ghi lại milestones (Đợt 1/2 theo Phase1Percentage, …)
+        foreach (var ms in entity.PaymentMilestones.ToList())
+        {
+            if (ms.Id == Guid.Empty) ms.Id = Guid.NewGuid();
+            ms.ProjectId = entity.Id;
+            _context.PaymentMilestones.Add(ms);
+        }
+
+        // Tránh EF track lại collection ASSIGNED cũ / milestone trùng
         entity.Apartments = entity.Apartments
             .Where(a => a.Status == ApartmentStatusConstants.Available)
             .ToList();
+        entity.PaymentMilestones = new List<PaymentMilestone>();
 
         _context.HousingProjects.Update(entity);
         await _context.SaveChangesAsync();

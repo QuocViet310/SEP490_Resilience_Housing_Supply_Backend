@@ -66,7 +66,7 @@ public class HousingProjectService : IHousingProjectService
             Ward = request.Ward,
             LotteryDate = request.LotteryDate,
             LotteryLocation = request.LotteryLocation,
-            DepositAmount = request.DepositAmount,
+            Phase1Percentage = NormalizePhase1Percentage(request.Phase1Percentage),
             MinPrice = request.MinPrice,
             MaxPrice = request.MaxPrice,
             MinArea = request.MinArea,
@@ -164,51 +164,8 @@ public class HousingProjectService : IHousingProjectService
         }
         else
         {
-            // DepositAmount (API) = số tiền cố định Đợt 1 sau ký HĐ (lần thanh toán đầu).
-            var phase1Fixed = request.DepositAmount > 0 ? request.DepositAmount : 50_000_000m;
-            var now = DateTime.UtcNow;
-            housingProject.PaymentMilestones.Add(new PaymentMilestone
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = housingProject.Id,
-                PhaseOrder = 1,
-                PhaseName = "Đợt 1",
-                CalculationType = CalculationTypeConstants.FixedAmount,
-                FixedAmount = phase1Fixed,
-                TriggerEvent = TriggerEventConstants.OnContractSigned,
-                DueDays = 7,
-                Description = "Đợt 1 — thanh toán sau khi ký hợp đồng mua bán nhà ở xã hội (≤ 30% giá trị HĐ theo Luật KD BĐS)",
-                IsActive = true,
-                CreatedAt = now
-            });
-            housingProject.PaymentMilestones.Add(new PaymentMilestone
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = housingProject.Id,
-                PhaseOrder = 2,
-                PhaseName = "Đợt 2",
-                CalculationType = CalculationTypeConstants.Percentage,
-                Percentage = 40m,
-                TriggerEvent = TriggerEventConstants.OnLotteryWon,
-                DueDays = 30,
-                Description = "Đợt 2 theo đơn giá căn đã thẩm định",
-                IsActive = true,
-                CreatedAt = now
-            });
-            housingProject.PaymentMilestones.Add(new PaymentMilestone
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = housingProject.Id,
-                PhaseOrder = 3,
-                PhaseName = "Đợt 3",
-                CalculationType = CalculationTypeConstants.Percentage,
-                Percentage = 60m,
-                TriggerEvent = TriggerEventConstants.OnLotteryWon,
-                DueDays = 90,
-                Description = "Đợt 3 theo đơn giá căn đã thẩm định",
-                IsActive = true,
-                CreatedAt = now
-            });
+            // Đợt 1 = Phase1Percentage (CĐT chỉnh, ≤ 30%); Đợt 2 = phần còn lại.
+            AddDefaultPercentMilestones(housingProject, housingProject.Phase1Percentage);
         }
 
         // Save to repository
@@ -268,7 +225,7 @@ public class HousingProjectService : IHousingProjectService
         existingProject.Ward = request.Ward;
         existingProject.LotteryDate = request.LotteryDate;
         existingProject.LotteryLocation = request.LotteryLocation;
-        existingProject.DepositAmount = request.DepositAmount;
+        existingProject.Phase1Percentage = NormalizePhase1Percentage(request.Phase1Percentage);
         existingProject.MinPrice = request.MinPrice;
         existingProject.MaxPrice = request.MaxPrice;
         existingProject.MinArea = request.MinArea;
@@ -339,7 +296,7 @@ public class HousingProjectService : IHousingProjectService
             ApplyApartmentAggregates(existingProject, existingProject.Apartments);
         }
 
-        // Sync PaymentMilestones (replace all)
+        // Sync PaymentMilestones (replace all nếu client gửi; không thì đồng bộ % Đợt 1/2 từ Phase1Percentage)
         if (request.Milestones != null)
         {
             existingProject.PaymentMilestones.Clear();
@@ -366,6 +323,10 @@ public class HousingProjectService : IHousingProjectService
                     CreatedAt       = DateTime.UtcNow
                 });
             }
+        }
+        else
+        {
+            SyncDefaultPercentMilestones(existingProject, existingProject.Phase1Percentage);
         }
 
         // Save to repository
@@ -495,6 +456,18 @@ public class HousingProjectService : IHousingProjectService
             throw new ArgumentException("AvailableUnits must be greater than or equal to 0.");
         }
 
+        // Đợt 1 bắt buộc: > 0 và ≤ 30% (Luật Nhà ở) — CĐT nhập khi tạo dự án.
+        if (request.Phase1Percentage <= 0)
+        {
+            throw new ArgumentException(
+                "Vui lòng nhập tỉ lệ trả trước Đợt 1 (% giá căn), lớn hơn 0 và không quá 30%.");
+        }
+        if (request.Phase1Percentage > 30m)
+        {
+            throw new ArgumentException(
+                "Tỉ lệ Đợt 1 không được vượt 30% giá trị hợp đồng (Luật Nhà ở 2023).");
+        }
+
         // IsConfirmed must be true
         if (request.IsConfirmed != true)
         {
@@ -530,7 +503,7 @@ public class HousingProjectService : IHousingProjectService
             Ward = project.Ward,
             LotteryDate = project.LotteryDate,
             LotteryLocation = project.LotteryLocation,
-            DepositAmount = project.DepositAmount,
+            Phase1Percentage = project.Phase1Percentage,
             MinPrice = project.MinPrice,
             MaxPrice = project.MaxPrice,
             MinArea = project.MinArea,
@@ -585,6 +558,127 @@ public class HousingProjectService : IHousingProjectService
                 })
                 .ToList()
         };
+    }
+
+    /// <summary>Đợt 1: bắt buộc &gt; 0 và ≤ 30%.</summary>
+    private static decimal NormalizePhase1Percentage(decimal value)
+    {
+        if (value <= 0)
+            throw new ArgumentException(
+                "Vui lòng nhập tỉ lệ trả trước Đợt 1 (% giá căn), lớn hơn 0 và không quá 30%.");
+        if (value > 30m)
+            throw new ArgumentException(
+                "Tỉ lệ Đợt 1 không được vượt 30% giá trị hợp đồng (Luật Nhà ở 2023).");
+        return Math.Round(value, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static void AddDefaultPercentMilestones(HousingProject project, decimal phase1Pct)
+    {
+        var p1 = NormalizePhase1Percentage(phase1Pct);
+        var p2 = 100m - p1;
+        var now = DateTime.UtcNow;
+        project.PaymentMilestones.Add(new PaymentMilestone
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = project.Id,
+            PhaseOrder = 1,
+            PhaseName = "Đợt 1",
+            CalculationType = CalculationTypeConstants.Percentage,
+            Percentage = p1,
+            TriggerEvent = TriggerEventConstants.OnContractSigned,
+            DueDays = 7,
+            Description = $"Đợt 1 — {p1:0.##}% giá căn sau khi ký hợp đồng mua bán nhà ở xã hội (≤ 30%)",
+            IsActive = true,
+            CreatedAt = now
+        });
+        project.PaymentMilestones.Add(new PaymentMilestone
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = project.Id,
+            PhaseOrder = 2,
+            PhaseName = "Đợt 2",
+            CalculationType = CalculationTypeConstants.Percentage,
+            Percentage = p2,
+            TriggerEvent = TriggerEventConstants.OnLotteryWon,
+            DueDays = 30,
+            Description = $"Đợt 2 — phần còn lại ({p2:0.##}% giá căn); đợt cuối nhận phần dư làm tròn",
+            IsActive = true,
+            CreatedAt = now
+        });
+    }
+
+    /// <summary>Cập nhật / seed Đợt 1–2 theo Phase1Percentage (giữ milestone khác nếu có).</summary>
+    private static void SyncDefaultPercentMilestones(HousingProject project, decimal phase1Pct)
+    {
+        var p1 = NormalizePhase1Percentage(phase1Pct);
+        var p2 = 100m - p1;
+        project.Phase1Percentage = p1;
+
+        var m1 = project.PaymentMilestones.FirstOrDefault(m => m.PhaseOrder == 1 && m.IsActive);
+        var m2 = project.PaymentMilestones.FirstOrDefault(m => m.PhaseOrder == 2 && m.IsActive);
+
+        if (m1 == null && m2 == null && !project.PaymentMilestones.Any(m => m.IsActive))
+        {
+            AddDefaultPercentMilestones(project, p1);
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        if (m1 != null)
+        {
+            m1.CalculationType = CalculationTypeConstants.Percentage;
+            m1.Percentage = p1;
+            m1.FixedAmount = null;
+            m1.PhaseName = "Đợt 1";
+            m1.Description = $"Đợt 1 — {p1:0.##}% giá căn sau khi ký hợp đồng mua bán nhà ở xã hội (≤ 30%)";
+        }
+        else
+        {
+            project.PaymentMilestones.Add(new PaymentMilestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = project.Id,
+                PhaseOrder = 1,
+                PhaseName = "Đợt 1",
+                CalculationType = CalculationTypeConstants.Percentage,
+                Percentage = p1,
+                TriggerEvent = TriggerEventConstants.OnContractSigned,
+                DueDays = 7,
+                Description = $"Đợt 1 — {p1:0.##}% giá căn sau khi ký hợp đồng mua bán nhà ở xã hội (≤ 30%)",
+                IsActive = true,
+                CreatedAt = now
+            });
+        }
+
+        if (m2 != null)
+        {
+            m2.CalculationType = CalculationTypeConstants.Percentage;
+            m2.Percentage = p2;
+            m2.FixedAmount = null;
+            m2.PhaseName = "Đợt 2";
+            m2.Description = $"Đợt 2 — phần còn lại ({p2:0.##}% giá căn); đợt cuối nhận phần dư làm tròn";
+        }
+        else
+        {
+            project.PaymentMilestones.Add(new PaymentMilestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = project.Id,
+                PhaseOrder = 2,
+                PhaseName = "Đợt 2",
+                CalculationType = CalculationTypeConstants.Percentage,
+                Percentage = p2,
+                TriggerEvent = TriggerEventConstants.OnLotteryWon,
+                DueDays = 30,
+                Description = $"Đợt 2 — phần còn lại ({p2:0.##}% giá căn); đợt cuối nhận phần dư làm tròn",
+                IsActive = true,
+                CreatedAt = now
+            });
+        }
+
+        // Tắt Đợt 3+ của template cũ (40/60) nếu còn
+        foreach (var extra in project.PaymentMilestones.Where(m => m.IsActive && m.PhaseOrder >= 3))
+            extra.IsActive = false;
     }
 
     /// <summary>Đồng bộ AvailableUnits / khoảng giá-diện tích từ danh sách căn.</summary>

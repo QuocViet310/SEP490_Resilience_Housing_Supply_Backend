@@ -3,14 +3,13 @@ using System.ComponentModel.DataAnnotations;
 namespace RHS.Application.DTOs.Payment;
 
 /// <summary>
-/// DTO tạo yêu cầu thanh toán đặt cọc cho hồ sơ đã được duyệt (APPROVED).
-/// Số tiền (Amount) sẽ tự động lấy từ DepositAmount của dự án.
+/// DTO tạo yêu cầu thanh toán Đợt 1 (20% giá căn) sau khi ký HĐ.
+/// Số tiền lấy từ PaymentInstallment Phase 1 (hoặc tính 20% giá căn).
 /// </summary>
 public class CreatePaymentDto
 {
     /// <summary>
-    /// ID hồ sơ đăng ký đã được phê duyệt (APPROVED).
-    /// Hệ thống sẽ lấy Amount từ HousingProject.DepositAmount.
+    /// ID hồ sơ đã ký hợp đồng (CONTRACT_SIGNED).
     /// </summary>
     [Required(ErrorMessage = "ApplicationId là bắt buộc")]
     public Guid ApplicationId { get; set; }
