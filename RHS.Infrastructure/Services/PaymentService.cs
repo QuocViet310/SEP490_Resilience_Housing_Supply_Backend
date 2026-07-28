@@ -255,10 +255,23 @@ public class PaymentService : IPaymentService
         if (payment == null)
             return (true, false, false);
 
-        // Idempotent: đã Success thì không xử lý lại
+        // Idempotent: đã Paid — vẫn self-heal installment nếu lần trước cập nhật đợt bị lỗi
         if (string.Equals(payment.Status, "Success", StringComparison.OrdinalIgnoreCase)
             || string.Equals(payment.Status, "Paid", StringComparison.OrdinalIgnoreCase))
         {
+            if (TryParseInstallmentId(payment.OrderInfo, out var paidInstallmentId))
+            {
+                try
+                {
+                    await _installmentService.ProcessInstallmentPaidAsync(paidInstallmentId, payment.Id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Self-heal installment failed for OrderId={OrderId}, InstId={InstId}.",
+                        orderId, paidInstallmentId);
+                }
+            }
             return (true, true, true);
         }
 
@@ -338,6 +351,22 @@ public class PaymentService : IPaymentService
     {
         var payment = await _paymentRepository.GetByOrderIdAsync(orderId);
         if (payment == null) return null;
+
+        // Self-heal: payment Paid nhưng installment vẫn PENDING (lỗi ChangedBy trước đây)
+        if (IsPaidStatus(payment.Status)
+            && TryParseInstallmentId(payment.OrderInfo, out var installmentId))
+        {
+            try
+            {
+                await _installmentService.ProcessInstallmentPaidAsync(installmentId, payment.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Self-heal on GetPaymentByOrderId failed: OrderId={OrderId}, InstId={InstId}.",
+                    orderId, installmentId);
+            }
+        }
 
         return await MapToInfoDtoAsync(payment);
     }

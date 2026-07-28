@@ -177,6 +177,9 @@ public class InstallmentService : IInstallmentService
     /// <inheritdoc />
     public async Task<InstallmentSummaryDto?> GetSummaryAsync(Guid applicationId)
     {
+        // Self-heal: payment đã Paid nhưng installment còn PENDING (lỗi history ChangedBy)
+        await HealPaidInstallmentsForApplicationAsync(applicationId);
+
         var app = await _db.HousingApplications
             .AsNoTracking()
             .Include(a => a.Apartment)
@@ -222,6 +225,61 @@ public class InstallmentService : IInstallmentService
             PaidPhases        = phases.Count(p => p.Status == InstallmentStatusConstants.Paid),
             Phases            = phases
         };
+    }
+
+    /// <summary>
+    /// Nếu có Payment Paid gắn InstId mà installment vẫn PENDING/OVERDUE → chạy lại ProcessInstallmentPaid.
+    /// </summary>
+    private async Task HealPaidInstallmentsForApplicationAsync(Guid applicationId)
+    {
+        var unpaidIds = await _db.PaymentInstallments
+            .Where(i => i.ApplicationId == applicationId
+                        && (i.Status == InstallmentStatusConstants.Pending
+                            || i.Status == InstallmentStatusConstants.Overdue))
+            .Select(i => i.Id)
+            .ToListAsync();
+
+        if (unpaidIds.Count == 0) return;
+
+        var paidPayments = await _db.Payments
+            .Where(p => p.ApplicationId == applicationId
+                        && (p.Status == "Paid" || p.Status == "Success"))
+            .ToListAsync();
+
+        foreach (var payment in paidPayments)
+        {
+            if (!TryParseInstallmentId(payment.OrderInfo, out var instId))
+                continue;
+            if (!unpaidIds.Contains(instId))
+                continue;
+
+            try
+            {
+                await ProcessInstallmentPaidAsync(instId, payment.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "HealPaidInstallments failed: AppId={AppId}, InstId={InstId}, OrderId={OrderId}.",
+                    applicationId, instId, payment.OrderId);
+            }
+        }
+    }
+
+    private static bool TryParseInstallmentId(string? orderInfo, out Guid installmentId)
+    {
+        installmentId = Guid.Empty;
+        if (string.IsNullOrWhiteSpace(orderInfo))
+            return false;
+
+        const string marker = "InstId:";
+        var idx = orderInfo.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0)
+            return false;
+
+        var raw = orderInfo[(idx + marker.Length)..].Trim();
+        var token = raw.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? raw;
+        return Guid.TryParse(token, out installmentId);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -335,40 +393,56 @@ public class InstallmentService : IInstallmentService
             .FirstOrDefaultAsync(i => i.Id == installmentId)
             ?? throw new InvalidOperationException($"Installment {installmentId} không tồn tại.");
 
-        installment.Status    = InstallmentStatusConstants.Paid;
-        installment.PaidAt    = DateTime.UtcNow;
-        installment.PaymentId = paymentId;
-        installment.UpdatedAt = DateTime.UtcNow;
+        var applicantId = installment.HousingApplication.ApplicantId;
+        var alreadyPaid = installment.Status == InstallmentStatusConstants.Paid;
 
-        _logger.LogInformation(
-            "Installment PAID: Id={Id}, Phase={Phase}, Amount={Amount}, App={AppId}.",
-            installmentId, installment.Milestone.PhaseName, installment.Amount,
-            installment.ApplicationId);
-
-        // Ghi lịch sử hồ sơ
-        _db.Set<ApplicationStatusHistory>().Add(new ApplicationStatusHistory
+        if (!alreadyPaid)
         {
-            HistoryId     = Guid.NewGuid(),
-            ApplicationId = installment.ApplicationId,
-            OldStatus     = installment.HousingApplication.ApplicationStatus,
-            NewStatus     = installment.HousingApplication.ApplicationStatus, // chưa đổi status
-            Action        = ReviewActionConstants.InstallmentPayment,
-            Note          = $"Thanh toán {installment.Milestone.PhaseName}: {installment.Amount:N0} VND",
-            ChangedAt     = DateTime.UtcNow
-        });
+            installment.Status    = InstallmentStatusConstants.Paid;
+            installment.PaidAt    = DateTime.UtcNow;
+            installment.PaymentId = paymentId;
+            installment.UpdatedAt = DateTime.UtcNow;
 
-        // Gửi notification
-        try
-        {
-            await _notificationService.SendAsync(
-                installment.HousingApplication.ApplicantId,
-                $"✅ Thanh toán thành công: {installment.Milestone.PhaseName}",
-                $"Đã thanh toán {installment.Amount:N0} VND cho {installment.Milestone.PhaseName}.",
-                NotificationTypeConstants.InstallmentPaid);
+            _logger.LogInformation(
+                "Installment PAID: Id={Id}, Phase={Phase}, Amount={Amount}, App={AppId}.",
+                installmentId, installment.Milestone.PhaseName, installment.Amount,
+                installment.ApplicationId);
+
+            // ChangedBy bắt buộc (FK Users) — thiếu sẽ làm SaveChanges fail, đợt vẫn PENDING
+            _db.Set<ApplicationStatusHistory>().Add(new ApplicationStatusHistory
+            {
+                HistoryId     = Guid.NewGuid(),
+                ApplicationId = installment.ApplicationId,
+                ChangedBy     = applicantId,
+                OldStatus     = installment.HousingApplication.ApplicationStatus,
+                NewStatus     = installment.HousingApplication.ApplicationStatus,
+                Action        = ReviewActionConstants.InstallmentPayment,
+                Note          = $"Thanh toán {installment.Milestone.PhaseName}: {installment.Amount:N0} VND",
+                ChangedAt     = DateTime.UtcNow
+            });
+
+            try
+            {
+                await _notificationService.SendAsync(
+                    applicantId,
+                    $"✅ Thanh toán thành công: {installment.Milestone.PhaseName}",
+                    $"Đã thanh toán {installment.Amount:N0} VND cho {installment.Milestone.PhaseName}.",
+                    NotificationTypeConstants.InstallmentPaid);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to send paid notification for installment {Id}.", installmentId);
+            }
         }
-        catch (Exception ex)
+        else
         {
-            _logger.LogWarning(ex, "Failed to send paid notification for installment {Id}.", installmentId);
+            // Self-heal: payment đã Paid nhưng lần trước SaveChanges fail giữa chừng
+            installment.PaymentId ??= paymentId;
+            installment.PaidAt ??= DateTime.UtcNow;
+            installment.UpdatedAt = DateTime.UtcNow;
+            _logger.LogInformation(
+                "Installment {Id} already PAID — ensuring FULLY_PAID check / self-heal.",
+                installmentId);
         }
 
         // Kiểm tra xem tất cả đợt đã PAID chưa → FULLY_PAID
@@ -380,9 +454,11 @@ public class InstallmentService : IInstallmentService
             i.Status == InstallmentStatusConstants.Paid
             || i.Status == InstallmentStatusConstants.Cancelled);
 
-        if (allPaid && allInstallments.Count > 0)
+        var application = installment.HousingApplication;
+        if (allPaid
+            && allInstallments.Count > 0
+            && application.ApplicationStatus != ApplicationStatusConstants.FullyPaid)
         {
-            var application = installment.HousingApplication;
             var oldStatus = application.ApplicationStatus;
             application.ApplicationStatus = ApplicationStatusConstants.FullyPaid;
             application.UpdatedAt = DateTime.UtcNow;
@@ -391,6 +467,7 @@ public class InstallmentService : IInstallmentService
             {
                 HistoryId     = Guid.NewGuid(),
                 ApplicationId = application.ApplicationId,
+                ChangedBy     = applicantId,
                 OldStatus     = oldStatus,
                 NewStatus     = ApplicationStatusConstants.FullyPaid,
                 Action        = ReviewActionConstants.InstallmentPayment,
@@ -404,7 +481,7 @@ public class InstallmentService : IInstallmentService
             try
             {
                 await _notificationService.SendAsync(
-                    application.ApplicantId,
+                    applicantId,
                     "🎉 Thanh toán đủ toàn bộ đợt trả trước!",
                     "Bạn đã hoàn thành thanh toán tất cả đợt. Chúc mừng bạn!",
                     NotificationTypeConstants.FullyPaid);
