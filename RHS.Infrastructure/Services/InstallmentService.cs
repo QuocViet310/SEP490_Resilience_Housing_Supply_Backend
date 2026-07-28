@@ -261,14 +261,19 @@ public class InstallmentService : IInstallmentService
         if (previousUnpaid)
             return Fail("Vui lòng thanh toán các đợt trước đó trước.");
 
-        // Kiểm tra không có payment Pending cho installment này
-        var hasPending = await _db.Payments
-            .AnyAsync(p => p.ApplicationId == installment.ApplicationId
+        // Phiên Pending cũ của cùng đợt → hủy, tạo phiên VNPay mới (thoát app không bị khóa)
+        var stalePendings = await _db.Payments
+            .Where(p => p.ApplicationId == installment.ApplicationId
                         && p.Status == "Pending"
-                        && p.OrderInfo.Contains(installmentId.ToString()));
+                        && p.OrderInfo.Contains(installmentId.ToString()))
+            .ToListAsync();
 
-        if (hasPending)
-            return Fail("Đã có giao dịch đang chờ xử lý cho khoản thu này.");
+        foreach (var pending in stalePendings)
+        {
+            pending.Status = "Cancelled";
+            pending.VnpResponseCode ??= "99";
+            await _paymentRepository.UpdateAsync(pending);
+        }
 
         // Tạo Payment record
         var orderId = GenerateOrderId();
@@ -298,7 +303,7 @@ public class InstallmentService : IInstallmentService
             OrderInfo   = orderInfo,
             OrderType   = "installment",
             Amount      = installment.Amount,
-            CreatedDate = DateTime.Now
+            CreatedDate = DateTime.UtcNow
         };
 
         var paymentUrl = _vnPayService.CreatePaymentUrl(httpContext, vnpRequest);
@@ -310,7 +315,7 @@ public class InstallmentService : IInstallmentService
         return new PaymentResponseDto
         {
             Success    = true,
-            Message    = "Tạo URL thanh toán thành công",
+            Message    = "Tạo phiên thanh toán mới (hạn VNPay 30 phút).",
             PaymentUrl = paymentUrl,
             OrderId    = orderId,
             Amount     = installment.Amount

@@ -99,50 +99,44 @@ public class PaymentService : IPaymentService
         }
 
         // Giao dịch Pending / đã thanh toán cho hồ sơ này
-        var existingPayment = await _context.Payments
+        var existingPayments = await _context.Payments
             .Where(p => p.ApplicationId == dto.ApplicationId
                         && (p.Status == "Pending"
                             || p.Status == "Success"
                             || p.Status == "Paid"))
             .OrderByDescending(p => p.CreatedAt)
-            .FirstOrDefaultAsync();
+            .ToListAsync();
 
-        if (existingPayment != null)
+        var paid = existingPayments.FirstOrDefault(p =>
+            string.Equals(p.Status, "Success", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(p.Status, "Paid", StringComparison.OrdinalIgnoreCase));
+
+        if (paid != null)
         {
-            // Đã thanh toán thành công → không tạo mới
-            if (string.Equals(existingPayment.Status, "Success", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(existingPayment.Status, "Paid", StringComparison.OrdinalIgnoreCase))
-            {
-                return new PaymentResponseDto
-                {
-                    Success = false,
-                    Message = "Hồ sơ này đã thanh toán Đợt 1 thành công."
-                };
-            }
-
-            // Pending: tạo lại URL VNPay cho cùng OrderId (user thoát giữa chừng rồi ấn lại)
-            var resumeRequest = new VnPaymentRequest
-            {
-                OrderId     = existingPayment.OrderId,
-                OrderInfo   = existingPayment.OrderInfo ?? $"Thanh toan Dot 1 ho so {existingPayment.OrderId}",
-                OrderType   = "deposit",
-                Amount      = existingPayment.Amount,
-                CreatedDate = DateTime.Now
-            };
-            var resumeUrl = _vnPayService.CreatePaymentUrl(httpContext, resumeRequest);
-
-            _logger.LogInformation(
-                "Resuming pending payment: OrderId={OrderId}, AppId={AppId}.",
-                existingPayment.OrderId, dto.ApplicationId);
-
             return new PaymentResponseDto
             {
-                Success    = true,
-                Message    = "Tiếp tục giao dịch thanh toán đang chờ",
-                PaymentUrl = resumeUrl,
-                OrderId    = existingPayment.OrderId,
-                Amount     = existingPayment.Amount
+                Success = false,
+                Message = "Hồ sơ này đã thanh toán Đợt 1 thành công."
             };
+        }
+
+        // Phiên VNPay cũ (Pending): hủy để tạo phiên mới.
+        // Thoát app / hết 15–30p VNPay ≠ hết hạn nghiệp vụ BE (PaymentTimeoutWorker mới khóa).
+        var stalePendings = existingPayments
+            .Where(p => string.Equals(p.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (stalePendings.Count > 0)
+        {
+            foreach (var pending in stalePendings)
+            {
+                pending.Status = "Cancelled";
+                pending.VnpResponseCode ??= "99";
+                await _paymentRepository.UpdateAsync(pending);
+            }
+
+            _logger.LogInformation(
+                "Cancelled {Count} stale Pending payment(s) for AppId={AppId} before opening a fresh VNPay session.",
+                stalePendings.Count, dto.ApplicationId);
         }
 
         // ── 2. Số tiền Đợt 1 = installment Phase 1 (% giá căn theo Phase1Percentage) ──
@@ -205,7 +199,7 @@ public class PaymentService : IPaymentService
         return new PaymentResponseDto
         {
             Success    = true,
-            Message    = "Tạo URL thanh toán thành công",
+            Message    = "Tạo phiên thanh toán mới (hạn VNPay 30 phút). Thoát ra có thể vào lại — chỉ hết hạn đặt cọc trên hệ thống mới khóa thanh toán.",
             PaymentUrl = paymentUrl,
             OrderId    = orderId,
             Amount     = phase1Amount
@@ -446,6 +440,18 @@ public class PaymentService : IPaymentService
             payment.Status = "Paid";
             payment.PaidAt ??= DateTime.UtcNow;
             await _paymentRepository.UpdateAsync(payment);
+
+            // Hủy các phiên Pending còn lại của cùng hồ sơ (user có thể đã mở phiên mới)
+            var otherPendings = await _context.Payments
+                .Where(p => p.ApplicationId == application.ApplicationId
+                            && p.Id != payment.Id
+                            && p.Status == "Pending")
+                .ToListAsync();
+            foreach (var other in otherPendings)
+            {
+                other.Status = "Cancelled";
+                await _paymentRepository.UpdateAsync(other);
+            }
 
             // Đảm bảo còn PrincipleAgreement (đã tạo lúc CONTRACT_PENDING; tạo bổ sung nếu thiếu)
             var existingAgreement = await _context.PrincipleAgreements
