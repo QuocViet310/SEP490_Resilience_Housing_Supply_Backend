@@ -6,14 +6,15 @@ using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 using RHS.Application.Interfaces;
 using RHS.Infrastructure.Data;
+using RHS.Infrastructure.Helpers;
 
 namespace RHS.API.BackgroundServices;
 
 /// <summary>
 /// Hết hạn theo luồng chuẩn:
-/// - CONTRACT_PENDING quá hạn ký HĐ → EXPIRED
-/// - CONTRACT_SIGNED quá hạn đặt cọc (từ SignedAt) → EXPIRED
-/// Không expire APPROVED: sau duyệt còn chờ CĐT chốt / bốc thăm, chưa đến bước cọc.
+/// - CONTRACT_PENDING quá hạn ký HĐ → EXPIRED (+ hoàn 1 suất căn)
+/// - CONTRACT_SIGNED quá hạn đặt cọc (từ SignedAt) → EXPIRED (+ hoàn 1 suất căn)
+/// Không expire APPROVED: sau duyệt còn chờ CĐT chốt / bốc thăm, chưa giữ suất.
 /// </summary>
 public class PaymentTimeoutWorker : BackgroundService
 {
@@ -54,17 +55,21 @@ public class PaymentTimeoutWorker : BackgroundService
         var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
         var policyService = scope.ServiceProvider.GetRequiredService<IPolicyService>();
 
-        var depositHours = await policyService.GetValueAsync(PolicyKeys.DepositPaymentHours, 24, stoppingToken);
+        var depositHours = await policyService.GetValueAsync(PolicyKeys.DepositPaymentHours, 168, stoppingToken);
         var contractDays = await policyService.GetValueAsync(PolicyKeys.ContractSigningDeadlineDays, 15, stoppingToken);
 
         var depositCutoff = DateTime.UtcNow.AddHours(-depositHours);
         var contractCutoff = DateTime.UtcNow.AddDays(-contractDays);
 
-        // Quá hạn ký HĐ nguyên tắc (sau khi được chốt danh sách / trúng bốc thăm)
+        // Quá hạn ký HĐ nguyên tắc — mốc PrincipleAgreement.CreatedAt (khi chốt suất), không dùng UpdatedAt
         var pendingSignExpired = await context.HousingApplications
+            .Include(x => x.PrincipleAgreement)
             .Where(x =>
                 x.ApplicationStatus == ApplicationStatusConstants.ContractPending &&
-                (x.UpdatedAt ?? x.SubmittedAt) < contractCutoff)
+                (
+                    (x.PrincipleAgreement != null && x.PrincipleAgreement.CreatedAt < contractCutoff)
+                    || (x.PrincipleAgreement == null && (x.UpdatedAt ?? x.SubmittedAt) < contractCutoff)
+                ))
             .ToListAsync(stoppingToken);
 
         // Quá hạn đặt cọc — chỉ sau khi đã ký HĐ (mốc SignedAt)
@@ -149,6 +154,13 @@ public class PaymentTimeoutWorker : BackgroundService
             app.UpdatedAt = DateTime.UtcNow;
             context.HousingApplications.Update(app);
 
+            var released = await ProjectUnitSeatHelper.TryReleaseReservedUnitAsync(
+                context, app.ProjectId, oldStatus, _logger, stoppingToken);
+
+            var historyNote = released
+                ? $"{note} Đã hoàn 1 suất căn về dự án."
+                : note;
+
             context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
             {
                 HistoryId = Guid.NewGuid(),
@@ -157,7 +169,7 @@ public class PaymentTimeoutWorker : BackgroundService
                 Action = action,
                 OldStatus = oldStatus,
                 NewStatus = ApplicationStatusConstants.Expired,
-                Note = note,
+                Note = historyNote,
                 ChangedAt = DateTime.UtcNow
             });
 

@@ -60,6 +60,24 @@ public class LotteryService : ILotteryService
         if (dto.LotteryDate.ToUniversalTime() < DateTime.UtcNow.AddMinutes(-1))
             throw new InvalidOperationException("Thời gian bốc thăm phải ở tương lai.");
 
+        if (project.AvailableUnits <= 0)
+            throw new InvalidOperationException("Dự án đã hết suất — không cần đề xuất lịch bốc thăm.");
+
+        var eligibleCount = await _db.HousingApplications.CountAsync(
+            a => a.ProjectId == projectId
+                 && BatchEligibleStatuses.Contains(a.ApplicationStatus)
+                 && !a.IsViolation,
+            ct);
+
+        if (eligibleCount == 0)
+            throw new InvalidOperationException(
+                "Chưa có hồ sơ APPROVED còn lại để bốc thăm. Chỉ đề xuất lịch sau khi CĐT chốt vượt số căn.");
+
+        if (eligibleCount <= project.AvailableUnits)
+            throw new InvalidOperationException(
+                $"Số hồ sơ chờ bốc thăm ({eligibleCount}) không vượt số căn còn lại ({project.AvailableUnits}). " +
+                "Chỉ đề xuất lịch khi vượt số căn sau bước chốt của CĐT.");
+
         // Hệ thống chỉ hỗ trợ bốc thăm trực tuyến.
         dto.LotteryType = "ONLINE";
 
@@ -74,6 +92,9 @@ public class LotteryService : ILotteryService
 
         if (dto.TotalUnits.HasValue && dto.TotalUnits.Value > 0)
         {
+            if (dto.TotalUnits.Value > project.AvailableUnits)
+                throw new InvalidOperationException(
+                    $"Số căn mở bốc thăm không được vượt số căn còn lại ({project.AvailableUnits}).");
             project.AvailableUnits = dto.TotalUnits.Value;
         }
 
@@ -230,6 +251,10 @@ public class LotteryService : ILotteryService
             .Include(p => p.HousingQuotas)
             .FirstOrDefaultAsync(p => p.Id == projectId, ct)
             ?? throw new InvalidOperationException("Không tìm thấy dự án.");
+
+        if (project.IsLotteryApproved != true || !project.LotteryDate.HasValue)
+            throw new InvalidOperationException(
+                "Chỉ được chạy bốc thăm khi lịch ONLINE đã được Sở phê duyệt. Hãy dùng luồng sảnh Live.");
 
         var participants = await _db.HousingApplications
             .Include(a => a.PrincipleAgreement)
@@ -558,6 +583,30 @@ public class LotteryService : ILotteryService
             }
 
             await _db.SaveChangesAsync(ct);
+
+            try
+            {
+                if (resultStatus == LotteryResultConstants.Won || resultStatus == LotteryResultConstants.PriorityWon)
+                {
+                    await _notificationService.SendAsync(
+                        applicantId,
+                        "Trúng bốc thăm — vui lòng ký hợp đồng",
+                        "Bạn đã trúng bốc thăm. Vui lòng xem và ký hợp đồng nguyên tắc; sau khi ký mới đặt cọc VNPay.",
+                        NotificationTypeConstants.ContractPending);
+                }
+                else if (resultStatus == LotteryResultConstants.Lost)
+                {
+                    await _notificationService.SendAsync(
+                        applicantId,
+                        "Kết quả bốc thăm",
+                        "Rất tiếc, hồ sơ của bạn không trúng trong phiên bốc thăm này.",
+                        NotificationTypeConstants.LotteryResultPublished);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi gửi thông báo kết quả live draw cho user {UserId}", applicantId);
+            }
 
             var liveResult = new LiveDrawResultDto
             {

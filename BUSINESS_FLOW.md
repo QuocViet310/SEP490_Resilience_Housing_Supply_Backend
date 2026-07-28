@@ -80,7 +80,7 @@ DRAFT
 
 ### 3.4 Đặt cọc
 
-- Sau `APPROVED`, người dân thanh toán trong `DEPOSIT_PAYMENT_HOURS` (mặc định 24h).
+- Sau `CONTRACT_SIGNED`, người dân thanh toán đặt cọc trong `DEPOSIT_PAYMENT_HOURS` (mặc định **168h = 7 ngày**).
 - Thành công → `DEPOSIT_PAID` + `SlotCode` + `PrincipleAgreement` (HĐ nguyên tắc).
 - Quá hạn → `EXPIRED` (**không** hoàn `AvailableUnits` vì chưa từng trừ lúc duyệt).
 
@@ -117,7 +117,7 @@ Chỉ hồ sơ: `DEPOSIT_PAID` + có HĐ nguyên tắc + `LotteryResult` ∈ {`W
 | `UPCOMING` → `OPEN` | Khi tới `ApplicationOpenDate` **và** đã công bố đủ ngày từ `PublicAnnounceAt` | `PUBLIC_ANNOUNCE_MIN_DAYS` (Đ38.1.b) |
 | `OPEN` → `CLOSED` | Quá `ApplicationCloseDate` | Lịch dự án |
 | Tacit approval | `PENDING_SXD_REVIEW` quá hạn → `APPROVED` | `TACIT_APPROVAL_DAYS` |
-| Payment timeout | `APPROVED` quá hạn cọc → `EXPIRED` | `DEPOSIT_PAYMENT_HOURS` |
+| Payment timeout | `CONTRACT_SIGNED` quá hạn cọc → `EXPIRED` (+ hoàn suất) | `DEPOSIT_PAYMENT_HOURS` (168h) |
 
 ---
 
@@ -144,7 +144,7 @@ CĐT / SXD + DB rules   →  quyết định cuối + Đ38.1.đ/e, bốc thăm �
 | Key | Mặc định (tham chiếu) | Dùng cho |
 |---|---|---|
 | `TACIT_APPROVAL_DAYS` | 20 | Im lặng đồng ý SXD |
-| `DEPOSIT_PAYMENT_HOURS` | 24 | Hết hạn đặt cọc |
+| `DEPOSIT_PAYMENT_HOURS` | 168 (7 ngày) | Hết hạn đặt cọc sau khi ký HĐ (`CONTRACT_SIGNED`) |
 | `PUBLIC_ANNOUNCE_MIN_DAYS` | 30 | Chặn mở OPEN sớm |
 | `MAX_AREA_PER_PERSON_M2` | 15 | Đ29.2 |
 | `ONE_APPLICATION_PER_APPLICANT` | true | Đ38.1.e |

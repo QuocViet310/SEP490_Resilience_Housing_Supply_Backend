@@ -128,28 +128,45 @@ public class PolicyService : IPolicyService
             });
         }
 
-        if (toAdd.Count == 0)
-            return;
-
         // UpdatedBy FK requires a real user — fall back to any admin/system user if needed
+        var effectiveUserId = systemUserId;
         var userExists = await _db.Users.AnyAsync(u => u.Id == systemUserId, ct);
         if (!userExists)
         {
             var anyUser = await _db.Users.Select(u => u.Id).FirstOrDefaultAsync(ct);
             if (anyUser == Guid.Empty)
             {
-                _logger.LogWarning("Cannot seed PolicyConfig: no users in database yet.");
+                if (toAdd.Count > 0)
+                    _logger.LogWarning("Cannot seed PolicyConfig: no users in database yet.");
                 return;
             }
 
+            effectiveUserId = anyUser;
             foreach (var p in toAdd)
                 p.UpdatedBy = anyUser;
         }
 
-        _db.PolicyConfigs.AddRange(toAdd);
-        await _db.SaveChangesAsync(ct);
-        InvalidateCache();
-        _logger.LogInformation("Seeded {Count} PolicyConfig defaults.", toAdd.Count);
+        if (toAdd.Count > 0)
+        {
+            _db.PolicyConfigs.AddRange(toAdd);
+            await _db.SaveChangesAsync(ct);
+            InvalidateCache();
+            _logger.LogInformation("Seeded {Count} PolicyConfig defaults.", toAdd.Count);
+        }
+
+        // Migrate legacy deposit timeout 24h → 7 days (168h) for existing DBs still on old default.
+        var depositPolicy = await _db.PolicyConfigs
+            .FirstOrDefaultAsync(p => p.PolicyName == PolicyKeys.DepositPaymentHours, ct);
+        if (depositPolicy != null && depositPolicy.PolicyValue == "24")
+        {
+            depositPolicy.PolicyValue = "168";
+            depositPolicy.Description =
+                "Số giờ phải thanh toán đặt cọc sau khi ký hợp đồng nguyên tắc (CONTRACT_SIGNED), tính từ SignedAt. Mặc định 168 = 7 ngày.";
+            depositPolicy.UpdatedBy = effectiveUserId;
+            await _db.SaveChangesAsync(ct);
+            InvalidateCache();
+            _logger.LogInformation("Migrated PolicyConfig {Key} from 24h to 168h (7 days).", PolicyKeys.DepositPaymentHours);
+        }
     }
 
     public void InvalidateCache() => _cache.Remove(CacheKeyAll);

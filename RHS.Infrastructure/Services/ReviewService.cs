@@ -6,6 +6,7 @@ using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
 using RHS.Domain.Entities;
 using RHS.Infrastructure.Exceptions;
+using RHS.Infrastructure.Helpers;
 using System.Linq;
 
 namespace RHS.Infrastructure.Services;
@@ -726,7 +727,7 @@ public class ReviewService : IReviewService
         {
             ApplicationStatusConstants.Approved => (
                 "Hồ sơ đã được phê duyệt",
-                "Hồ sơ của bạn đã được Sở Xây Dựng phê duyệt. Vui lòng thanh toán đặt cọc để đủ điều kiện tham gia bốc thăm.",
+                "Hồ sơ của bạn đã được Sở Xây dựng phê duyệt. Vui lòng chờ Chủ đầu tư chốt danh sách: đủ căn / ưu tiên → ký hợp đồng nguyên tắc; vượt số căn → tham gia bốc thăm. Chỉ sau khi được chốt suất và ký HĐ bạn mới đặt cọc.",
                 NotificationTypeConstants.ApplicationApproved),
 
             ApplicationStatusConstants.Rejected => (
@@ -783,13 +784,21 @@ public class ReviewService : IReviewService
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            // Hướng A: APPROVED không giữ suất vật lý → hủy APPROVED không hoàn AvailableUnits.
-            // Suất chỉ trừ khi WON/PRIORITY_WON; hồ sơ DEPOSIT_PAID thuộc ClosedStatuses nên không hủy qua API này.
+            // APPROVED không giữ suất → không hoàn.
+            // CONTRACT_PENDING (đã chốt/trúng) giữ suất → hoàn 1 căn khi huỷ.
+            // CONTRACT_SIGNED thuộc ClosedStatuses nên không vào đây.
 
             application.ApplicationStatus = ApplicationStatusConstants.Canceled;
             application.UpdatedAt = now;
 
             await _applicationRepo.UpdateAsync(application);
+
+            var released = await ProjectUnitSeatHelper.TryReleaseReservedUnitAsync(
+                _context, application.ProjectId, oldStatus, _logger);
+
+            var cancelNote = request.CancelReason.Trim();
+            if (released)
+                cancelNote = $"{cancelNote} | Đã hoàn 1 suất căn về dự án.";
 
             await AppendHistoryAsync(
                 applicationId: applicationId,
@@ -797,7 +806,7 @@ public class ReviewService : IReviewService
                 action: ReviewActionConstants.Cancel,
                 oldStatus: oldStatus,
                 newStatus: ApplicationStatusConstants.Canceled,
-                note: request.CancelReason.Trim());
+                note: cancelNote);
 
             await transaction.CommitAsync();
         }

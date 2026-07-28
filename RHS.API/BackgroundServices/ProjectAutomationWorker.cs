@@ -201,7 +201,7 @@ public class ProjectAutomationWorker : BackgroundService
                     await notificationService.SendAsync(
                         app.ApplicantId,
                         "Hồ sơ được phê duyệt (Approved by Timeout)",
-                        $"Hồ sơ của bạn đã được phê duyệt tự động (Approved by Timeout) do quá {tacitDays} ngày Sở Xây Dựng không phản hồi. Vui lòng thanh toán đặt cọc để CĐT đi bốc thăm.",
+                        $"Hồ sơ của bạn đã được phê duyệt tự động do quá {tacitDays} ngày Sở Xây dựng không phản hồi. Vui lòng chờ Chủ đầu tư chốt danh sách (đủ căn / ưu tiên → ký HĐ; vượt căn → bốc thăm). Chỉ sau khi được chốt suất và ký HĐ bạn mới đặt cọc.",
                         NotificationTypeConstants.ApplicationApproved
                     );
                 }

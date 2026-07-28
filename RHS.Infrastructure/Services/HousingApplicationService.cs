@@ -19,17 +19,20 @@ public class HousingApplicationService : IHousingApplicationService
 {
     private readonly IHousingApplicationRepository _applicationRepo;
     private readonly IEligibilityRuleEngine _eligibilityEngine;
+    private readonly INotificationService _notificationService;
     private readonly AppDbContext _context;
     private readonly ILogger<HousingApplicationService> _logger;
 
     public HousingApplicationService(
         IHousingApplicationRepository applicationRepo,
         IEligibilityRuleEngine eligibilityEngine,
+        INotificationService notificationService,
         AppDbContext context,
         ILogger<HousingApplicationService> logger)
     {
         _applicationRepo = applicationRepo;
         _eligibilityEngine = eligibilityEngine;
+        _notificationService = notificationService;
         _context = context;
         _logger = logger;
     }
@@ -662,42 +665,34 @@ public class HousingApplicationService : IHousingApplicationService
             .ToListAsync();
 
         var now = DateTime.UtcNow;
+        var pendingNotify = new List<(Guid ApplicantId, string Note)>();
 
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
             if (request.DecisionType == "CLOSE_AND_SIGN")
             {
+                if (project.AvailableUnits <= 0)
+                    throw new InvalidOperationException("Dự án đã hết suất. Không thể chốt ký hợp đồng.");
+
+                if (apps.Count > project.AvailableUnits)
+                    throw new InvalidOperationException(
+                        $"Số hồ sơ đã duyệt ({apps.Count}) vượt số căn còn lại ({project.AvailableUnits}). " +
+                        "Hãy dùng quyết định «Ưu tiên + bốc thăm» thay vì «Chốt & ký».");
+
                 foreach (var app in apps)
                 {
-                    var oldStatus = app.ApplicationStatus;
-                    app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
-                    app.UpdatedAt = now;
-
-                    if (app.PrincipleAgreement == null)
-                    {
-                        var agreement = new PrincipleAgreement
-                        {
-                            Id = Guid.NewGuid(),
-                            ApplicationId = app.ApplicationId,
-                            PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
-                            CreatedAt = now
-                        };
-                        await _context.PrincipleAgreements.AddAsync(agreement);
-                    }
-
-                    _context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
-                    {
-                        HistoryId = Guid.NewGuid(),
-                        ApplicationId = app.ApplicationId,
-                        ChangedBy = developerUserId,
-                        Action = ReviewActionConstants.DeveloperDecisionCloseAndSign,
-                        OldStatus = oldStatus,
-                        NewStatus = ApplicationStatusConstants.ContractPending,
-                        Note = "CĐT chốt danh sách đủ điều kiện, chuyển sang bước ký hợp đồng nguyên tắc.",
-                        ChangedAt = now
-                    });
+                    MoveToContractPending(
+                        app,
+                        developerUserId,
+                        now,
+                        ReviewActionConstants.DeveloperDecisionCloseAndSign,
+                        "CĐT chốt danh sách đủ điều kiện, chuyển sang bước ký hợp đồng nguyên tắc.",
+                        pendingNotify);
                 }
+
+                project.AvailableUnits = Math.Max(0, project.AvailableUnits - apps.Count);
+                project.UpdatedAt = now;
 
                 if (request.CloseProject)
                 {
@@ -707,7 +702,6 @@ public class HousingApplicationService : IHousingApplicationService
                     {
                         project.HousingProjectStatusId = closedStatus.Id;
                         project.HousingProjectStatus = closedStatus;
-                        project.UpdatedAt = now;
                     }
                 }
             }
@@ -730,63 +724,53 @@ public class HousingApplicationService : IHousingApplicationService
             }
             else if (request.DecisionType == "PROCESS_PRIORITY_AND_LOTTERY")
             {
+                if (apps.Count <= project.AvailableUnits)
+                    throw new InvalidOperationException(
+                        "Số hồ sơ đã duyệt không vượt số căn. Hãy dùng «Chốt & ký» hoặc «Giữ mở» thay vì bốc thăm.");
+
+                if (project.AvailableUnits <= 0)
+                    throw new InvalidOperationException("Dự án đã hết suất. Không thể duyệt ưu tiên / lập lịch bốc thăm.");
+
                 var priorityApps = apps.Where(a => !string.IsNullOrWhiteSpace(a.PriorityGroup)).ToList();
-                List<HousingApplication> selectedPriority = new();
+                List<HousingApplication> selectedPriority;
 
                 if (priorityApps.Count <= project.AvailableUnits)
                 {
                     selectedPriority = priorityApps;
                 }
+                else if (request.SelectedPriorityApplicationIds != null && request.SelectedPriorityApplicationIds.Count > 0)
+                {
+                    selectedPriority = priorityApps
+                        .Where(a => request.SelectedPriorityApplicationIds.Contains(a.ApplicationId))
+                        .Take(project.AvailableUnits)
+                        .ToList();
+                }
                 else
                 {
-                    if (request.SelectedPriorityApplicationIds != null && request.SelectedPriorityApplicationIds.Count > 0)
-                    {
-                        selectedPriority = priorityApps
-                            .Where(a => request.SelectedPriorityApplicationIds.Contains(a.ApplicationId))
-                            .Take(project.AvailableUnits)
-                            .ToList();
-                    }
-                    else
-                    {
-                        selectedPriority = priorityApps.Take(project.AvailableUnits).ToList();
-                    }
+                    selectedPriority = priorityApps.Take(project.AvailableUnits).ToList();
                 }
 
                 foreach (var app in selectedPriority)
                 {
-                    var oldStatus = app.ApplicationStatus;
-                    app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
-                    app.UpdatedAt = now;
-
-                    if (app.PrincipleAgreement == null)
-                    {
-                        var agreement = new PrincipleAgreement
-                        {
-                            Id = Guid.NewGuid(),
-                            ApplicationId = app.ApplicationId,
-                            PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
-                            CreatedAt = now
-                        };
-                        await _context.PrincipleAgreements.AddAsync(agreement);
-                    }
-
-                    _context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
-                    {
-                        HistoryId = Guid.NewGuid(),
-                        ApplicationId = app.ApplicationId,
-                        ChangedBy = developerUserId,
-                        Action = ReviewActionConstants.PriorityDirectApproval,
-                        OldStatus = oldStatus,
-                        NewStatus = ApplicationStatusConstants.ContractPending,
-                        Note = "Duyệt trực tiếp đối tượng thuộc diện ưu tiên (không qua bốc thăm), chuyển sang bước ký hợp đồng nguyên tắc.",
-                        ChangedAt = now
-                    });
+                    MoveToContractPending(
+                        app,
+                        developerUserId,
+                        now,
+                        ReviewActionConstants.PriorityDirectApproval,
+                        "Duyệt trực tiếp đối tượng thuộc diện ưu tiên (không qua bốc thăm), chuyển sang bước ký hợp đồng nguyên tắc.",
+                        pendingNotify);
                 }
+
+                project.AvailableUnits = Math.Max(0, project.AvailableUnits - selectedPriority.Count);
+                project.UpdatedAt = now;
+            }
+            else
+            {
+                throw new InvalidOperationException($"Loại quyết định '{request.DecisionType}' không hợp lệ.");
             }
 
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
-            return true;
         }
         catch (Exception ex)
         {
@@ -794,6 +778,64 @@ public class HousingApplicationService : IHousingApplicationService
             _logger.LogError(ex, "Lỗi xảy ra khi thực thi quyết định của CĐT cho dự án {ProjectId}", projectId);
             throw;
         }
+
+        foreach (var (applicantId, note) in pendingNotify)
+        {
+            try
+            {
+                await _notificationService.SendAsync(
+                    applicantId,
+                    "Đã chốt suất — vui lòng ký hợp đồng nguyên tắc",
+                    note,
+                    NotificationTypeConstants.ContractPending);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi gửi thông báo CONTRACT_PENDING cho user {UserId}", applicantId);
+            }
+        }
+
+        return true;
+    }
+
+    private void MoveToContractPending(
+        HousingApplication app,
+        Guid changedBy,
+        DateTime now,
+        string action,
+        string note,
+        List<(Guid ApplicantId, string Note)> pendingNotify)
+    {
+        var oldStatus = app.ApplicationStatus;
+        app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+        app.UpdatedAt = now;
+
+        if (app.PrincipleAgreement == null)
+        {
+            _context.PrincipleAgreements.Add(new PrincipleAgreement
+            {
+                Id = Guid.NewGuid(),
+                ApplicationId = app.ApplicationId,
+                PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
+                CreatedAt = now
+            });
+        }
+
+        _context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+        {
+            HistoryId = Guid.NewGuid(),
+            ApplicationId = app.ApplicationId,
+            ChangedBy = changedBy,
+            Action = action,
+            OldStatus = oldStatus,
+            NewStatus = ApplicationStatusConstants.ContractPending,
+            Note = note,
+            ChangedAt = now
+        });
+
+        pendingNotify.Add((
+            app.ApplicantId,
+            "Hồ sơ của bạn đã được chốt suất. Vui lòng xem và ký hợp đồng nguyên tắc trên ứng dụng; sau khi ký mới đặt cọc VNPay."));
     }
 
     private static ApplicationSummaryItemDto MapToSummaryItem(HousingApplication a)

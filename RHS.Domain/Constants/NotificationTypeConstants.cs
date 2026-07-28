@@ -9,8 +9,11 @@ public static class NotificationTypeConstants
     /// <summary>Hồ sơ đã nộp thành công</summary>
     public const string ApplicationSubmitted = "APPLICATION_SUBMITTED";
 
-    /// <summary>Hồ sơ được phê duyệt → cần thanh toán đặt cọc</summary>
+    /// <summary>Hồ sơ được phê duyệt bởi Sở — chờ CĐT chốt / bốc thăm</summary>
     public const string ApplicationApproved = "APPLICATION_APPROVED";
+
+    /// <summary>Hồ sơ chuyển sang chờ ký hợp đồng nguyên tắc</summary>
+    public const string ContractPending = "CONTRACT_PENDING";
 
     /// <summary>Hồ sơ bị từ chối</summary>
     public const string ApplicationRejected = "APPLICATION_REJECTED";
