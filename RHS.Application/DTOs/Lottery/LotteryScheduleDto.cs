@@ -7,8 +7,8 @@ public class CreateOrUpdateLotteryScheduleDto
     /// <summary>Địa điểm bốc thăm trực tiếp hoặc Đường dẫn/Link phòng họp trực tuyến (Zoom, Meet...)</summary>
     public string LotteryLocation { get; set; } = string.Empty;
 
-    /// <summary>Hình thức bốc thăm: ONLINE, OFFLINE, HYBRID</summary>
-    public string LotteryType { get; set; } = "OFFLINE";
+    /// <summary>Hình thức bốc thăm — hệ thống chỉ hỗ trợ ONLINE</summary>
+    public string LotteryType { get; set; } = "ONLINE";
 
     /// <summary>Nội dung quy định tham dự, hướng dẫn hoặc ghi chú phiên bốc thăm</summary>
     public string? LotteryDescription { get; set; }

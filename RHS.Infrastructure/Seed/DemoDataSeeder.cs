@@ -219,7 +219,14 @@ public static class DemoDataSeeder
                     || existing.Province != def.Project.Province
                     || existing.District != def.Project.District
                     || existing.Ward != def.Project.Ward
-                    || existing.Street != def.Project.Street;
+                    || existing.Street != def.Project.Street
+                    || existing.LotteryDate != null
+                    || existing.LotteryLocation != null
+                    || existing.LotteryType != null
+                    || existing.LotteryDescription != null
+                    || existing.IsLotteryApproved != null
+                    || existing.LotteryJoinCode != null
+                    || existing.Description != def.Project.Description;
 
                 if (changed)
                 {
@@ -228,7 +235,16 @@ public static class DemoDataSeeder
                     existing.District = def.Project.District;
                     existing.Ward = def.Project.Ward;
                     existing.Street = def.Project.Street;
-                    existing.LotteryLocation = def.Project.LotteryLocation;
+                    // Không seed lịch — CĐT đề xuất sau khi chốt hồ sơ / vượt số căn.
+                    existing.LotteryDate = null;
+                    existing.LotteryLocation = null;
+                    existing.LotteryType = null;
+                    existing.LotteryDescription = null;
+                    existing.IsLotteryApproved = null;
+                    existing.LotteryApprovedAt = null;
+                    existing.LotteryApprovedBy = null;
+                    existing.LotteryJoinCode = null;
+                    existing.LotterySessionStatus = null;
                     existing.Description = def.Project.Description;
                     existing.UpdatedAt = DateTime.UtcNow;
                     updated++;
@@ -331,8 +347,16 @@ public static class DemoDataSeeder
             District = district,
             Ward = ward,
             Street = street,
-            LotteryDate = now.AddDays(45),
-            LotteryLocation = $"Hội trường UBND {district}, {province}",
+            // Không init lịch — sau khi chốt hồ sơ, CĐT đề xuất ONLINE rồi Sở duyệt mới thông báo.
+            LotteryDate = null,
+            LotteryLocation = null,
+            LotteryType = null,
+            LotteryDescription = null,
+            IsLotteryApproved = null,
+            LotteryApprovedAt = null,
+            LotteryApprovedBy = null,
+            LotteryJoinCode = null,
+            LotterySessionStatus = null,
             DepositAmount = deposit,
             MinPrice = minPrice,
             MaxPrice = maxPrice,

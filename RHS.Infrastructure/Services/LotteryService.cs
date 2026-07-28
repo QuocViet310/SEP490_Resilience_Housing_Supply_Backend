@@ -50,9 +50,22 @@ public class LotteryService : ILotteryService
             .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, ct)
             ?? throw new InvalidOperationException("Không tìm thấy dự án.");
 
+        if (dto.LotteryDate == default)
+            throw new InvalidOperationException("Vui lòng chọn ngày giờ bốc thăm.");
+
+        if (string.IsNullOrWhiteSpace(dto.LotteryLocation))
+            throw new InvalidOperationException("Vui lòng nhập địa điểm hoặc link kênh tham dự.");
+
+        // Cho phép lệch đồng hồ nhẹ; lịch phải ở tương lai để người dân biết trước.
+        if (dto.LotteryDate.ToUniversalTime() < DateTime.UtcNow.AddMinutes(-1))
+            throw new InvalidOperationException("Thời gian bốc thăm phải ở tương lai.");
+
+        // Hệ thống chỉ hỗ trợ bốc thăm trực tuyến.
+        dto.LotteryType = "ONLINE";
+
         project.LotteryDate = dto.LotteryDate;
-        project.LotteryLocation = dto.LotteryLocation;
-        project.LotteryType = dto.LotteryType;
+        project.LotteryLocation = dto.LotteryLocation.Trim();
+        project.LotteryType = "ONLINE";
         project.LotteryDescription = dto.LotteryDescription;
         project.IsLotteryApproved = false; // Chờ Admin/Sở duyệt
         project.LotterySessionStatus = LotterySessionStatusConstants.Scheduled;
@@ -103,7 +116,7 @@ public class LotteryService : ILotteryService
         var notifTitle = "Sở đã phê duyệt & công bố lịch bốc thăm";
         var notifContent =
             $"Dự án '{project.ProjectName}': lịch bốc thăm chính thức vào lúc {project.LotteryDate:dd/MM/yyyy HH:mm} tại {project.LotteryLocation}. " +
-            $"Hình thức: {project.LotteryType}. Mã OTP vào sảnh: {project.LotteryJoinCode}. " +
+            $"Hình thức: Trực tuyến (ONLINE). Mã OTP vào sảnh: {project.LotteryJoinCode}. " +
             "Lịch do chủ đầu tư đề xuất và đã được Sở Xây dựng phê duyệt.";
 
         foreach (var applicantId in eligibleApplicants)

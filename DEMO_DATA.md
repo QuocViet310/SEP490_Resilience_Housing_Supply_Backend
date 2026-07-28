@@ -31,6 +31,15 @@ Người dân: đăng ký tài khoản mới trên mobile rồi eKYC + nộp h�
 
 Tất cả dự án gắn CĐT demo, đã `IsConfirmed`, có `PublicAnnounceAt` đủ ngày (trừ UPCOMING), có `HousingQuota` cho `URBAN_POOR` / `URBAN_NEAR_POOR`.
 
+### Lịch bốc thăm
+
+- **Không seed lịch** trên bất kỳ dự án nào.
+- Sau khi chốt hồ sơ / vượt số căn: CĐT đề xuất lịch ONLINE (ngày giờ + link) → Sở duyệt → thông báo người dân.
+
+## Người dân demo (mật khẩu `123456`)
+
+Hồ sơ gắn dự án **NOXH Bình Minh — Thủ Đức** (1 TK = 1 hồ sơ). Tài khoản trống: `dan.free@rhs.local`.
+
 ## Code
 
 - `RHS.Infrastructure/Seed/DemoDataSeeder.cs`
