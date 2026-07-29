@@ -229,6 +229,36 @@ public class DocumentsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// [Chủ đầu tư] Trigger AI kiểm tra toàn bộ giấy tờ trong hồ sơ xem đúng Form mẫu quy định 
+    /// (Giấy xác nhận đối tượng, Giấy xác nhận thu nhập, Giấy xác nhận điều kiện nhà ở Mẫu 03)
+    /// và đối chiếu xem hồ sơ đã nộp ĐỦ hay THIẾU giấy tờ nào theo nhóm Đối tượng ưu tiên của người dân.
+    /// </summary>
+    [HttpPost("audit")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.HousingAuthorityOfficer}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AuditApplicationDocuments(
+        Guid applicationId,
+        [FromServices] IDocumentVerificationService verificationService)
+    {
+        try
+        {
+            var result = await verificationService.AuditApplicationDocumentsAsync(applicationId);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi CĐT trigger AI kiểm tra toàn bộ giấy tờ cho hồ sơ {AppId}", applicationId);
+            return StatusCode(500, new { message = "Lỗi hệ thống khi kiểm tra giấy tờ.", details = ex.Message });
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────
     // Private helper
     // ──────────────────────────────────────────────────────────────

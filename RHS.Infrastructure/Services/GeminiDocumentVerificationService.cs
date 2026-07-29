@@ -238,6 +238,119 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
         return resultDto;
     }
 
+    public async Task<ApplicationAuditResultDto> AuditApplicationDocumentsAsync(
+        Guid applicationId,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Chủ đầu tư yêu cầu AI kiểm tra toàn bộ giấy tờ cho hồ sơ {ApplicationId}", applicationId);
+
+        var application = await _dbContext.HousingApplications
+            .Include(a => a.Documents)
+            .FirstOrDefaultAsync(a => a.ApplicationId == applicationId, cancellationToken);
+
+        if (application == null)
+        {
+            throw new ArgumentException($"Không tìm thấy hồ sơ với ID {applicationId}");
+        }
+
+        var priorityGroup = application.PriorityGroup ?? string.Empty;
+        var housingStatus = application.HousingStatus ?? string.Empty;
+
+        // 1. Lấy danh sách giấy tờ bắt buộc theo nhóm đối tượng đã khai
+        var requiredDocTypes = DocumentTypeConstants.GetRequiredTypesForSubmit(priorityGroup);
+
+        var auditResult = new ApplicationAuditResultDto
+        {
+            ApplicationId = applicationId,
+            PriorityGroup = priorityGroup,
+            HousingStatus = housingStatus,
+            AuditedAt = DateTime.UtcNow
+        };
+
+        // 2. Duyệt từng giấy tờ đã nộp để kiểm tra đúng Form bằng AI
+        var uploadedDocs = application.Documents?.ToList() ?? new List<ApplicationDocument>();
+        var uploadedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var doc in uploadedDocs)
+        {
+            uploadedTypes.Add(doc.DocumentType);
+
+            DocumentVerificationResultDto aiResult;
+            try
+            {
+                aiResult = await VerifyDocumentAsync(doc.DocumentId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Lỗi khi chạy AI Form Check cho document {DocId}", doc.DocumentId);
+                aiResult = new DocumentVerificationResultDto
+                {
+                    DocumentId = doc.DocumentId,
+                    ValidationResult = "ERROR",
+                    ErrorDetails = ex.Message
+                };
+            }
+
+            bool isMatch = string.Equals(aiResult.ValidationResult, "MATCH", StringComparison.OrdinalIgnoreCase);
+            auditResult.CheckedDocuments.Add(new DocumentFormCheckDto
+            {
+                DocumentId = doc.DocumentId,
+                DocumentType = doc.DocumentType,
+                DocumentTypeName = DocumentTypeConstants.GetLabel(doc.DocumentType),
+                FileUrl = doc.FileUrl,
+                IsCorrectForm = isMatch,
+                FormMatchStatus = aiResult.ValidationResult,
+                Details = isMatch
+                    ? "Giấy tờ khớp đúng Form mẫu quy định."
+                    : (aiResult.ErrorDetails ?? "File nộp không đúng Form mẫu giấy tờ yêu cầu.")
+            });
+        }
+
+        // 3. Kiểm tra Đủ / Thiếu giấy tờ theo đối tượng
+        // Lưu ý: Giấy chứng minh điều kiện nhà ở (Mẫu số 03 / < 15m2) có thể có hoặc không tùy thuộc vào thực trạng nhà ở người dân khai báo
+        foreach (var requiredType in requiredDocTypes)
+        {
+            if (!uploadedTypes.Contains(requiredType))
+            {
+                // Nếu là Giấy nhà ở mà người dân khai NO_HOUSE (chưa có nhà), chấp nhận mềm dẻo nếu không nộp Mẫu 03
+                if (string.Equals(requiredType, DocumentTypeConstants.HousingConditionProof, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(housingStatus, HousingStatusConstants.NoHouse, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                auditResult.MissingDocumentTypes.Add(requiredType);
+                auditResult.MissingDocumentNames.Add(DocumentTypeConstants.GetLabel(requiredType));
+            }
+        }
+
+        // 4. Tổng hợp nhận xét cho Chủ đầu tư
+        bool hasMissing = auditResult.MissingDocumentTypes.Count > 0;
+        bool hasFormErrors = auditResult.CheckedDocuments.Any(d => !d.IsCorrectForm);
+
+        auditResult.IsComplete = !hasMissing && !hasFormErrors;
+
+        if (auditResult.IsComplete)
+        {
+            auditResult.SummaryNote = "✅ Hồ sơ đã nộp ĐỦ giấy tờ theo nhóm đối tượng và 100% giấy tờ đúng Form mẫu.";
+        }
+        else
+        {
+            var noteParts = new List<string>();
+            if (hasMissing)
+            {
+                noteParts.Add($"THIẾU {auditResult.MissingDocumentTypes.Count} loại giấy tờ bắt buộc: [{string.Join(", ", auditResult.MissingDocumentNames)}]");
+            }
+            if (hasFormErrors)
+            {
+                noteParts.Add($"Có {auditResult.CheckedDocuments.Count(d => !d.IsCorrectForm)} giấy tờ NỘP SAI FORM MẪU");
+            }
+            auditResult.SummaryNote = "⚠️ " + string.Join("; ", noteParts) + ". Cần phản hồi Yêu cầu bổ sung cho người dân.";
+        }
+
+        return auditResult;
+    }
+
     private static string BuildVerificationPrompt(
         string documentType,
         string housingStatus,
