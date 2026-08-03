@@ -19,7 +19,7 @@ Chi tiết luồng hồ sơ, Hướng A (`AvailableUnits`), AI trợ lý CĐT, �
 
 ## 📖 Giới Thiệu
 
-**Resilience Housing Supply (RHS)** là nền tảng công nghệ chuyên biệt phát triển hạ tầng số cho công bằng xã hội. Chúng tôi tạo ra "Nền tảng Điều phối & Thẩm định Nhà ở Xã hội Thông minh" kết nối cơ quan quản lý nhà ở, nhà phát triển tư nhân và công dân có thu nhập thấp.
+**Resilience Housing Supply (RHS)** là nền tảng công nghệ chuyên biệt phát triển hạ tầng số cho công bằng xã hội. Chúng tôi tạo ra "Nền tảng Điều phối & Thẩm định Nhà ở Xã hội Thông minh" kết nối Sở Xây dựng, chủ đầu tư và các đối tượng được mua nhà ở xã hội theo Luật Nhà ở 2023.
 
 ### 🎯 Sứ Mệnh
 
@@ -42,7 +42,7 @@ Chuyển đổi quy trình phân bổ nhà ở truyền thống, thiếu minh b�
 - 🔐 **Đăng nhập Google OAuth 2.0**
 - 📧 **Xác thực OTP** qua Email
 - 🎫 **JWT Access Token** (60 phút) & **Refresh Token** (7 ngày)
-- 👥 **Role-based Authorization** (Guest, Applicant, Officer, Admin)
+- 👥 **Role-based Authorization** (Applicant, Housing Developer, Department Of Construction, System Administrator, Housing Authority Officer)
 - 🔒 **BCrypt Password Hashing**
 - 🔄 **Token Refresh & Revocation**
 - 🔑 **Forgot Password** & **Reset Password** với OTP
@@ -51,26 +51,34 @@ Chuyển đổi quy trình phân bổ nhà ở truyền thống, thiếu minh b�
 ### ✅ Profile Management (Đã Hoàn Thành)
 
 - 👤 **Get Profile** - Xem thông tin cá nhân
-- ✏️ **Update Profile** - Cập nhật fullName, phoneNumber, dateOfBirth, address
+- ✏️ **Update Profile** - Cập nhật fullName, phoneNumber, dateOfBirth, address (sau eKYC: chỉ cho đổi SĐT)
 - 📸 **Upload Profile Image** - Upload ảnh đại diện lên Cloudinary
 - 🗑️ **Delete Profile Image** - Xóa ảnh đại diện
-- ❌ **Delete Account** - Xóa tài khoản (soft delete)
+- ❌ **Delete Account** - Xóa tài khoản (soft delete; giải phóng CCCD/email)
 
 ### ✅ eKYC — Xác Minh Danh Tính Điện Tử (Đã Hoàn Thành)
 
-- 🪪 **OCR Căn cước công dân** — Trích xuất tự động thông tin từ ảnh CCCD (FPT AI)
-- 🤝 **Face Match** — So khớp khuôn mặt selfie với ảnh trên CCCD (FPT AI)
-- 👁️ **Liveness Detection** — Phát hiện giả mạo: ảnh in, ảnh màn hình, mặt nạ (FPT AI)
+Luồng đang dùng trên Web/Mobile: **OCR CCCD → kiểm tra trùng CCCD → Face Match → lưu profile**.
+
+- 🪪 **OCR Căn cước công dân** — Trích xuất thông tin từ ảnh CCCD (**VNPT eKYC**)
+- 🤝 **Face Match** — So khớp khuôn mặt selfie với ảnh trên CCCD (**VNPT eKYC**)
+- 🔁 **Verify Identity (one-shot)** — OCR + check CCCD + Face Match + auto-save profile (`POST /api/EKyc/verify-identity`)
 - 🛡️ **File Validation** — Kiểm tra magic bytes, MIME type, dung lượng ≤ 5 MB
-- ⚙️ **Clean Architecture** — IOptions, IHttpClientFactory, named HttpClient, custom exceptions
+- ⚠️ **Liveness** — Endpoint `POST /api/EKyc/liveness` còn trong API nhưng **không hỗ trợ** qua VNPT REST (cần SDK client); **không dùng trong flow sản phẩm**
 
-### 🔜 Tính Năng Sắp Tới
+### ✅ Nghiệp vụ nhà ở xã hội (Đã Hoàn Thành)
 
-- 📍 **Khám Phá Dự Án**: Dashboard thống nhất với bản đồ tương tác
-- 📝 **Đăng Ký Trực Tuyến**: Nộp đơn và upload tài liệu số
-- 📊 **Theo Dõi Đơn**: Tracking trạng thái real-time
-- 🗺️ **Phân Bổ Theo Vùng**: Điều phối cung cấp dựa trên nhu cầu khu vực
-- 📨 **Thông Báo Tích Hợp**: OTP và cập nhật real-time
+- 📍 **Khám phá dự án** — Tìm kiếm, lọc, chi tiết dự án + căn hộ
+- 📝 **Hồ sơ đăng ký mua** — Draft → Submit → Maker–Checker (CĐT → SXD)
+- 📋 **Đối tượng Đ76** — Nhiều nhóm đối tượng mua NOXH + giấy tờ theo nhóm
+- ✅ **Rule engine Đ29–Đ30** — Điều kiện nhà ở + thu nhập / chuẩn nghèo
+- 🤖 **AI trợ lý CĐT (Gemini)** — Quét/đối chiếu giấy tờ; **không** phê duyệt cuối
+- ✍️ **Hợp đồng nguyên tắc** — Ký online sau khi được phân vào luồng ký HĐ
+- 💳 **VNPay** — Đặt cọc + thanh toán các đợt (installment)
+- 🎲 **Bốc thăm online** — Lịch, lobby OTP, live (SignalR), công bố kết quả
+- 📢 **Thông báo in-app** + thông báo công khai / hậu kiểm công khai
+- ⚙️ **PolicyConfig** — Tham số nghị định (tacit approval, hạn cọc, trần thu nhập, …)
+- 🕒 **Background workers** — Mở/đóng dự án, tacit SXD, hết hạn cọc, quá hạn đợt thanh toán
 
 ---
 
@@ -105,10 +113,15 @@ Dự án sử dụng **Clean Architecture** với 4 layers:
 - **BCrypt.Net** - Password hashing
 - **Google.Apis.Auth** - Google OAuth
 
-### Cloud Services
-- **Cloudinary** — Image storage & CDN
+### Cloud Services & Integrations
+- **Cloudinary** — Image / PDF storage & CDN
 - **SMTP Email** — OTP verification
-- **FPT AI** — eKYC (OCR, Face Match, Liveness Detection)
+- **VNPT eKYC** — OCR CCCD + Face Compare (liveness qua REST **không** hỗ trợ)
+- **Google Gemini** — AI document verification (trợ lý CĐT)
+- **VNPay** — Deposit & installment payments
+- **QuestPDF** — Receipt / principle-agreement / report PDFs
+- **SignalR** — Live lottery lobby
+- **Quartz.NET** — Background automation workers
 
 ### Documentation
 - **Swagger/OpenAPI** — API documentation
@@ -239,7 +252,7 @@ Import collection: `RHS_Authentication_API.postman_collection.json`
 - Status (Active/Deleted)
 
 ### Roles Table
-- 4 roles: Guest, Applicant, Officer, Admin
+- Roles: Applicant, Housing Developer, Department Of Construction, System Administrator, Housing Authority Officer
 - Seeded automatically on database creation
 
 ### RefreshTokens Table
@@ -252,63 +265,72 @@ Import collection: `RHS_Authentication_API.postman_collection.json`
 - 5 minutes expiration
 - Email verification & password reset
 
-Chi tiết: [SCHEMA_UPDATE_SUMMARY.md](SCHEMA_UPDATE_SUMMARY.md)
+Chi tiết entity: [`Entity.md`](./Entity.md) · luồng nghiệp vụ: [`BUSINESS_FLOW.md`](./BUSINESS_FLOW.md)
 
 ---
 
-## 🔐 API Endpoints
+## 🔐 API Endpoints (tóm tắt)
 
-### Public Endpoints (Authentication)
+> Danh sách đầy đủ theo Swagger. Auth OTP verify dùng `POST /api/auth/verify-otp` (không phải `verify-email`).
+
+### Public / Authentication
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/auth/register` | Đăng ký tài khoản với email/password |
-| POST | `/api/auth/verify-email` | Xác thực email với OTP |
+| POST | `/api/auth/verify-otp` | Xác thực email với OTP |
+| POST | `/api/auth/resend-otp` | Gửi lại OTP |
 | POST | `/api/auth/login` | Đăng nhập email/password |
 | POST | `/api/auth/google-login` | Đăng nhập Google OAuth |
 | POST | `/api/auth/refresh-token` | Refresh access token |
 | POST | `/api/auth/forgot-password` | Quên mật khẩu (gửi OTP) |
 | POST | `/api/auth/reset-password` | Reset mật khẩu với OTP |
+| POST | `/api/auth/change-password` | Đổi mật khẩu (JWT) |
+| POST | `/api/auth/logout` | Đăng xuất |
 
-### Protected Endpoints (Require JWT)
+### Profile
 
-#### Profile Management
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/users/profile` | Lấy thông tin profile |
 | PUT | `/api/users/profile` | Cập nhật profile |
 | POST | `/api/users/profile/image` | Upload ảnh đại diện |
 | DELETE | `/api/users/profile/image` | Xóa ảnh đại diện |
-| POST | `/api/users/delete-account` | Xóa tài khoản |
+| POST | `/api/users/delete-account` | Soft-delete tài khoản |
 
-#### Account Management
+### eKYC — Xác minh danh tính (VNPT)
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/auth/change-password` | Đổi mật khẩu |
-| POST | `/api/auth/logout` | Đăng xuất |
+| GET | `/api/EKyc/check-citizen-id` | Kiểm tra CCCD còn dùng được không |
+| POST | `/api/EKyc/ocr` | OCR CCCD (`image`) |
+| POST | `/api/EKyc/face-match` | Face match (`faceImage`, `idCardImage`) |
+| POST | `/api/EKyc/verify-identity` | One-shot: OCR + check CCCD + face match + lưu profile |
+| POST | `/api/EKyc/liveness` | **Không hỗ trợ qua VNPT REST** (endpoint tồn tại, ném lỗi) |
 
-#### Role-Based Endpoints
-| Method | Endpoint | Role Required |
-|--------|----------|---------------|
-| GET | `/api/users/admin-only` | Admin |
-| GET | `/api/users/officer-only` | Officer |
+### Nghiệp vụ chính (nhóm controller)
 
-#### eKYC — Xác Minh Danh Tính
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/ekyc/ocr` | OCR Căn cước công dân (multipart: `image`) |
-| POST | `/api/ekyc/face-match` | So khớp khuôn mặt (multipart: `faceImage`, `idCardImage`) |
-| POST | `/api/ekyc/liveness` | Kiểm tra liveness chống spoofing (multipart: `faceImage`) |
+| Controller | Prefix | Phạm vi |
+|---|---|---|
+| HousingProjects | `/api/HousingProjects` | CRUD / search / phê duyệt dự án, decision CĐT |
+| HousingApplications | `/api/housing-applications` | Hồ sơ, dashboard CĐT/SXD, members, assign apartment, flag violation |
+| Documents | `/api/housing-applications/{id}/documents` | Upload PDF, AI verify / audit |
+| HousingDeveloper | `/api/housing-developer` | Submit batch lên SXD, final list |
+| ContractSign | `/api/contract-sign` | Ký HĐ nguyên tắc |
+| Payment | `/api/Payment` | VNPay cọc + installment, download PDF HĐ |
+| Lottery | `/api/projects/{id}/lottery` | Schedule, live session, draw, publish |
+| Lookup | `/api/lookup` | Document types, priority groups |
+| Announcement | `/api/announcements` | Thông báo công khai |
+| PublicPostCheck | `/api/public/post-check-list` | Hậu kiểm công khai |
+| Beneficiaries | `/api/beneficiaries` | Danh sách thụ hưởng |
+| PolicyConfig | `/api/PolicyConfig` | Tham số nghị định (Admin) |
+| Admin | `/api/Admin` | Staff accounts |
+| Notification | `/api/Notification` | Thông báo in-app |
+| Wishlist | `/api/wishlist` | Quan tâm dự án |
+| IssueReports | `/api/issue-reports` | Báo cáo sự cố (+ admin) |
+| Reports | `/api/Reports` | Excel/PDF export |
 
-#### Payment (VNPay)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/payment/create-payment-url` | Tạo URL thanh toán VNPay |
-| GET | `/api/payment/payment-callback` | Callback VNPay (AllowAnonymous) |
-| GET | `/api/payment/payment-info/{orderId}` | Tra cứu giao dịch |
-| GET | `/api/payment/my-payments` | Lịch sử thanh toán của user |
-
-**Tổng cộng: 21 API endpoints** ✅
+**Controllers trong `RHS.API`: 21.** Chi tiết Swagger tại runtime.
 
 ---
 

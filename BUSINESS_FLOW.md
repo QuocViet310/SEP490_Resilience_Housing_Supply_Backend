@@ -1,6 +1,6 @@
 # RHS Backend — Quy trình nghiệp vụ (NOXH mua/bán)
 
-> Cập nhật: 2026-07-13 — soft-delete: CCCD/email chỉ ràng buộc tài khoản Active; xóa TK giải phóng CCCD + hủy hồ sơ mở.
+> Cập nhật: 2026-08-02 — soft-delete: CCCD/email chỉ ràng buộc tài khoản Active; xóa TK giải phóng CCCD + hủy hồ sơ mở. Giấy tờ theo nhóm Đ76.
 
 ---
 
@@ -8,7 +8,7 @@
 
 | Vai trò | Code | Việc chính |
 |---|---|---|
-| Người dân | `Applicant` | eKYC → tạo hồ sơ → upload 2 giấy tờ → nộp → đặt cọc → xem HĐ nguyên tắc / kết quả bốc thăm |
+| Người dân | `Applicant` | eKYC → tạo hồ sơ → upload giấy tờ theo nhóm Đ76 → nộp → ký HĐ → đặt cọc → bốc thăm / kết quả |
 | Chủ đầu tư | `Housing Developer` | Quản lý dự án; tiếp nhận hồ sơ; **dùng AI như trợ lý thẩm định**; gửi danh sách lên SXD |
 | Sở Xây dựng | `Department Of Construction` | Duyệt dự án; hậu kiểm hồ sơ (`PENDING_SXD_REVIEW` → `APPROVED`/`REJECTED`) |
 | Admin | `System Administrator` | PolicyConfig, tài khoản staff |
@@ -17,14 +17,16 @@
 
 ---
 
-## 2. Giấy tờ bắt buộc (2 loại)
+## 2. Giấy tờ bắt buộc (theo nhóm đối tượng Đ76)
 
-Người dân **phải nộp đủ cả 2** trước khi `SUBMITTED`:
+Người dân phải nộp **đủ giấy tờ required của nhóm đã chọn** trước khi `SUBMITTED`  
+(API: `GET /api/lookup/document-types/required?priorityGroup=…`).
 
-| # | Loại | `DocumentType` | Liên hệ form |
-|---|---|---|---|
-| 1 | Giấy chứng nhận hộ nghèo / cận nghèo | `POVERTY_HOUSEHOLD_CERTIFICATE` | `URBAN_POOR` / `URBAN_NEAR_POOR` (Đ30.3) |
-| 2 | Giấy xác nhận nhà ở | `HOUSING_CONDITION_PROOF` | Xem bảng dưới (Đ29) |
+| Nhóm | Bắt buộc |
+|---|---|
+| Tất cả nhóm | `HOUSING_CONDITION_PROOF` — giấy xác nhận điều kiện nhà ở (Đ29) |
+| Theo đối tượng | 1 giấy chứng minh đối tượng (nghèo/cận nghèo, người có công, công nhân, …) |
+| Nhóm cần xét thu nhập | Thêm `INCOME_CERTIFICATE` (Đ30) — **không** bắt buộc hộ nghèo/cận nghèo và người có công |
 
 ### Giấy xác nhận nhà ở — 1 loại file, 2 trường hợp khai
 
@@ -41,7 +43,7 @@ Không yêu cầu 2 file nhà ở riêng — nội dung giấy khác nhau theo l
 
 ```
 DRAFT
-  → SUBMITTED          (eligibility Đ29–30 trên form; đủ 2 giấy tờ)
+  → SUBMITTED          (eligibility Đ29–30 trên form; đủ giấy tờ theo nhóm Đ76)
   → REVIEWING          (CĐT tiếp nhận)
   → NEED_MORE_DOCUMENTS ↔ REVIEWING
   → PENDING_SXD_REVIEW (CĐT gửi batch lên SXD)
@@ -53,9 +55,10 @@ DRAFT
 
 ### 3.1 Khi nộp (`SUBMITTED`)
 
-- Rule engine (`EligibilityRuleEngine`): đối tượng nghèo/cận nghèo đô thị + điều kiện nhà ở Đ29.  
-  **Không** áp trần thu nhập 15/30 triệu (Đ30.3).
-- Đủ 2 `DocumentType` bắt buộc.
+- Rule engine (`EligibilityRuleEngine`): validate nhóm đối tượng Đ76 + điều kiện nhà ở Đ29;  
+  hộ nghèo/cận nghèo dùng chuẩn nghèo (Đ30.3, **không** áp trần 15/30 triệu);  
+  các nhóm `IncomeCheckedGroups` xét trần thu nhập Đ30.1/Đ30.2.
+- Đủ giấy tờ bắt buộc theo `priorityGroup` (lookup required types).
 - Đ38.1.e: một người chỉ một hồ sơ active (PolicyConfig `ONE_APPLICATION_PER_APPLICANT`).
 - Sinh PDF biên nhận.
 
@@ -66,8 +69,9 @@ DRAFT
   Checklist AI nên bám:
   - Đúng loại giấy
   - Khớp CCCD / họ tên / địa chỉ với eKYC
+  - Giấy chứng minh đối tượng khớp nhóm đã khai — **Đ76 / Đ30**
+  - Giấy thu nhập (nếu nhóm bắt buộc) khớp khai báo — **Đ30**
   - Giấy nhà ở khớp `NO_HOUSE` / `SMALL_HOUSE` (+ diện tích nếu có) — **Đ29**
-  - Giấy nghèo/cận nghèo khớp đối tượng đã khai — **Đ30.3**
   - Cảnh báo file không đọc được / sai mẫu
 - AI **không** quyết định phê duyệt cuối.
 

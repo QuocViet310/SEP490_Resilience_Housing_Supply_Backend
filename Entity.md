@@ -1,7 +1,7 @@
 # 🏠 RHS Backend — Tổng Quan Hệ Thống
 
 > **Intelligent Social Housing Coordination & Vetting Platform**
-> Cập nhật: 2026-07-13
+> Cập nhật: 2026-08-02
 
 ---
 
@@ -10,10 +10,10 @@
 Clean Architecture với 4 layers:
 
 ```
-RHS.API              → Presentation Layer (13 Controllers)
+RHS.API              → Presentation Layer (21 Controllers)
 RHS.Application      → Business Logic Layer (DTOs, Interfaces)
 RHS.Infrastructure   → Data Access Layer (Repositories, Services, DbContext, External APIs)
-RHS.Domain           → Domain Layer (22 Entities, 6 Constants)
+RHS.Domain           → Domain Layer (Entities + Constants)
 ```
 
 ---
@@ -28,7 +28,7 @@ RHS.Domain           → Domain Layer (22 Entities, 6 Constants)
 | Auth | JWT + BCrypt + Google OAuth 2.0 |
 | File Storage | Cloudinary (images + PDFs) |
 | Payment | VNPay (HMAC-SHA512) |
-| eKYC | FPT AI (OCR, Face Match, Liveness Detection) |
+| eKYC | VNPT eKYC (OCR CCCD + Face Compare; liveness REST không hỗ trợ) |
 | AI Verification | Google Gemini (document scanning — trợ lý CĐT) |
 | PDF Generation | QuestPDF (receipts, principle agreements) |
 | Background Jobs | Quartz.NET (scheduled tasks) |
@@ -195,59 +195,73 @@ Kết quả gắn trên `HousingApplication.LotteryResult`: PENDING / WON / LOST
 
 ---
 
-## 🌐 13 Controllers — 70+ API Endpoints
+## 🌐 Controllers — API Endpoints
+
+> Hiện có **21 controllers** trong `RHS.API/Controllers`. Số endpoint chi tiết theo Swagger.
 
 ### AuthController (`/api/Auth`)
 Đăng ký, đăng nhập (email + Google OAuth), OTP, refresh token, logout, quên/reset/đổi mật khẩu.
-→ **10 endpoints**
 
 ### UsersController (`/api/Users`)
 Xem/cập nhật profile, upload/xóa ảnh đại diện, xóa tài khoản.
-→ **7 endpoints**
 
 ### AdminController (`/api/Admin`)
 Quản lý tài khoản staff: tạo, danh sách (phân trang + search + filter), chi tiết, cập nhật, phân quyền, khóa/mở khóa, reset password.
-→ **8 endpoints**
 
 ### HousingProjectsController (`/api/HousingProjects`)
-CRUD dự án + phân trang/search/filter (FE-01, FE-02), phê duyệt/từ chối dự án bởi SXD.
-→ **6 endpoints**
+CRUD dự án + phân trang/search/filter, phê duyệt/từ chối bởi SXD, application-evaluation, developer-decision.
 
 ### HousingProjectStatusesController (`/api/housing-project-statuses`)
 Tra cứu danh sách trạng thái dự án.
-→ **1 endpoint**
 
 ### HousingApplicationsController (`/api/housing-applications`)
-Toàn bộ vòng đời hồ sơ: tạo, xem danh sách (phân trang + filter), chi tiết, submit, CĐT review, SXD review, hủy, dashboard cho CĐT và SXD.
-→ **11 endpoints**
+Vòng đời hồ sơ: tạo, danh sách, chi tiết, submit, review CĐT/SXD, members, assign apartment, flag/unflag violation, dashboard CĐT/SXD.
 
 ### HousingDeveloperController (`/api/housing-developer`)
 CĐT nộp danh sách đã duyệt lên SXD, lấy danh sách cuối cùng (DEPOSIT_PAID).
-→ **2 endpoints**
 
 ### DocumentsController (`/api/housing-applications/{id}/documents`)
-Upload PDF tài liệu, xóa, xem kết quả AI verification, trigger verify thủ công.
-→ **4 endpoints**
+Upload PDF tài liệu, xóa, xem kết quả AI verification, trigger verify / audit.
 
 ### EKycController (`/api/EKyc`)
-Check trùng CitizenId, OCR CCCD, face-match, liveness detection (FPT AI).
-→ **4 endpoints**
+Check trùng CitizenId, OCR CCCD, face-match, verify-identity (one-shot).  
+`POST /liveness` tồn tại nhưng **VNPT REST không hỗ trợ** (ném `NotSupportedException`).
 
 ### PaymentController (`/api/Payment`)
-Tạo URL VNPay, callback, tra cứu kết quả đặt cọc, xem chi tiết giao dịch, lịch sử thanh toán, tải hợp đồng nguyên tắc PDF.
-→ **6 endpoints**
+Tạo URL VNPay, callback/IPN, kết quả đặt cọc, lịch sử thanh toán, installment, tải hợp đồng nguyên tắc PDF.
+
+### ContractSignController (`/api/contract-sign`)
+Ký HĐ nguyên tắc + tra trạng thái ký.
+
+### LotteryController (`/api/projects/{projectId}/lottery`)
+Schedule / approve, eligible participants, live session (open/start/finish/publish), OTP lobby, draw-unit, run, result, minutes PDF.
+
+### LookupController (`/api/lookup`)
+Document types, required types theo priority group, priority groups (Đ76).
+
+### AnnouncementController (`/api/announcements`)
+CRUD thông báo công khai + attachments.
+
+### PublicPostCheckController (`/api/public/post-check-list`)
+Danh sách / chi tiết / verify CCCD / stats hậu kiểm công khai.
+
+### BeneficiariesController (`/api/beneficiaries`)
+Danh sách thụ hưởng công bố.
+
+### PolicyConfigController (`/api/PolicyConfig`)
+Đọc/cập nhật tham số nghị định (Admin).
+
+### ReportsController (`/api/Reports`)
+Export Excel/PDF hồ sơ, lottery, post-check, projects summary.
 
 ### NotificationController (`/api/Notification`)
-Danh sách thông báo (phân trang), đếm chưa đọc, đánh dấu đã đọc (từng cái / tất cả).
-→ **4 endpoints**
+Danh sách thông báo (phân trang), đếm chưa đọc, đánh dấu đã đọc.
 
 ### IssueReportsController (`/api/issue-reports` + `/api/admin/issue-reports`)
-Tạo báo cáo, xem danh sách của mình. Admin: danh sách (phân trang + search + filter), chi tiết, cập nhật trạng thái.
-→ **5 endpoints**
+Tạo báo cáo, xem của mình; Admin quản lý trạng thái.
 
 ### WishlistController (`/api/wishlist`)
-Thêm/xóa dự án khỏi wishlist, danh sách (phân trang), kiểm tra trạng thái.
-→ **5 endpoints**
+Thêm/xóa dự án khỏi wishlist, danh sách, kiểm tra trạng thái.
 
 ---
 
@@ -263,10 +277,12 @@ Thêm/xóa dự án khỏi wishlist, danh sách (phân trang), kiểm tra trạn
 ### Profile Management
 - CRUD profile, upload/delete ảnh (Cloudinary), soft delete account
 
-### eKYC (FPT AI)
-- OCR CCCD, Face Match, Liveness Detection
+### eKYC (VNPT eKYC)
+- OCR CCCD + Face Compare (luồng sản phẩm trên Web/Mobile)
+- `verify-identity` one-shot: OCR → check CCCD → face match → auto-save profile
 - File validation (magic bytes, MIME, ≤5MB)
-- Check trùng CitizenId
+- Check trùng CitizenId (chỉ tính tài khoản Active)
+- Liveness qua REST: **không hỗ trợ** (cần VNPT SDK phía client) — không dùng trong flow
 
 ### FE-01 & FE-02 — Khám Phá & Lọc Dự Án
 - Phân trang, search (tên, tỉnh, quận)
@@ -279,15 +295,17 @@ Thêm/xóa dự án khỏi wishlist, danh sách (phân trang), kiểm tra trạn
 - Worker: UPCOMING→OPEN (kèm Đ38.1.b announce days), OPEN→CLOSED; tacit theo PolicyConfig
 
 ### Housing Application — Maker-Checker Flow
-- Tạo hồ sơ (Applicant), submit (DRAFT→SUBMITTED) khi đủ 2 giấy tờ + đủ điều kiện Đ29–30 trên form
+- Tạo hồ sơ (Applicant), submit khi đủ giấy tờ bắt buộc theo nhóm đối tượng + đủ điều kiện Đ29–30 trên form
 - CĐT (Maker): tiếp nhận REVIEWING; AI Gemini = **trợ lý** quét PDF (nút verify); gửi batch → PENDING_SXD_REVIEW
 - SXD (Checker): APPROVED / REJECTED; đối soát CCCD Đ38.1.đ
 - Tacit approval theo `TACIT_APPROVAL_DAYS`
 - **Hướng A:** APPROVED **không** trừ `AvailableUnits`
 
 ### Document Upload & AI Verification
-- Bắt buộc: `HOUSING_CONDITION_PROOF` + `POVERTY_HOUSEHOLD_CERTIFICATE`
-- Gemini: đối chiếu PDF ↔ eKYC + loại giấy + NO_HOUSE/SMALL_HOUSE / hộ nghèo-cận nghèo (Đ29–30)
+- Luôn bắt buộc: `HOUSING_CONDITION_PROOF`
+- Giấy chứng minh đối tượng theo nhóm Đ76 (nghèo/cận nghèo, người có công, công nhân, …)
+- `INCOME_CERTIFICATE` bắt buộc với nhóm cần xét trần thu nhập (không bắt buộc hộ nghèo / người có công)
+- Gemini: đối chiếu PDF ↔ eKYC + loại giấy + điều kiện Đ29–30
 - Vai trò: hỗ trợ CĐT; **không** thay SXD; **không** bắt buộc VERIFIED mới nộp
 
 ### Payment (VNPay)
@@ -334,7 +352,7 @@ Thêm/xóa dự án khỏi wishlist, danh sách (phân trang), kiểm tra trạn
 |---|---|
 | **Cloudinary** | Lưu trữ ảnh + PDF (signed URL download) |
 | **VNPay** | Cổng thanh toán (HMAC-SHA512) |
-| **FPT AI** | eKYC: OCR, Face Match, Liveness Detection |
+| **VNPT eKYC** | OCR CCCD + Face Compare (liveness REST không hỗ trợ) |
 | **Google Gemini 1.5 Flash** | AI document verification (quét PDF, so khớp thông tin) |
 | **Google OAuth 2.0** | Đăng nhập bằng Google |
 | **SMTP Email** | Gửi OTP verification |
@@ -346,7 +364,7 @@ Thêm/xóa dự án khỏi wishlist, danh sách (phân trang), kiểm tra trạn
 
 ```
 RHS.API/
-  Controllers/          # 13 controllers
+  Controllers/          # 21 controllers
   Middleware/           # Exception handling middleware
   Program.cs            # DI, pipeline, auth config
 
@@ -391,15 +409,16 @@ Hệ thống dùng string constants thay vì C# enum:
 > Nguồn đầy đủ: [`BUSINESS_FLOW.md`](./BUSINESS_FLOW.md) (Hướng A, AI trợ lý CĐT, Đ29–30 / Đ38 / Đ44).
 
 ```
-Applicant tạo hồ sơ (DRAFT) + đủ 2 giấy tờ
+Applicant tạo hồ sơ (DRAFT) + đủ giấy tờ theo nhóm Đ76
   → Submit (SUBMITTED) → Eligibility Đ29–30 + PDF biên nhận
   → CĐT tiếp nhận (REVIEWING) → có thể chạy AI verify PDF (trợ lý)
   → CĐT yêu cầu bổ sung (NEED_MORE_DOCUMENTS) ↔ REVIEWING
   → CĐT gửi SXD (PENDING_SXD_REVIEW)
   → SXD duyệt (APPROVED) hoặc từ chối (REJECTED)
      → Im lặng TACIT_APPROVAL_DAYS → tự APPROVED (không trừ AvailableUnits)
+  → CONTRACT_PENDING → ký HĐ nguyên tắc → CONTRACT_SIGNED
   → Đặt cọc VNPay
-     → DEPOSIT_PAID → SlotCode + HĐ nguyên tắc (cam kết bốc thăm)
+     → DEPOSIT_PAID → SlotCode + HĐ (cam kết bốc thăm / phân suất theo quy trình)
      → Quá hạn → EXPIRED (không hoàn suất)
   → Bốc thăm: WON/PRIORITY_WON (trừ AvailableUnits) | LOST
   → Đ44 công bố người trúng
