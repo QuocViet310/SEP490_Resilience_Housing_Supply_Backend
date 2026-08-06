@@ -36,8 +36,14 @@ public static class ApplicationStatusConstants
     /// <summary>Đã hết hạn thanh toán</summary>
     public const string Expired = "EXPIRED";
 
+    /// <summary>Chờ thanh toán đặt cọc Đợt 1 (trúng bốc thăm / cấp suất)</summary>
+    public const string DepositPending = "DEPOSIT_PENDING";
+
     /// <summary>Đã thanh toán đặt cọc thành công</summary>
     public const string DepositPaid = "DEPOSIT_PAID";
+
+    /// <summary>Đã ký hợp đồng & đang trong quá trình thanh toán tiến độ đợt 3-6</summary>
+    public const string InstallmentInProgress = "INSTALLMENT_IN_PROGRESS";
 
     /// <summary>Đã thanh toán đủ toàn bộ đợt trả trước (tất cả installments PAID)</summary>
     public const string FullyPaid = "FULLY_PAID";
@@ -64,7 +70,9 @@ public static class ApplicationStatusConstants
         Rejected,
         Canceled,
         Expired,
+        DepositPending,
         DepositPaid,
+        InstallmentInProgress,
         FullyPaid,
         ContractSigned,
         ContractPending,

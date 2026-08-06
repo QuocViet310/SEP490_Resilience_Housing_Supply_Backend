@@ -88,13 +88,21 @@ public class PaymentService : IPaymentService
             };
         }
 
-        // Chỉ hồ sơ đã ký hợp đồng nguyên tắc mới được thanh toán cọc
-        if (application.ApplicationStatus != ApplicationStatusConstants.ContractSigned)
+        // Cho phép thanh toán Đợt 1 (cọc) khi hồ sơ ở trạng thái DEPOSIT_PENDING, APPROVED hoặc APPROVED_BY_TIMEOUT
+        var allowedDepositStatuses = new[]
+        {
+            ApplicationStatusConstants.DepositPending,
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout,
+            ApplicationStatusConstants.ContractPending
+        };
+
+        if (!allowedDepositStatuses.Contains(application.ApplicationStatus))
         {
             return new PaymentResponseDto
             {
                 Success = false,
-                Message = $"Hồ sơ chưa ký hợp đồng mua bán nhà ở xã hội. Trạng thái hiện tại: {application.ApplicationStatus}"
+                Message = $"Hồ sơ không ở trạng thái nộp cọc. Trạng thái hiện tại: {application.ApplicationStatus}"
             };
         }
 
@@ -497,7 +505,7 @@ public class PaymentService : IPaymentService
             }
 
             var oldStatus = application.ApplicationStatus;
-            application.ApplicationStatus = ApplicationStatusConstants.DepositPaid;
+            application.ApplicationStatus = ApplicationStatusConstants.ContractPending;
             application.UpdatedAt = DateTime.UtcNow;
             await _applicationRepo.UpdateAsync(application);
 
@@ -508,18 +516,18 @@ public class PaymentService : IPaymentService
                 ChangedBy     = application.ApplicantId,
                 Action        = ReviewActionConstants.DepositPayment,
                 OldStatus     = oldStatus,
-                NewStatus     = ApplicationStatusConstants.DepositPaid,
+                NewStatus     = ApplicationStatusConstants.ContractPending,
                 Note          = $"Thanh toán Đợt 1 thành công. OrderId: {payment.OrderId}, SlotCode: {slotCode}",
                 ChangedAt     = DateTime.UtcNow
             });
 
-            // Đồng bộ đợt cọc trên lịch installment (nếu đã sinh sau khi ký)
+            // Đồng bộ Đợt 1 trên lịch installment sang PAID
             var depositInstallment = await _context.PaymentInstallments
                 .Include(i => i.Milestone)
                 .Where(i => i.ApplicationId == application.ApplicationId
                             && i.Status != InstallmentStatusConstants.Paid
                             && i.Status != InstallmentStatusConstants.Cancelled
-                            && i.Milestone.TriggerEvent == TriggerEventConstants.OnContractSigned)
+                            && (i.Milestone.PhaseOrder == 1 || i.Milestone.TriggerEvent == TriggerEventConstants.OnLotteryWon))
                 .OrderBy(i => i.Milestone.PhaseOrder)
                 .FirstOrDefaultAsync();
 

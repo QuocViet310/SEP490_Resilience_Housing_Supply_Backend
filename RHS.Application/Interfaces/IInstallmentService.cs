@@ -43,4 +43,10 @@ public interface IInstallmentService
     /// Gọi từ OverduePaymentWorker mỗi đêm.
     /// </summary>
     Task ProcessOverdueInstallmentsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Chủ đầu tư chọn Thời điểm phát hành (triggerEvent) để mở/unlock đợt tiến độ cho toàn dự án.
+    /// Đối với từng hồ sơ: chỉ unlock (LOCKED → PENDING) nếu đợt liền trước đã PAID.
+    /// </summary>
+    Task<int> UnlockPhaseByEventAsync(Guid projectId, string triggerEvent);
 }

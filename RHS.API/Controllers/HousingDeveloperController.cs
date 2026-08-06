@@ -123,6 +123,52 @@ public class HousingDeveloperController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────
+    // Tiến độ Dự án & Kích hoạt Đợt thanh toán (Task #11)
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// [HousingDeveloper] Kích hoạt trạng thái phát hành đợt tiến độ thi công cho toàn dự án.
+    /// Mở đợt tương ứng cho các cư dân đã hoàn thành đợt trước đó.
+    /// </summary>
+    [HttpPost("projects/{projectId:guid}/unlock-phase")]
+    public async Task<IActionResult> UnlockPhase(
+        Guid projectId,
+        [FromBody] UnlockPhaseRequestDto dto,
+        [FromServices] IInstallmentService installmentService)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.TriggerEvent))
+            return BadRequest(new { message = "Vui lòng chọn thời điểm phát hành đợt." });
+
+        if (!TriggerEventConstants.IsValid(dto.TriggerEvent))
+            return BadRequest(new { message = $"Thời điểm phát hành '{dto.TriggerEvent}' không hợp lệ." });
+
+        var count = await installmentService.UnlockPhaseByEventAsync(projectId, dto.TriggerEvent);
+        var displayName = TriggerEventConstants.GetDisplayName(dto.TriggerEvent);
+
+        return Ok(new
+        {
+            success = true,
+            message = $"Đã kích hoạt tiến độ '{displayName}' cho dự án. Đã mở đợt thanh toán cho {count} hồ sơ đủ điều kiện.",
+            unlockedCount = count
+        });
+    }
+
+    /// <summary>
+    /// [HousingDeveloper] Lấy danh sách các Thời điểm phát hành đợt tiến độ có thể chọn.
+    /// </summary>
+    [HttpGet("release-timings")]
+    [AllowAnonymous]
+    public IActionResult GetReleaseTimings()
+    {
+        var timings = TriggerEventConstants.All.Select(code => new
+        {
+            code,
+            displayName = TriggerEventConstants.GetDisplayName(code)
+        });
+        return Ok(new { success = true, data = timings });
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // Private helper
     // ──────────────────────────────────────────────────────────────
 
@@ -131,4 +177,9 @@ public class HousingDeveloperController : ControllerBase
         var claim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
         return Guid.TryParse(claim?.Value, out var id) ? id : Guid.Empty;
     }
+}
+
+public class UnlockPhaseRequestDto
+{
+    public string TriggerEvent { get; set; } = string.Empty;
 }

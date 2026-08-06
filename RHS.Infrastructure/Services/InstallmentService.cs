@@ -42,6 +42,7 @@ public class InstallmentService : IInstallmentService
     // ═══════════════════════════════════════════════════════════════════════
 
     /// <inheritdoc />
+    /// <inheritdoc />
     public async Task FireTriggerEventAsync(
         Guid applicationId, string triggerEvent, DateTime eventDate)
     {
@@ -56,118 +57,142 @@ public class InstallmentService : IInstallmentService
 
         await EnsureDefaultMilestonesAsync(app.ProjectId);
 
-        // Lấy milestones active phù hợp với trigger event
-        var milestones = await _db.PaymentMilestones
-            .Where(m => m.ProjectId == app.ProjectId
-                     && m.TriggerEvent == triggerEvent
-                     && m.IsActive)
-            .OrderBy(m => m.PhaseOrder)
-            .ToListAsync();
-
-        if (milestones.Count == 0)
+        // Trường hợp 1: Khi trúng bốc thăm / cấp nhà (ON_LOTTERY_WON) → Sinh toàn bộ 6 đợt (Đợt 1 PENDING, Đợt 2-6 LOCKED)
+        if (string.Equals(triggerEvent, TriggerEventConstants.OnLotteryWon, StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogWarning(
-                "No active milestones found for Project={ProjectId}, Event={Event}.",
-                app.ProjectId, triggerEvent);
-            return;
-        }
+            var milestones = await _db.PaymentMilestones
+                .Where(m => m.ProjectId == app.ProjectId && m.IsActive)
+                .OrderBy(m => m.PhaseOrder)
+                .ToListAsync();
 
-        // Idempotency: bỏ qua milestones đã có installment
-        var existingMilestoneIds = (await _db.PaymentInstallments
-            .Where(i => i.ApplicationId == applicationId)
-            .Select(i => i.MilestoneId)
-            .ToListAsync())
-            .ToHashSet();
+            var existingMilestoneIds = (await _db.PaymentInstallments
+                .Where(i => i.ApplicationId == applicationId)
+                .Select(i => i.MilestoneId)
+                .ToListAsync())
+                .ToHashSet();
 
-        var milestonesToCreate = milestones
-            .Where(m => !existingMilestoneIds.Contains(m.Id))
-            .OrderBy(m => m.PhaseOrder)
-            .ToList();
+            var milestonesToCreate = milestones
+                .Where(m => !existingMilestoneIds.Contains(m.Id))
+                .OrderBy(m => m.PhaseOrder)
+                .ToList();
 
-        if (milestonesToCreate.Count == 0)
-            return;
+            if (milestonesToCreate.Count == 0)
+                return;
 
-        // Đợt % đã sinh trước đó (cùng hồ sơ) — dùng khi đợt cuối nhận phần dư làm tròn
-        var existingPctInstallments = await _db.PaymentInstallments
-            .Include(i => i.Milestone)
-            .Where(i => i.ApplicationId == applicationId
-                        && i.Milestone.CalculationType == CalculationTypeConstants.Percentage)
-            .ToListAsync();
-
-        var newInstallments = new List<PaymentInstallment>();
-        var newPctPairs = new List<(PaymentMilestone Milestone, PaymentInstallment Installment)>();
-
-        foreach (var milestone in milestonesToCreate)
-        {
-            decimal amount;
-            if (string.Equals(milestone.CalculationType, CalculationTypeConstants.Percentage, StringComparison.OrdinalIgnoreCase))
+            if (app.Apartment == null)
             {
-                // Tạm 0 — gán sau khi ApplyPercentageRemainder (đợt cuối nhận phần dư)
-                amount = 0;
-            }
-            else
-            {
-                amount = CalculateAmount(milestone, app.Apartment);
+                _logger.LogWarning("App {AppId} hasn't been assigned an Apartment yet. Skipping installment generation.", applicationId);
+                return;
             }
 
-            var inst = new PaymentInstallment
+            var (a1, a2, a3, a4, a5, a6) = Calculate6PhaseAmounts(app.Apartment.Price);
+            var amountsByPhase = new Dictionary<int, decimal>
             {
-                Id            = Guid.NewGuid(),
-                ApplicationId = applicationId,
-                MilestoneId   = milestone.Id,
-                Amount        = amount,
-                StartDate     = eventDate,
-                DueDate       = eventDate.AddDays(milestone.DueDays),
-                Status        = InstallmentStatusConstants.Pending,
-                CreatedAt     = DateTime.UtcNow
+                [1] = a1,
+                [2] = a2,
+                [3] = a3,
+                [4] = a4,
+                [5] = a5,
+                [6] = a6
             };
 
-            newInstallments.Add(inst);
-            if (string.Equals(milestone.CalculationType, CalculationTypeConstants.Percentage, StringComparison.OrdinalIgnoreCase))
-                newPctPairs.Add((milestone, inst));
-        }
-
-        if (newPctPairs.Count > 0)
-        {
-            if (app.Apartment == null)
-                throw new InvalidOperationException(
-                    "Không thể tính đợt %: hồ sơ chưa được cấp căn (thiếu Apartment).");
-
-            ApplyPercentageRemainder(app.Apartment.Price, existingPctInstallments, newPctPairs);
-        }
-
-        foreach (var inst in newInstallments)
-        {
-            var milestone = milestonesToCreate.First(m => m.Id == inst.MilestoneId);
-            _logger.LogInformation(
-                "Created installment: Phase={Phase}, Amount={Amount}, DueDate={Due}, App={AppId}.",
-                milestone.PhaseName, inst.Amount, inst.DueDate, applicationId);
-        }
-
-        if (newInstallments.Count > 0)
-        {
-            _db.PaymentInstallments.AddRange(newInstallments);
-            await _db.SaveChangesAsync();
-
-            // Gửi notification cho applicant
-            foreach (var inst in newInstallments)
+            var newInstallments = new List<PaymentInstallment>();
+            foreach (var m in milestonesToCreate)
             {
-                var milestone = milestonesToCreate.First(m => m.Id == inst.MilestoneId);
+                var amount = amountsByPhase.TryGetValue(m.PhaseOrder, out var amt)
+                    ? amt
+                    : CalculateAmount(m, app.Apartment);
+
+                // Đợt 1: PENDING; Đợt 2-6: LOCKED
+                var initialStatus = m.PhaseOrder == 1
+                    ? InstallmentStatusConstants.Pending
+                    : InstallmentStatusConstants.Locked;
+
+                var inst = new PaymentInstallment
+                {
+                    Id            = Guid.NewGuid(),
+                    ApplicationId = applicationId,
+                    MilestoneId   = m.Id,
+                    Amount        = amount,
+                    StartDate     = eventDate,
+                    DueDate       = eventDate.AddDays(m.DueDays),
+                    Status        = initialStatus,
+                    CreatedAt     = DateTime.UtcNow
+                };
+                newInstallments.Add(inst);
+            }
+
+            if (newInstallments.Count > 0)
+            {
+                _db.PaymentInstallments.AddRange(newInstallments);
+
+                // Cập nhật trạng thái hồ sơ sang DEPOSIT_PENDING nếu đang APPROVED
+                if (app.ApplicationStatus == ApplicationStatusConstants.Approved
+                    || app.ApplicationStatus == ApplicationStatusConstants.ApprovedByTimeout)
+                {
+                    app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
+                    app.UpdatedAt = DateTime.UtcNow;
+                }
+
+                await _db.SaveChangesAsync();
+
+                // Gửi thông báo cho Đợt 1 (Cọc)
+                var d1Inst = newInstallments.FirstOrDefault(i => i.Status == InstallmentStatusConstants.Pending);
+                if (d1Inst != null)
+                {
+                    try
+                    {
+                        await _notificationService.SendAsync(
+                            app.ApplicantId,
+                            "🎉 Trúng bốc thăm / Cấp nhà - Thông báo đóng cọc (Đợt 1)",
+                            $"Chúc mừng bạn! Khoản cọc Đợt 1: {d1Inst.Amount:N0} VND. Hạn đóng: {d1Inst.DueDate:dd/MM/yyyy}.",
+                            NotificationTypeConstants.InstallmentCreated);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to send notification for D1 installment {Id}.", d1Inst.Id);
+                    }
+                }
+            }
+            return;
+        }
+
+        // Trường hợp 2: Khi Ký Hợp đồng (ON_CONTRACT_SIGNED) → Unlock Đợt 2 (LOCKED → PENDING)
+        if (string.Equals(triggerEvent, TriggerEventConstants.OnContractSigned, StringComparison.OrdinalIgnoreCase))
+        {
+            var d2Inst = await _db.PaymentInstallments
+                .Include(i => i.Milestone)
+                .FirstOrDefaultAsync(i => i.ApplicationId == applicationId
+                                          && i.Milestone.PhaseOrder == 2
+                                          && i.Status == InstallmentStatusConstants.Locked);
+
+            if (d2Inst != null)
+            {
+                d2Inst.Status = InstallmentStatusConstants.Pending;
+                d2Inst.StartDate = eventDate;
+                d2Inst.DueDate = eventDate.AddDays(d2Inst.Milestone.DueDays);
+                d2Inst.UpdatedAt = DateTime.UtcNow;
+
+                await _db.SaveChangesAsync();
+
                 try
                 {
                     await _notificationService.SendAsync(
                         app.ApplicantId,
-                        $"Khoản thu mới: {milestone.PhaseName}",
-                        $"Số tiền: {inst.Amount:N0} VND. Hạn thanh toán: {inst.DueDate:dd/MM/yyyy}.",
+                        "📝 Ký hợp đồng thành công - Thông báo Đợt 2",
+                        $"Ký Hợp đồng thành công. Khoản Đợt 2: {d2Inst.Amount:N0} VND. Hạn đóng: {d2Inst.DueDate:dd/MM/yyyy}.",
                         NotificationTypeConstants.InstallmentCreated);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex,
-                        "Failed to send notification for installment {Id}.", inst.Id);
+                    _logger.LogWarning(ex, "Failed notification for D2 installment {Id}", d2Inst.Id);
                 }
             }
+            return;
         }
+
+        // Trường hợp 3: Sự kiện tiến độ khác → Gọi UnlockPhaseByEventAsync
+        await UnlockPhaseByEventAsync(app.ProjectId, triggerEvent);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -304,6 +329,9 @@ public class InstallmentService : IInstallmentService
             return Fail("Bạn không phải chủ hồ sơ này.");
 
         // Chỉ cho thanh toán PENDING hoặc OVERDUE
+        if (installment.Status == InstallmentStatusConstants.Locked)
+            return Fail("Đợt thanh toán này đang bị khóa. Vui lòng chờ Chủ đầu tư kích hoạt tiến độ và hoàn tất các đợt trước đó.");
+
         if (installment.Status != InstallmentStatusConstants.Pending
             && installment.Status != InstallmentStatusConstants.Overdue)
             return Fail($"Khoản thu đang ở trạng thái {installment.Status}, không thể thanh toán.");
@@ -554,15 +582,95 @@ public class InstallmentService : IInstallmentService
     // Private helpers
     // ═══════════════════════════════════════════════════════════════════════
 
+    /// <inheritdoc />
+    public async Task<int> UnlockPhaseByEventAsync(Guid projectId, string triggerEvent)
+    {
+        _logger.LogInformation("UnlockPhaseByEvent: Project={ProjectId}, Event={TriggerEvent}", projectId, triggerEvent);
+
+        var milestones = await _db.PaymentMilestones
+            .Where(m => m.ProjectId == projectId && m.TriggerEvent == triggerEvent && m.IsActive)
+            .ToListAsync();
+
+        if (milestones.Count == 0) return 0;
+
+        var milestoneIds = milestones.Select(m => m.Id).ToList();
+
+        var lockedInstallments = await _db.PaymentInstallments
+            .Include(i => i.HousingApplication)
+            .Include(i => i.Milestone)
+            .Where(i => milestoneIds.Contains(i.MilestoneId)
+                        && i.Status == InstallmentStatusConstants.Locked
+                        && i.HousingApplication.ProjectId == projectId)
+            .ToListAsync();
+
+        int unlockedCount = 0;
+        var now = DateTime.UtcNow;
+
+        foreach (var inst in lockedInstallments)
+        {
+            var prevPhaseOrder = inst.Milestone.PhaseOrder - 1;
+            var prevPaid = prevPhaseOrder < 1 || await _db.PaymentInstallments
+                .Include(i => i.Milestone)
+                .AnyAsync(i => i.ApplicationId == inst.ApplicationId
+                            && i.Milestone.PhaseOrder == prevPhaseOrder
+                            && i.Status == InstallmentStatusConstants.Paid);
+
+            if (prevPaid)
+            {
+                inst.Status = InstallmentStatusConstants.Pending;
+                inst.StartDate = now;
+                inst.DueDate = now.AddDays(inst.Milestone.DueDays);
+                inst.UpdatedAt = now;
+                unlockedCount++;
+
+                try
+                {
+                    var eventName = TriggerEventConstants.GetDisplayName(triggerEvent);
+                    await _notificationService.SendAsync(
+                        inst.HousingApplication.ApplicantId,
+                        $"🔔 Đợt thanh toán mới: {inst.Milestone.PhaseName}",
+                        $"Tiến độ dự án ({eventName}) đã được Chủ đầu tư kích hoạt. Số tiền: {inst.Amount:N0} VND. Hạn đóng: {inst.DueDate:dd/MM/yyyy}.",
+                        NotificationTypeConstants.InstallmentCreated);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to send notification for unlocked installment {Id}", inst.Id);
+                }
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return unlockedCount;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Private helpers
+    // ═══════════════════════════════════════════════════════════════════════
+
     /// <summary>
-    /// Tính số tiền dựa trên CalculationType của milestone.
-    /// FIXED_AMOUNT: dùng FixedAmount trực tiếp.
-    /// PERCENTAGE:   dùng Percentage × Apartment.Price.
+    /// Thuật toán chia số tiền 6 đợt không bị lệch lẻ xu:
+    /// Đợt 1 = 10%, Đợt 2 = 20%, Đợt 3 = 20%, Đợt 4 = 20%, Đợt 5 = 25% (+ 2% Phí bảo trì), Đợt 6 = 5% (nhận phần dư).
     /// </summary>
+    public static (decimal d1, decimal d2, decimal d3, decimal d4, decimal d5, decimal d6) Calculate6PhaseAmounts(decimal price)
+    {
+        var d1 = Math.Floor(price * 0.10m);
+        var d2 = Math.Floor(price * 0.20m);
+        var d3 = Math.Floor(price * 0.20m);
+        var d4 = Math.Floor(price * 0.20m);
+        var d5Base = Math.Floor(price * 0.25m);
+        var pbt = Math.Round(price * 0.02m, 0, MidpointRounding.AwayFromZero);
+        var d5 = d5Base + pbt;
+        var d6 = price - (d1 + d2 + d3 + d4 + d5Base);
+        if (d6 < 0) d6 = 0;
+
+        return (d1, d2, d3, d4, d5, d6);
+    }
+
     /// <summary>
-    /// Nếu dự án chưa có milestone active → seed mặc định 2 đợt:
-    /// Đợt 1 = 20% giá căn (ON_CONTRACT_SIGNED), Đợt 2 = 80% còn lại (ON_LOTTERY_WON).
-    /// Đồng thời migrate template cũ (FIXED + 40/60) nếu chưa có installment nào.
+    /// Đảm bảo dự án có đủ 6 milestones template chuẩn:
+    /// Đợt 1 (10% - ON_LOTTERY_WON), Đợt 2 (20% - ON_CONTRACT_SIGNED),
+    /// Đợt 3 (20% - CONSTRUCTION_ROUGH_FLOOR), Đợt 4 (20% - ROOFING_COMPLETED),
+    /// Đợt 5 (25% - HANDOVER), Đợt 6 (5% - RED_BOOK_ISSUED).
     /// </summary>
     private async Task EnsureDefaultMilestonesAsync(Guid projectId)
     {
@@ -571,56 +679,15 @@ public class InstallmentService : IInstallmentService
             .OrderBy(m => m.PhaseOrder)
             .ToListAsync();
 
-        var hasInstallments = await _db.PaymentInstallments
-            .AnyAsync(i => i.Milestone.ProjectId == projectId);
-
-        var looksLikeOldDefault = !hasInstallments && active.Count >= 2 && active.Any(m =>
-            m.PhaseOrder == 1
-            && string.Equals(m.CalculationType, CalculationTypeConstants.FixedAmount, StringComparison.OrdinalIgnoreCase));
-
-        var looksLikeOldThreePct = !hasInstallments && active.Count == 3
-            && active.Any(m => m.PhaseOrder == 2 && m.Percentage == 40m)
-            && active.Any(m => m.PhaseOrder == 3 && m.Percentage == 60m);
-
-        if (looksLikeOldDefault || looksLikeOldThreePct)
-        {
-            foreach (var m in active)
-                m.IsActive = false;
-            await _db.SaveChangesAsync();
-            active.Clear();
-            _logger.LogInformation(
-                "Deactivated legacy payment milestones for Project={ProjectId} (migrate → 20%/80%).",
-                projectId);
-        }
-        else if (active.Count > 0)
-        {
-            var touched = false;
-            foreach (var m in active)
-            {
-                if (m.PhaseOrder is < 1 or > 2) continue;
-                var expected = $"Đợt {m.PhaseOrder}";
-                if (m.PhaseName != expected)
-                {
-                    m.PhaseName = expected;
-                    touched = true;
-                }
-            }
-            if (touched)
-                await _db.SaveChangesAsync();
-            return;
-        }
-
-        var project = await _db.HousingProjects
-            .FirstOrDefaultAsync(p => p.Id == projectId);
-        if (project == null)
+        if (active.Count >= 6)
             return;
 
-        if (project.Phase1Percentage <= 0 || project.Phase1Percentage > 30m)
-            throw new InvalidOperationException(
-                $"Dự án {projectId} chưa cấu hình tỉ lệ trả trước Đợt 1 hợp lệ (Phase1Percentage).");
+        // Vô hiệu hóa các template cũ chưa chuẩn 6 đợt
+        foreach (var m in active)
+            m.IsActive = false;
 
-        var p1 = project.Phase1Percentage;
-        var p2 = 100m - p1;
+        await _db.SaveChangesAsync();
+
         var now = DateTime.UtcNow;
         _db.PaymentMilestones.AddRange(
             new PaymentMilestone
@@ -630,10 +697,10 @@ public class InstallmentService : IInstallmentService
                 PhaseOrder = 1,
                 PhaseName = "Đợt 1",
                 CalculationType = CalculationTypeConstants.Percentage,
-                Percentage = p1,
-                TriggerEvent = TriggerEventConstants.OnContractSigned,
+                Percentage = 10m,
+                TriggerEvent = TriggerEventConstants.OnLotteryWon,
                 DueDays = 7,
-                Description = $"Đợt 1 — {p1:0.##}% giá căn sau khi ký hợp đồng mua bán nhà ở xã hội",
+                Description = "Đợt 1 — 10% giá trị căn hộ khi trúng bốc thăm / cấp nhà",
                 IsActive = true,
                 CreatedAt = now
             },
@@ -644,17 +711,73 @@ public class InstallmentService : IInstallmentService
                 PhaseOrder = 2,
                 PhaseName = "Đợt 2",
                 CalculationType = CalculationTypeConstants.Percentage,
-                Percentage = p2,
-                TriggerEvent = TriggerEventConstants.OnLotteryWon,
+                Percentage = 20m,
+                TriggerEvent = TriggerEventConstants.OnContractSigned,
+                DueDays = 15,
+                Description = "Đợt 2 — 20% giá trị căn hộ khi ký Hợp đồng mua bán chính thức",
+                IsActive = true,
+                CreatedAt = now
+            },
+            new PaymentMilestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                PhaseOrder = 3,
+                PhaseName = "Đợt 3",
+                CalculationType = CalculationTypeConstants.Percentage,
+                Percentage = 20m,
+                TriggerEvent = TriggerEventConstants.ConstructionRoughFloor,
                 DueDays = 30,
-                Description = $"Đợt 2 — phần còn lại ({p2:0.##}% giá căn); đợt cuối nhận phần dư làm tròn",
+                Description = "Đợt 3 — 20% giá trị căn hộ khi hoàn thành xây thô",
+                IsActive = true,
+                CreatedAt = now
+            },
+            new PaymentMilestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                PhaseOrder = 4,
+                PhaseName = "Đợt 4",
+                CalculationType = CalculationTypeConstants.Percentage,
+                Percentage = 20m,
+                TriggerEvent = TriggerEventConstants.RoofingCompleted,
+                DueDays = 30,
+                Description = "Đợt 4 — 20% giá trị căn hộ khi cất nóc tòa nhà",
+                IsActive = true,
+                CreatedAt = now
+            },
+            new PaymentMilestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                PhaseOrder = 5,
+                PhaseName = "Đợt 5",
+                CalculationType = CalculationTypeConstants.Percentage,
+                Percentage = 25m,
+                TriggerEvent = TriggerEventConstants.Handover,
+                DueDays = 30,
+                Description = "Đợt 5 — 25% giá trị căn hộ (+ 2% Phí bảo trì) khi bàn giao nhà & chìa khóa",
+                IsActive = true,
+                CreatedAt = now
+            },
+            new PaymentMilestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                PhaseOrder = 6,
+                PhaseName = "Đợt 6",
+                CalculationType = CalculationTypeConstants.Percentage,
+                Percentage = 5m,
+                TriggerEvent = TriggerEventConstants.RedBookIssued,
+                DueDays = 30,
+                Description = "Đợt 6 — 5% phần còn lại khi nhận Giấy chứng nhận (Sổ hồng)",
                 IsActive = true,
                 CreatedAt = now
             });
+
         await _db.SaveChangesAsync();
         _logger.LogInformation(
-            "Seeded default payment milestones (Đợt 1={P1}%, Đợt 2={P2}%) for Project={ProjectId}.",
-            p1, p2, projectId);
+            "Seeded default 6-phase payment milestones for Project={ProjectId}.", projectId);
     }
 
     /// <summary>
