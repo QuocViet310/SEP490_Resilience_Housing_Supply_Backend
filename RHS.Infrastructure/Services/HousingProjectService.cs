@@ -751,4 +751,81 @@ public class HousingProjectService : IHousingProjectService
         var updatedProject = await _repository.GetByIdAsync(project.Id);
         return MapToResponseDto(updatedProject ?? project);
     }
+
+    private static readonly HashSet<string> LifecycleStatusCodes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "UPCOMING",
+        "OPEN",
+        "CLOSED",
+        "FULL",
+    };
+
+    public async Task<HousingProjectResponseDto> ChangeLifecycleStatusAsync(
+        Guid id,
+        string statusCode,
+        string? note = null)
+    {
+        if (string.IsNullOrWhiteSpace(statusCode))
+        {
+            throw new ArgumentException("StatusCode là bắt buộc.");
+        }
+
+        var normalized = statusCode.Trim().ToUpperInvariant();
+        if (!LifecycleStatusCodes.Contains(normalized))
+        {
+            throw new ArgumentException(
+                "StatusCode không hợp lệ. Chỉ chấp nhận: UPCOMING, OPEN, CLOSED, FULL.");
+        }
+
+        var project = await _repository.GetByIdAsync(id);
+        if (project == null || project.IsDeleted)
+        {
+            throw new InvalidOperationException($"Housing project with ID {id} not found.");
+        }
+
+        var currentCode = project.HousingProjectStatus?.StatusCode?.ToUpperInvariant();
+        if (currentCode is "PENDING" or "REJECTED")
+        {
+            throw new ArgumentException(
+                $"Không thể đổi nhanh từ trạng thái {currentCode}. " +
+                "Dự án PENDING cần SXD APPROVE/REJECT; dự án REJECTED không mở lại bằng API này.");
+        }
+
+        if (string.Equals(currentCode, normalized, StringComparison.OrdinalIgnoreCase))
+        {
+            return MapToResponseDto(project);
+        }
+
+        var targetStatus = await _repository.GetStatusByCodeAsync(normalized);
+        if (targetStatus == null)
+        {
+            throw new InvalidOperationException($"Không tìm thấy trạng thái {normalized} trên hệ thống.");
+        }
+
+        var now = DateTime.UtcNow;
+        project.HousingProjectStatusId = targetStatus.Id;
+        project.HousingProjectStatus = targetStatus;
+        project.UpdatedAt = now;
+
+        if (normalized == "OPEN")
+        {
+            project.IsConfirmed = true;
+            project.PublicAnnounceAt ??= now;
+            // Demo/vận hành: nếu chưa có ngày mở ĐK thì ghi nhận thời điểm mở
+            project.ApplicationOpenDate ??= now;
+        }
+        else if (normalized == "CLOSED" || normalized == "FULL")
+        {
+            // Ghi nhận đã qua thời điểm đóng nếu chưa có
+            project.ApplicationCloseDate ??= now;
+        }
+
+        // Note hiện chưa có cột riêng — giữ tham số để mở rộng audit sau
+        _ = note;
+
+        await _repository.UpdateAsync(project);
+
+        var updated = await _repository.GetByIdAsync(project.Id);
+        return MapToResponseDto(updated ?? project);
+    }
 }
