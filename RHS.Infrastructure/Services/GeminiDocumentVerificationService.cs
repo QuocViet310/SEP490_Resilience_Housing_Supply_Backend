@@ -320,13 +320,26 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
                 }
 
                 auditResult.MissingDocumentTypes.Add(requiredType);
-                auditResult.MissingDocumentNames.Add(DocumentTypeConstants.GetLabel(requiredType));
+                string reqLabel = DocumentTypeConstants.GetLabel(requiredType);
+                auditResult.MissingDocumentNames.Add(reqLabel);
+
+                // Đồng thời thêm mục thiếu vào CheckedDocuments để FE render trọn vẹn từng mục checklist
+                auditResult.CheckedDocuments.Add(new DocumentFormCheckDto
+                {
+                    DocumentId = Guid.Empty,
+                    DocumentType = requiredType,
+                    DocumentTypeName = reqLabel,
+                    FileUrl = string.Empty,
+                    IsCorrectForm = false,
+                    FormMatchStatus = "MISSING",
+                    Details = $"⚠️ Giấy tờ chưa được nộp trong hồ sơ ({reqLabel})."
+                });
             }
         }
 
         // 4. Tổng hợp nhận xét cho Chủ đầu tư
         bool hasMissing = auditResult.MissingDocumentTypes.Count > 0;
-        bool hasFormErrors = auditResult.CheckedDocuments.Any(d => !d.IsCorrectForm);
+        bool hasFormErrors = auditResult.CheckedDocuments.Any(d => !d.IsCorrectForm && d.FormMatchStatus != "MISSING");
 
         auditResult.IsComplete = !hasMissing && !hasFormErrors;
 
@@ -343,7 +356,7 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
             }
             if (hasFormErrors)
             {
-                noteParts.Add($"Có {auditResult.CheckedDocuments.Count(d => !d.IsCorrectForm)} giấy tờ NỘP SAI FORM MẪU");
+                noteParts.Add($"Có {auditResult.CheckedDocuments.Count(d => !d.IsCorrectForm && d.FormMatchStatus != "MISSING")} giấy tờ NỘP SAI FORM MẪU");
             }
             auditResult.SummaryNote = "⚠️ " + string.Join("; ", noteParts) + ". Cần phản hồi Yêu cầu bổ sung cho người dân.";
         }
