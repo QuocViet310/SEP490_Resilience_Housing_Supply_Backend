@@ -25,4 +25,12 @@ public interface IHousingProjectService
         Guid id,
         string action,
         string? rejectReason);
+
+    /// <summary>
+    /// Đổi nhanh status vòng đời (UPCOMING/OPEN/CLOSED/FULL) — CĐT/Admin/SXD.
+    /// </summary>
+    Task<HousingProjectResponseDto> ChangeLifecycleStatusAsync(
+        Guid id,
+        string statusCode,
+        string? note = null);
 }

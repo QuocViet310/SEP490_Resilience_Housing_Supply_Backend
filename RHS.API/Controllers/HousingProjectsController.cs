@@ -285,6 +285,50 @@ public class HousingProjectsController : ControllerBase
     }
 
     /// <summary>
+    /// Đổi nhanh trạng thái vòng đời dự án (UPCOMING / OPEN / CLOSED / FULL).
+    /// Dùng mở/đóng nhận hồ sơ khi demo hoặc vận hành — không thay luồng SXD duyệt PENDING.
+    /// </summary>
+    [HttpPatch("{id}/lifecycle-status")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<HousingProjectResponseDto>> ChangeLifecycleStatus(
+        Guid id,
+        [FromBody] ChangeHousingProjectLifecycleStatusRequestDto request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.StatusCode))
+        {
+            return BadRequest(new { message = "StatusCode là bắt buộc (UPCOMING | OPEN | CLOSED | FULL)." });
+        }
+
+        try
+        {
+            var result = await _service.ChangeLifecycleStatusAsync(id, request.StatusCode, request.Note);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Validation error while changing lifecycle status for project {Id}", id);
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Project not found or status missing for {Id}", id);
+            return NotFound(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error changing lifecycle status for housing project {Id}", id);
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new { message = "An error occurred while processing your request" });
+        }
+    }
+
+    /// <summary>
     /// Lấy thống kê phân tích danh sách hồ sơ đủ điều kiện so với số căn có sẵn cho CĐT.
     /// </summary>
     [HttpGet("{id}/application-evaluation")]
