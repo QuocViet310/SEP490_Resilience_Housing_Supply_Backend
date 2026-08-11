@@ -33,7 +33,7 @@ public class VnPayService : IVnPayService
         var tmnCode    = _configuration["VnPay:TmnCode"]!;
         var hashSecret = _configuration["VnPay:HashSecret"]!;
         var baseUrl    = _configuration["VnPay:BaseUrl"]!;
-        var returnUrl  = _configuration["VnPay:ReturnUrl"]!;
+        var returnUrl  = ResolveReturnUrl(context);
 
         // VNPay yêu cầu CreateDate/ExpireDate theo giờ Việt Nam (GMT+7).
         // Không dùng DateTime.Now (UTC trên Docker) — sẽ làm ExpireDate quá hạn ngay.
@@ -171,5 +171,37 @@ public class VnPayService : IVnPayService
         }
 
         return context.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+    }
+
+    /// <summary>
+    /// Tự động xác định ReturnUrl cho VNPay:
+    /// 1. Nếu VnPay:ReturnUrl được cấu hình bằng domain production thực tế (không chứa localhost/ngrok), dùng cấu hình đó.
+    /// 2. Nếu thiếu, chứa localhost/ngrok, hoặc là đường dẫn tương đối:
+    ///    Tự động xây dựng URL động từ Scheme + Host của HTTP Request thực tế.
+    ///    (Tự động chạy đúng trên cả Localhost, Render, hay Custom Domain mà không cần hardcode).
+    /// </summary>
+    private string ResolveReturnUrl(HttpContext context)
+    {
+        var configuredUrl = _configuration["VnPay:ReturnUrl"];
+
+        var isDynamicNeeded = string.IsNullOrWhiteSpace(configuredUrl)
+                              || configuredUrl.Contains("ngrok", StringComparison.OrdinalIgnoreCase)
+                              || configuredUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase)
+                              || !configuredUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase);
+
+        if (!isDynamicNeeded)
+        {
+            return configuredUrl!;
+        }
+
+        var scheme = context.Request.Headers["X-Forwarded-Proto"].FirstOrDefault()
+                     ?? context.Request.Scheme
+                     ?? "https";
+        var host = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault()
+                   ?? context.Request.Host.Value;
+
+        var path = "/api/payment/payment-callback";
+
+        return $"{scheme}://{host}{path}";
     }
 }
