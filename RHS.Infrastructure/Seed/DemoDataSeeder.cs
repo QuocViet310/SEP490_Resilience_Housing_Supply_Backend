@@ -14,9 +14,11 @@ public static class DemoDataSeeder
 {
     public static readonly Guid DemoDeveloperUserId = Guid.Parse("a1111111-1111-1111-1111-111111111111");
     public static readonly Guid DemoSxdUserId = Guid.Parse("a2222222-2222-2222-2222-222222222222");
+    public static readonly Guid DemoAdminUserId = Guid.Parse("a3333333-3333-3333-3333-333333333333");
 
     public const string DemoDeveloperEmail = "cdt.demo@rhs.local";
     public const string DemoSxdEmail = "sxd.demo@rhs.local";
+    public const string DemoAdminEmail = "admin.demo@rhs.local";
     public const string DemoPassword = "123456";
 
     /// <summary>Account trống — dùng test tạo hồ sơ / rào 1 tài khoản 1 hồ sơ.</summary>
@@ -81,7 +83,9 @@ public static class DemoDataSeeder
                     ? RoleConstants.HousingDeveloper
                     : roleId == RoleConstants.DepartmentOfConstructionId
                         ? RoleConstants.DepartmentOfConstruction
-                        : "Unknown";
+                        : roleId == RoleConstants.SystemAdministratorId
+                            ? RoleConstants.SystemAdministrator
+                            : "Unknown";
                 db.Roles.Add(new Role { Id = roleId, RoleName = roleName });
                 await db.SaveChangesAsync(ct);
                 logger?.LogInformation("Demo seed: ensured role {RoleName}", roleName);
@@ -151,6 +155,12 @@ public static class DemoDataSeeder
             DemoSxdEmail,
             RoleConstants.DepartmentOfConstructionId,
             "SXD Demo RHS");
+
+        await EnsureUser(
+            DemoAdminUserId,
+            DemoAdminEmail,
+            RoleConstants.SystemAdministratorId,
+            "Admin System RHS");
 
         return developer;
     }
