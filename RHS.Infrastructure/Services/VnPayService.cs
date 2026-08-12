@@ -74,6 +74,9 @@ public class VnPayService : IVnPayService
         var rawData   = BuildRawData(vnpParams);
         var signature = HmacSha512(hashSecret, rawData);
 
+        _logger.LogInformation("VNPay Payment URL Generated: TmnCode={TmnCode}, RawData={RawData}, Signature={Signature}",
+            tmnCode, rawData, signature);
+
         // ── Build URL cuối cùng ───────────────────────────────────────────
         var paymentUrl = $"{baseUrl}?{rawData}&vnp_SecureHash={signature}";
 
@@ -108,7 +111,18 @@ public class VnPayService : IVnPayService
         var rawData        = BuildRawData(vnpParams);
         var expectedHash   = HmacSha512(hashSecret, rawData);
 
-        return string.Equals(expectedHash, vnpSecureHash, StringComparison.OrdinalIgnoreCase);
+        bool isValid = string.Equals(expectedHash, vnpSecureHash, StringComparison.OrdinalIgnoreCase);
+        if (!isValid)
+        {
+            _logger.LogWarning("VNPay Signature Mismatch! Received={Received}, Expected={Expected}, RawData={RawData}",
+                vnpSecureHash, expectedHash, rawData);
+        }
+        else
+        {
+            _logger.LogInformation("VNPay Signature Verified Successfully for Order: RawData={RawData}", rawData);
+        }
+
+        return isValid;
     }
 
     // ── Private helpers ───────────────────────────────────────────────────
