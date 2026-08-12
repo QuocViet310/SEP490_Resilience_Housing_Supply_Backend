@@ -128,6 +128,8 @@ public class HousingProjectService : IHousingProjectService
                     Price       = apt.Price,
                     Status      = ApartmentStatusConstants.Available,
                     Description = apt.Description,
+                    Model3DUrl  = apt.Model3DUrl,
+                    VirtualTourUrl = apt.VirtualTourUrl,
                     CreatedAt   = DateTime.UtcNow
                 });
             }
@@ -289,6 +291,8 @@ public class HousingProjectService : IHousingProjectService
                     Price       = apt.Price,
                     Status      = ApartmentStatusConstants.Available,
                     Description = apt.Description,
+                    Model3DUrl  = apt.Model3DUrl,
+                    VirtualTourUrl = apt.VirtualTourUrl,
                     CreatedAt   = DateTime.UtcNow
                 });
             }
@@ -538,7 +542,9 @@ public class HousingProjectService : IHousingProjectService
                     Area        = a.Area,
                     Price       = a.Price,
                     Status      = a.Status,
-                    Description = a.Description
+                    Description = a.Description,
+                    Model3DUrl  = a.Model3DUrl,
+                    VirtualTourUrl = a.VirtualTourUrl
                 })
                 .ToList(),
             Milestones = project.PaymentMilestones

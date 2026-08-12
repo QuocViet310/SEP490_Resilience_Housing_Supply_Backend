@@ -40,6 +40,18 @@ public interface IFileStorageService
     /// <param name="fileUrl">URL của file (từ DB/Cloudinary hoặc ngoài hệ thống)</param>
     /// <returns>Mảng byte dữ liệu của file</returns>
     Task<byte[]> DownloadFileAsync(string fileUrl);
+
+    // ── 3D Model (.glb) ──────────────────────────────────────────
+
+    /// <summary>
+    /// Upload file mô hình 3D (.glb) lên Cloudinary dưới dạng raw file.
+    /// </summary>
+    Task<string> Upload3DModelAsync(IFormFile file, string folder = "apartment-3d-models");
+
+    /// <summary>
+    /// Validate file .glb và kiểm tra dung lượng ≤ maxSizeBytes (mặc định 5MB).
+    /// </summary>
+    bool IsValid3DModelFile(IFormFile file, long maxSizeBytes = 5 * 1024 * 1024);
 }
 
 

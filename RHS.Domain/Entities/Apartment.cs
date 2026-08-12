@@ -23,6 +23,12 @@ public class Apartment
 
     public string? Description { get; set; }
 
+    /// <summary>URL file mô hình 3D (.glb)</summary>
+    public string? Model3DUrl { get; set; }
+
+    /// <summary>URL tour 360 / iframe nhúng (Matterport, Sketchfab, Kuula...)</summary>
+    public string? VirtualTourUrl { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public HousingProject HousingProject { get; set; } = null!;

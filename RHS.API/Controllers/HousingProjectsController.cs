@@ -378,4 +378,37 @@ public class HousingProjectsController : ControllerBase
             return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
         }
     }
+
+    /// <summary>
+    /// Upload file mô hình 3D (.glb <= 5MB) cho căn hộ lên Cloudinary
+    /// </summary>
+    [HttpPost("upload-3d-model")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Upload3DModel(
+        IFormFile file,
+        [FromServices] IFileStorageService fileStorageService)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest(new { message = "Vui lòng chọn file .glb để upload." });
+        }
+
+        if (!fileStorageService.IsValid3DModelFile(file))
+        {
+            return BadRequest(new { message = "File không hợp lệ. Chỉ chấp nhận file định dạng .glb và kích thước không quá 5MB." });
+        }
+
+        try
+        {
+            var secureUrl = await fileStorageService.Upload3DModelAsync(file);
+            return Ok(new { url = secureUrl, message = "Upload file 3D .glb thành công." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi upload file 3D .glb");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
+        }
+    }
 }

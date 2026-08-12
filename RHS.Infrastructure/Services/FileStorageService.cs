@@ -461,5 +461,71 @@ public class FileStorageService : IFileStorageService
             return await client.GetByteArrayAsync(fileUrl);
         }
     }
+
+    // ── 3D Model (.glb) Methods ─────────────────────────────────
+
+    public bool IsValid3DModelFile(IFormFile file, long maxSizeBytes = 5 * 1024 * 1024)
+    {
+        if (file == null || file.Length == 0)
+        {
+            _logger.LogWarning("3D Model validation failed: file is null or empty.");
+            return false;
+        }
+
+        // Kiểm tra dung lượng (default <= 5MB)
+        if (file.Length > maxSizeBytes)
+        {
+            _logger.LogWarning(
+                "3D Model validation failed: file size {Size} bytes exceeds maximum allowed {Max} bytes (5MB).",
+                file.Length, maxSizeBytes);
+            return false;
+        }
+
+        // Kiểm tra extension
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (extension != ".glb")
+        {
+            _logger.LogWarning("3D Model validation failed: extension '{Extension}' is not .glb.", extension);
+            return false;
+        }
+
+        return true;
+    }
+
+    public async Task<string> Upload3DModelAsync(IFormFile file, string folder = "apartment-3d-models")
+    {
+        if (!IsValid3DModelFile(file))
+        {
+            throw new ArgumentException("File mô hình 3D không hợp lệ (Phải là file định dạng .glb và kích thước ≤ 5MB).");
+        }
+
+        try
+        {
+            using var stream = file.OpenReadStream();
+            var uploadParams = new RawUploadParams
+            {
+                File = new FileDescription(file.FileName, stream),
+                Folder = folder,
+                UseFilename = true,
+                UniqueFilename = true
+            };
+
+            var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+
+            if (uploadResult.Error != null)
+            {
+                _logger.LogError("Lỗi khi upload 3D Model lên Cloudinary: {Message}", uploadResult.Error.Message);
+                throw new Exception($"Cloudinary 3D Model Upload error: {uploadResult.Error.Message}");
+            }
+
+            _logger.LogInformation("Upload file 3D .glb thành công lên Cloudinary: {Url}", uploadResult.SecureUrl);
+            return uploadResult.SecureUrl.ToString();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi xảy ra trong quá trình upload 3D Model lên Cloudinary");
+            throw;
+        }
+    }
 }
 

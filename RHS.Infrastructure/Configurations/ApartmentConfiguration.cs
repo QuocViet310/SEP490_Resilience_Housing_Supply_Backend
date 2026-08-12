@@ -28,6 +28,12 @@ public class ApartmentConfiguration : IEntityTypeConfiguration<Apartment>
         builder.Property(x => x.Description)
             .HasMaxLength(500);
 
+        builder.Property(x => x.Model3DUrl)
+            .HasMaxLength(1000);
+
+        builder.Property(x => x.VirtualTourUrl)
+            .HasMaxLength(1000);
+
         builder.HasOne(x => x.HousingProject)
             .WithMany(p => p.Apartments)
             .HasForeignKey(x => x.ProjectId)
