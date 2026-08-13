@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -141,6 +142,15 @@ builder.Services.AddDocumentVerificationServices(builder.Configuration);
 builder.Services.AddHostedService<RHS.API.BackgroundServices.PaymentTimeoutWorker>();
 builder.Services.AddHostedService<RHS.API.BackgroundServices.ProjectAutomationWorker>();
 builder.Services.AddHostedService<RHS.API.BackgroundServices.OverduePaymentWorker>();
+
+// Reverse Proxy Configuration (Render, Cloudflare, NGINX)
+// Giúp ASP.NET Core nhận diện đúng IP và HTTPS protocol (X-Forwarded-Proto) từ Render Edge Proxy
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 // CORS Configuration
 builder.Services.AddCors(options =>
@@ -299,6 +309,9 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// Nạp ForwardedHeaders trước tiên để ASP.NET Core nhận diện đúng HTTPS scheme từ Render Edge Proxy
+app.UseForwardedHeaders();
+
 // Configure HTTP pipeline
 if (app.Environment.IsDevelopment())
 {
@@ -306,8 +319,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// CORS trước Authentication — SignalR negotiate từ Vite (:5173) cần header CORS sớm.
-// Dev: không HTTPS-redirect (tránh browser follow sang :7085 khi chỉ listen :5112).
+// CORS trước Authentication — SignalR negotiate từ Vite/React/Vercel cần header CORS sớm.
 app.UseCors("AllowAll");
 if (!app.Environment.IsDevelopment())
 {
