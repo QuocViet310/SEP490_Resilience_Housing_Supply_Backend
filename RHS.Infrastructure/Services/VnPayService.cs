@@ -33,10 +33,21 @@ public class VnPayService : IVnPayService
     /// <inheritdoc/>
     public string CreatePaymentUrl(HttpContext context, VnPaymentRequest request)
     {
-        var tmnCode    = _configuration["VnPay:TmnCode"] ?? string.Empty;
-        var hashSecret = _configuration["VnPay:HashSecret"] ?? string.Empty;
+        var tmnCode    = _configuration["VnPay:TmnCode"]?.Trim() ?? string.Empty;
+        var hashSecret = _configuration["VnPay:HashSecret"]?.Trim() ?? string.Empty;
         var baseUrl    = _configuration["VnPay:BaseUrl"] ?? "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
         var returnUrl  = ResolveReturnUrl(context);
+
+        // ── Debug: log HashSecret metadata để phát hiện ký tự ẩn ─────────
+        _logger.LogWarning(
+            "VNPay DEBUG: TmnCode='{TmnCode}' (len={TmnLen}), " +
+            "HashSecret length={SecretLen}, first3='{First3}', last3='{Last3}', " +
+            "ReturnUrl='{ReturnUrl}'",
+            tmnCode, tmnCode.Length,
+            hashSecret.Length,
+            hashSecret.Length >= 3 ? hashSecret[..3] : hashSecret,
+            hashSecret.Length >= 3 ? hashSecret[^3..] : hashSecret,
+            returnUrl);
 
         if (string.IsNullOrWhiteSpace(tmnCode) || string.IsNullOrWhiteSpace(hashSecret) ||
             tmnCode.StartsWith("YOUR_VNP", StringComparison.OrdinalIgnoreCase) ||
@@ -71,14 +82,16 @@ public class VnPayService : IVnPayService
         };
 
         // ── Tạo chuỗi query & chữ ký HMAC-SHA512 ────────────────────────
-        var rawData   = BuildRawData(vnpParams);
-        var signature = HmacSha512(hashSecret, rawData);
+        var signData     = BuildSignData(vnpParams);
+        var queryString  = BuildQueryString(vnpParams);
+        var signature    = HmacSha512(hashSecret, signData);
 
-        _logger.LogInformation("VNPay Payment URL Generated: TmnCode={TmnCode}, RawData={RawData}, Signature={Signature}",
-            tmnCode, rawData, signature);
+        _logger.LogWarning(
+            "VNPay DEBUG CreatePaymentUrl: SignData={SignData}, Signature={Signature}",
+            signData, signature);
 
         // ── Build URL cuối cùng ───────────────────────────────────────────
-        var paymentUrl = $"{baseUrl}?{rawData}&vnp_SecureHash={signature}";
+        var paymentUrl = $"{baseUrl}?{queryString}&vnp_SecureHash={signature}";
 
         return paymentUrl;
     }
@@ -86,7 +99,7 @@ public class VnPayService : IVnPayService
     /// <inheritdoc/>
     public bool ValidateSignature(IQueryCollection queryParams)
     {
-        var hashSecret = _configuration["VnPay:HashSecret"]!;
+        var hashSecret = _configuration["VnPay:HashSecret"]?.Trim() ?? string.Empty;
 
         // Lấy chữ ký VNPay gửi về
         var vnpSecureHash = queryParams["vnp_SecureHash"].ToString();
@@ -107,19 +120,29 @@ public class VnPayService : IVnPayService
             }
         }
 
-        // Tính lại chữ ký để so sánh
-        var rawData        = BuildRawData(vnpParams);
-        var expectedHash   = HmacSha512(hashSecret, rawData);
+        // Thử cả 2 cách tính hash: không encode (chuẩn VNPay) và có encode (legacy)
+        var signData       = BuildSignData(vnpParams);
+        var signDataEncoded = BuildQueryString(vnpParams);
 
-        bool isValid = string.Equals(expectedHash, vnpSecureHash, StringComparison.OrdinalIgnoreCase);
+        var hashRaw     = HmacSha512(hashSecret, signData);
+        var hashEncoded = HmacSha512(hashSecret, signDataEncoded);
+
+        bool isValid = string.Equals(hashRaw, vnpSecureHash, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(hashEncoded, vnpSecureHash, StringComparison.OrdinalIgnoreCase);
+
         if (!isValid)
         {
-            _logger.LogWarning("VNPay Signature Mismatch! Received={Received}, Expected={Expected}, RawData={RawData}",
-                vnpSecureHash, expectedHash, rawData);
+            _logger.LogWarning(
+                "VNPay Signature Mismatch! Received={Received}, " +
+                "ExpectedRaw={ExpectedRaw}, ExpectedEncoded={ExpectedEncoded}, " +
+                "SignData={SignData}",
+                vnpSecureHash, hashRaw, hashEncoded, signData);
         }
         else
         {
-            _logger.LogInformation("VNPay Signature Verified Successfully for Order: RawData={RawData}", rawData);
+            _logger.LogInformation("VNPay Signature Verified Successfully. MatchedMode={Mode}",
+                string.Equals(hashRaw, vnpSecureHash, StringComparison.OrdinalIgnoreCase)
+                    ? "RAW" : "ENCODED");
         }
 
         return isValid;
@@ -148,10 +171,29 @@ public class VnPayService : IVnPayService
     }
 
     /// <summary>
-    /// Ghép các cặp key=value theo thứ tự alphabet (SortedDictionary),
-    /// encode value theo chuẩn URL của VNPay (thay %20 bằng +).
+    /// Chuỗi dùng để tính HMAC hash — KHÔNG URL-encode giá trị.
+    /// Theo chuẩn VNPay: key1=rawValue1&key2=rawValue2 (sort alphabet).
     /// </summary>
-    private static string BuildRawData(SortedDictionary<string, string> vnpParams)
+    private static string BuildSignData(SortedDictionary<string, string> vnpParams)
+    {
+        var sb = new StringBuilder();
+        foreach (var (key, value) in vnpParams)
+        {
+            if (!string.IsNullOrEmpty(value))
+            {
+                if (sb.Length > 0) sb.Append('&');
+                sb.Append(key);
+                sb.Append('=');
+                sb.Append(value);
+            }
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Chuỗi dùng làm query string trong URL — CÓ URL-encode giá trị.
+    /// </summary>
+    private static string BuildQueryString(SortedDictionary<string, string> vnpParams)
     {
         var sb = new StringBuilder();
         foreach (var (key, value) in vnpParams)
