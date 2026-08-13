@@ -131,11 +131,13 @@ public class HousingProjectsController : ControllerBase
     }
 
     /// <summary>
-    /// Create a new housing project (Admin/Officer only)
+    /// Create a new housing project (CĐT / Admin / SXD).
+    /// CĐT: DeveloperId luôn lấy từ JWT. Admin/SXD: có thể truyền DeveloperId trên form.
     /// </summary>
     /// <param name="request">Create housing project request</param>
     /// <returns>Created housing project</returns>
     [HttpPost]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.DepartmentOfConstruction}")]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -147,7 +149,14 @@ public class HousingProjectsController : ControllerBase
     {
         try
         {
-            var result = await _service.CreateHousingProjectAsync(request);
+            var developerId = ResolveDeveloperIdForCreate(request.DeveloperId);
+            var roleClaim = User.FindFirst(ClaimTypes.Role) ?? User.FindFirst("role");
+            if (roleClaim?.Value == RoleConstants.HousingDeveloper && !developerId.HasValue)
+            {
+                return BadRequest(new { message = "Không xác định được tài khoản CĐT từ token. Vui lòng đăng nhập lại." });
+            }
+
+            var result = await _service.CreateHousingProjectAsync(request, developerId);
             return CreatedAtAction(nameof(GetHousingProjectById), new { id = result.Id }, result);
         }
         catch (ArgumentException ex)
@@ -188,7 +197,18 @@ public class HousingProjectsController : ControllerBase
     {
         try
         {
-            var result = await _service.UpdateHousingProjectAsync(id, request);
+            Guid? claimDeveloperId = null;
+            var roleClaim = User.FindFirst(ClaimTypes.Role) ?? User.FindFirst("role");
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+            if (roleClaim?.Value == RoleConstants.HousingDeveloper
+                && userIdClaim != null
+                && Guid.TryParse(userIdClaim.Value, out var cdtId)
+                && cdtId != Guid.Empty)
+            {
+                claimDeveloperId = cdtId;
+            }
+
+            var result = await _service.UpdateHousingProjectAsync(id, request, claimDeveloperId);
             return Ok(result);
         }
         catch (ArgumentException ex)
@@ -410,5 +430,28 @@ public class HousingProjectsController : ControllerBase
             _logger.LogError(ex, "Lỗi khi upload file 3D .glb");
             return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// CĐT → luôn gán JWT user id. Admin/SXD → dùng DeveloperId trên form (nếu có).
+    /// </summary>
+    private Guid? ResolveDeveloperIdForCreate(Guid? requestedDeveloperId)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+        var roleClaim = User.FindFirst(ClaimTypes.Role) ?? User.FindFirst("role");
+        var role = roleClaim?.Value;
+
+        if (role == RoleConstants.HousingDeveloper
+            && userIdClaim != null
+            && Guid.TryParse(userIdClaim.Value, out var cdtId)
+            && cdtId != Guid.Empty)
+        {
+            return cdtId;
+        }
+
+        if (requestedDeveloperId.HasValue && requestedDeveloperId.Value != Guid.Empty)
+            return requestedDeveloperId;
+
+        return null;
     }
 }

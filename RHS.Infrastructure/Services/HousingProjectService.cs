@@ -199,7 +199,8 @@ public class HousingProjectService : IHousingProjectService
 
     public async Task<HousingProjectResponseDto> UpdateHousingProjectAsync(
         Guid id,
-        UpdateHousingProjectRequestDto request)
+        UpdateHousingProjectRequestDto request,
+        Guid? claimDeveloperId = null)
     {
         // Validate request
         ValidateHousingProjectRequest(request);
@@ -209,6 +210,14 @@ public class HousingProjectService : IHousingProjectService
         if (existingProject == null)
         {
             throw new InvalidOperationException($"Housing project with ID {id} not found.");
+        }
+
+        // Self-heal: dự án cũ thiếu DeveloperId → gắn CĐT đang sửa (nếu đang login role CĐT)
+        if (!existingProject.DeveloperId.HasValue
+            && claimDeveloperId.HasValue
+            && claimDeveloperId.Value != Guid.Empty)
+        {
+            existingProject.DeveloperId = claimDeveloperId;
         }
 
         // Upload Thumbnail if provided

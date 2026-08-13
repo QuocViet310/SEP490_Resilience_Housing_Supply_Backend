@@ -33,6 +33,12 @@ public class CreateHousingProjectRequestDto
     public DateTime? ApplicationOpenDate { get; set; }
     public DateTime? ApplicationCloseDate { get; set; }
 
+    /// <summary>
+    /// CĐT sở hữu dự án. CĐT tạo dự án: BE ghi đè bằng JWT.
+    /// Admin/SXD tạo hộ: truyền UserId của CĐT (bắt buộc để dashboard hồ sơ hiện đúng).
+    /// </summary>
+    public Guid? DeveloperId { get; set; }
+
     /// <summary>Danh sách căn hộ cụ thể (tên / diện tích / giá)</summary>
     public List<DTOs.Apartment.CreateApartmentDto>? Apartments { get; set; }
 

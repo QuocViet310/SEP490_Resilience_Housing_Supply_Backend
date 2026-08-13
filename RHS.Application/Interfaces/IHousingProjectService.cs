@@ -15,7 +15,8 @@ public interface IHousingProjectService
 
     Task<HousingProjectResponseDto> UpdateHousingProjectAsync(
         Guid id,
-        UpdateHousingProjectRequestDto request);
+        UpdateHousingProjectRequestDto request,
+        Guid? claimDeveloperId = null);
 
     Task DeleteHousingProjectAsync(Guid id);
 

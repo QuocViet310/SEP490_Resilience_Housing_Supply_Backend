@@ -32,6 +32,7 @@ public static class DemoDataSeeder
         await EnsureProjectStatusesAsync(db, logger, ct);
         var developer = await EnsureDemoStaffAsync(db, logger, ct);
         await EnsureDemoProjectsAsync(db, developer.Id, logger, ct);
+        await RepairOrphanProjectDeveloperIdsAsync(db, developer.Id, logger, ct);
         await EnsureDemoApplicantsAndApplicationsAsync(db, logger, ct);
     }
 
@@ -236,7 +237,8 @@ public static class DemoDataSeeder
                     || existing.LotteryDescription != null
                     || existing.IsLotteryApproved != null
                     || existing.LotteryJoinCode != null
-                    || existing.Description != def.Project.Description;
+                    || existing.Description != def.Project.Description
+                    || existing.DeveloperId != developerId;
 
                 if (changed)
                 {
@@ -256,6 +258,7 @@ public static class DemoDataSeeder
                     existing.LotteryJoinCode = null;
                     existing.LotterySessionStatus = null;
                     existing.Description = def.Project.Description;
+                    existing.DeveloperId = developerId;
                     existing.UpdatedAt = DateTime.UtcNow;
                     updated++;
                 }
@@ -285,6 +288,45 @@ public static class DemoDataSeeder
         {
             logger?.LogInformation("Demo seed: housing projects already present — skip.");
         }
+    }
+
+    /// <summary>
+    /// Dự án tạo trước khi fix Create API thường có DeveloperId = null → dashboard CĐT không thấy hồ sơ.
+    /// Gán lại: nếu chỉ 1 CĐT trong hệ thống thì gán hết; không thì gán về CĐT demo.
+    /// </summary>
+    private static async Task RepairOrphanProjectDeveloperIdsAsync(
+        AppDbContext db,
+        Guid fallbackDeveloperId,
+        ILogger? logger,
+        CancellationToken ct)
+    {
+        var orphans = await db.HousingProjects
+            .Where(p => p.DeveloperId == null)
+            .ToListAsync(ct);
+
+        if (orphans.Count == 0)
+            return;
+
+        var developerUserIds = await db.Users
+            .AsNoTracking()
+            .Where(u => u.RoleId == RoleConstants.HousingDeveloperId && u.Status == "Active")
+            .Select(u => u.Id)
+            .ToListAsync(ct);
+
+        var targetId = developerUserIds.Count == 1
+            ? developerUserIds[0]
+            : fallbackDeveloperId;
+
+        foreach (var p in orphans)
+        {
+            p.DeveloperId = targetId;
+            p.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync(ct);
+        logger?.LogWarning(
+            "Demo seed: repaired {Count} projects with null DeveloperId → {DeveloperId} (active CĐT count={CdtCount}).",
+            orphans.Count, targetId, developerUserIds.Count);
     }
 
     /// <summary>
