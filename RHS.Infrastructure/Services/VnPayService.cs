@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using RHS.Application.Interfaces;
 using System.Net;
 using System.Security.Cryptography;
@@ -15,6 +16,7 @@ namespace RHS.Infrastructure.Services;
 public class VnPayService : IVnPayService
 {
     private readonly IConfiguration _configuration;
+    private readonly ILogger<VnPayService> _logger;
 
     // ── Hằng số VNPay ────────────────────────────────────────────────────
     private const string VnpVersion    = "2.1.0";
@@ -22,18 +24,27 @@ public class VnPayService : IVnPayService
     private const string VnpCurrCode   = "VND";
     private const string VnpLocale     = "vn";
 
-    public VnPayService(IConfiguration configuration)
+    public VnPayService(IConfiguration configuration, ILogger<VnPayService> logger)
     {
         _configuration = configuration;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
     public string CreatePaymentUrl(HttpContext context, VnPaymentRequest request)
     {
-        var tmnCode    = _configuration["VnPay:TmnCode"]!;
-        var hashSecret = _configuration["VnPay:HashSecret"]!;
-        var baseUrl    = _configuration["VnPay:BaseUrl"]!;
+        var tmnCode    = _configuration["VnPay:TmnCode"] ?? string.Empty;
+        var hashSecret = _configuration["VnPay:HashSecret"] ?? string.Empty;
+        var baseUrl    = _configuration["VnPay:BaseUrl"] ?? "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
         var returnUrl  = ResolveReturnUrl(context);
+
+        if (string.IsNullOrWhiteSpace(tmnCode) || string.IsNullOrWhiteSpace(hashSecret) ||
+            tmnCode.StartsWith("YOUR_VNP", StringComparison.OrdinalIgnoreCase) ||
+            hashSecret.StartsWith("YOUR_VNP", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogError("VNPay Error: VnPay:TmnCode hoặc VnPay:HashSecret chưa được cấu hình (đang chứa placeholder 'YOUR_VNP_...'). Vui lòng cập nhật TmnCode & HashSecret từ VNPAY Sandbox Dashboard trong appsettings.json.");
+            throw new InvalidOperationException("VnPay TmnCode hoặc HashSecret chưa được cấu hình hợp lệ trong appsettings.json.");
+        }
 
         // VNPay yêu cầu CreateDate/ExpireDate theo giờ Việt Nam (GMT+7).
         // Không dùng DateTime.Now (UTC trên Docker) — sẽ làm ExpireDate quá hạn ngay.
@@ -62,6 +73,9 @@ public class VnPayService : IVnPayService
         // ── Tạo chuỗi query & chữ ký HMAC-SHA512 ────────────────────────
         var rawData   = BuildRawData(vnpParams);
         var signature = HmacSha512(hashSecret, rawData);
+
+        _logger.LogInformation("VNPay Payment URL Generated: TmnCode={TmnCode}, RawData={RawData}, Signature={Signature}",
+            tmnCode, rawData, signature);
 
         // ── Build URL cuối cùng ───────────────────────────────────────────
         var paymentUrl = $"{baseUrl}?{rawData}&vnp_SecureHash={signature}";
@@ -97,7 +111,18 @@ public class VnPayService : IVnPayService
         var rawData        = BuildRawData(vnpParams);
         var expectedHash   = HmacSha512(hashSecret, rawData);
 
-        return string.Equals(expectedHash, vnpSecureHash, StringComparison.OrdinalIgnoreCase);
+        bool isValid = string.Equals(expectedHash, vnpSecureHash, StringComparison.OrdinalIgnoreCase);
+        if (!isValid)
+        {
+            _logger.LogWarning("VNPay Signature Mismatch! Received={Received}, Expected={Expected}, RawData={RawData}",
+                vnpSecureHash, expectedHash, rawData);
+        }
+        else
+        {
+            _logger.LogInformation("VNPay Signature Verified Successfully for Order: RawData={RawData}", rawData);
+        }
+
+        return isValid;
     }
 
     // ── Private helpers ───────────────────────────────────────────────────
