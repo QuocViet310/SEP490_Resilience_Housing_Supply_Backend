@@ -57,101 +57,38 @@ public class InstallmentService : IInstallmentService
 
         await EnsureDefaultMilestonesAsync(app.ProjectId);
 
-        // Trường hợp 1: Khi trúng bốc thăm / cấp nhà (ON_LOTTERY_WON) → Sinh toàn bộ 6 đợt (Đợt 1 PENDING, Đợt 2-6 LOCKED)
+        // Tự động sinh hoặc đồng bộ 6 đợt cho hồ sơ
+        await EnsureInstallmentsForApplicationAsync(applicationId);
+
+        // Trường hợp 1: Khi trúng bốc thăm / cấp nhà (ON_LOTTERY_WON)
         if (string.Equals(triggerEvent, TriggerEventConstants.OnLotteryWon, StringComparison.OrdinalIgnoreCase))
         {
-            var milestones = await _db.PaymentMilestones
-                .Where(m => m.ProjectId == app.ProjectId && m.IsActive)
-                .OrderBy(m => m.PhaseOrder)
-                .ToListAsync();
+            var d1Inst = await _db.PaymentInstallments
+                .Include(i => i.Milestone)
+                .FirstOrDefaultAsync(i => i.ApplicationId == applicationId && i.Milestone.PhaseOrder == 1);
 
-            var existingMilestoneIds = (await _db.PaymentInstallments
-                .Where(i => i.ApplicationId == applicationId)
-                .Select(i => i.MilestoneId)
-                .ToListAsync())
-                .ToHashSet();
-
-            var milestonesToCreate = milestones
-                .Where(m => !existingMilestoneIds.Contains(m.Id))
-                .OrderBy(m => m.PhaseOrder)
-                .ToList();
-
-            if (milestonesToCreate.Count == 0)
-                return;
-
-            if (app.Apartment == null)
+            // Cập nhật trạng thái hồ sơ sang DEPOSIT_PENDING nếu đang APPROVED
+            if (app.ApplicationStatus == ApplicationStatusConstants.Approved
+                || app.ApplicationStatus == ApplicationStatusConstants.ApprovedByTimeout)
             {
-                _logger.LogWarning("App {AppId} hasn't been assigned an Apartment yet. Skipping installment generation.", applicationId);
-                return;
-            }
-
-            var (a1, a2, a3, a4, a5, a6) = Calculate6PhaseAmounts(app.Apartment.Price);
-            var amountsByPhase = new Dictionary<int, decimal>
-            {
-                [1] = a1,
-                [2] = a2,
-                [3] = a3,
-                [4] = a4,
-                [5] = a5,
-                [6] = a6
-            };
-
-            var newInstallments = new List<PaymentInstallment>();
-            foreach (var m in milestonesToCreate)
-            {
-                var amount = amountsByPhase.TryGetValue(m.PhaseOrder, out var amt)
-                    ? amt
-                    : CalculateAmount(m, app.Apartment);
-
-                // Đợt 1: PENDING; Đợt 2-6: LOCKED
-                var initialStatus = m.PhaseOrder == 1
-                    ? InstallmentStatusConstants.Pending
-                    : InstallmentStatusConstants.Locked;
-
-                var inst = new PaymentInstallment
-                {
-                    Id            = Guid.NewGuid(),
-                    ApplicationId = applicationId,
-                    MilestoneId   = m.Id,
-                    Amount        = amount,
-                    StartDate     = eventDate,
-                    DueDate       = eventDate.AddDays(m.DueDays),
-                    Status        = initialStatus,
-                    CreatedAt     = DateTime.UtcNow
-                };
-                newInstallments.Add(inst);
-            }
-
-            if (newInstallments.Count > 0)
-            {
-                _db.PaymentInstallments.AddRange(newInstallments);
-
-                // Cập nhật trạng thái hồ sơ sang DEPOSIT_PENDING nếu đang APPROVED
-                if (app.ApplicationStatus == ApplicationStatusConstants.Approved
-                    || app.ApplicationStatus == ApplicationStatusConstants.ApprovedByTimeout)
-                {
-                    app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
-                    app.UpdatedAt = DateTime.UtcNow;
-                }
-
+                app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
+                app.UpdatedAt = DateTime.UtcNow;
                 await _db.SaveChangesAsync();
+            }
 
-                // Gửi thông báo cho Đợt 1 (Cọc)
-                var d1Inst = newInstallments.FirstOrDefault(i => i.Status == InstallmentStatusConstants.Pending);
-                if (d1Inst != null)
+            if (d1Inst != null && d1Inst.Status == InstallmentStatusConstants.Pending)
+            {
+                try
                 {
-                    try
-                    {
-                        await _notificationService.SendAsync(
-                            app.ApplicantId,
-                            "🎉 Trúng bốc thăm / Cấp nhà - Thông báo đóng cọc (Đợt 1)",
-                            $"Chúc mừng bạn! Khoản cọc Đợt 1: {d1Inst.Amount:N0} VND. Hạn đóng: {d1Inst.DueDate:dd/MM/yyyy}.",
-                            NotificationTypeConstants.InstallmentCreated);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to send notification for D1 installment {Id}.", d1Inst.Id);
-                    }
+                    await _notificationService.SendAsync(
+                        app.ApplicantId,
+                        "🎉 Trúng bốc thăm / Cấp nhà - Thông báo đóng cọc (Đợt 1)",
+                        $"Chúc mừng bạn! Khoản cọc Đợt 1: {d1Inst.Amount:N0} VND. Hạn đóng: {d1Inst.DueDate:dd/MM/yyyy}.",
+                        NotificationTypeConstants.InstallmentCreated);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to send notification for D1 installment {Id}.", d1Inst.Id);
                 }
             }
             return;
@@ -162,25 +99,26 @@ public class InstallmentService : IInstallmentService
         {
             var d2Inst = await _db.PaymentInstallments
                 .Include(i => i.Milestone)
-                .FirstOrDefaultAsync(i => i.ApplicationId == applicationId
-                                          && i.Milestone.PhaseOrder == 2
-                                          && i.Status == InstallmentStatusConstants.Locked);
+                .FirstOrDefaultAsync(i => i.ApplicationId == applicationId && i.Milestone.PhaseOrder == 2);
 
             if (d2Inst != null)
             {
-                d2Inst.Status = InstallmentStatusConstants.Pending;
-                d2Inst.StartDate = eventDate;
-                d2Inst.DueDate = eventDate.AddDays(d2Inst.Milestone.DueDays);
-                d2Inst.UpdatedAt = DateTime.UtcNow;
+                if (d2Inst.Status == InstallmentStatusConstants.Locked)
+                {
+                    d2Inst.Status = InstallmentStatusConstants.Pending;
+                    d2Inst.StartDate = eventDate;
+                    d2Inst.DueDate = eventDate.AddDays(d2Inst.Milestone.DueDays);
+                    d2Inst.UpdatedAt = DateTime.UtcNow;
 
-                await _db.SaveChangesAsync();
+                    await _db.SaveChangesAsync();
+                }
 
                 try
                 {
                     await _notificationService.SendAsync(
                         app.ApplicantId,
-                        "📝 Ký hợp đồng thành công - Thông báo Đợt 2",
-                        $"Ký Hợp đồng thành công. Khoản Đợt 2: {d2Inst.Amount:N0} VND. Hạn đóng: {d2Inst.DueDate:dd/MM/yyyy}.",
+                        "📝 Ký hợp đồng thành công - Mở thanh toán Đợt 2",
+                        $"Ký Hợp đồng thành công. Khoản thanh toán Đợt 2: {d2Inst.Amount:N0} VND. Hạn đóng: {d2Inst.DueDate:dd/MM/yyyy}.",
                         NotificationTypeConstants.InstallmentCreated);
                 }
                 catch (Exception ex)
@@ -202,6 +140,9 @@ public class InstallmentService : IInstallmentService
     /// <inheritdoc />
     public async Task<InstallmentSummaryDto?> GetSummaryAsync(Guid applicationId)
     {
+        // Tự động sinh lịch 6 đợt & đồng bộ mở Đợt 2 nếu đã ký hợp đồng
+        await EnsureInstallmentsForApplicationAsync(applicationId);
+
         // Self-heal: payment đã Paid nhưng installment còn PENDING (lỗi history ChangedBy)
         await HealPaidInstallmentsForApplicationAsync(applicationId);
 
@@ -643,9 +584,139 @@ public class InstallmentService : IInstallmentService
         return unlockedCount;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // Private helpers
-    // ═══════════════════════════════════════════════════════════════════════
+    /// <summary>
+    /// Đảm bảo một hồ sơ đã được cấp căn có đầy đủ 6 đợt đóng tiền.
+    /// Tự động đồng bộ Đợt 1 sang PAID nếu đã cọc, và Đợt 2 sang PENDING nếu đã ký hợp đồng.
+    /// </summary>
+    private async Task EnsureInstallmentsForApplicationAsync(Guid applicationId)
+    {
+        var app = await _db.HousingApplications
+            .Include(a => a.Apartment)
+            .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
+
+        if (app == null || app.Apartment == null)
+            return;
+
+        await EnsureDefaultMilestonesAsync(app.ProjectId);
+
+        var milestones = await _db.PaymentMilestones
+            .Where(m => m.ProjectId == app.ProjectId && m.IsActive)
+            .OrderBy(m => m.PhaseOrder)
+            .ToListAsync();
+
+        if (milestones.Count < 6)
+            return;
+
+        var existingInstallments = await _db.PaymentInstallments
+            .Include(i => i.Milestone)
+            .Where(i => i.ApplicationId == applicationId)
+            .OrderBy(i => i.Milestone.PhaseOrder)
+            .ToListAsync();
+
+        var now = DateTime.UtcNow;
+        var (a1, a2, a3, a4, a5, a6) = Calculate6PhaseAmounts(app.Apartment.Price);
+        var amountsByPhase = new Dictionary<int, decimal>
+        {
+            [1] = a1,
+            [2] = a2,
+            [3] = a3,
+            [4] = a4,
+            [5] = a5,
+            [6] = a6
+        };
+
+        // Đã thanh toán Đợt 1 (cọc) nếu status từ CONTRACT_PENDING trở đi hoặc có Payment Success
+        var isD1Paid = app.ApplicationStatus == ApplicationStatusConstants.ContractPending
+                    || app.ApplicationStatus == ApplicationStatusConstants.ContractSigned
+                    || app.ApplicationStatus == ApplicationStatusConstants.DepositPaid
+                    || app.ApplicationStatus == ApplicationStatusConstants.InstallmentInProgress
+                    || app.ApplicationStatus == ApplicationStatusConstants.FullyPaid
+                    || await _db.Payments.AnyAsync(p => p.ApplicationId == applicationId
+                                                       && (p.Status == "Success" || p.Status == "Paid"));
+
+        // Đã ký Hợp đồng nếu status từ CONTRACT_SIGNED trở đi hoặc PrincipleAgreement đã ký
+        var isContractSigned = app.ApplicationStatus == ApplicationStatusConstants.ContractSigned
+                            || app.ApplicationStatus == ApplicationStatusConstants.InstallmentInProgress
+                            || app.ApplicationStatus == ApplicationStatusConstants.FullyPaid
+                            || await _db.PrincipleAgreements.AnyAsync(p => p.ApplicationId == applicationId && p.IsSigned);
+
+        if (existingInstallments.Count == 0)
+        {
+            var newInstallments = new List<PaymentInstallment>();
+            foreach (var m in milestones)
+            {
+                var amount = amountsByPhase.TryGetValue(m.PhaseOrder, out var amt)
+                    ? amt
+                    : CalculateAmount(m, app.Apartment);
+
+                string status;
+                DateTime? paidAt = null;
+
+                if (m.PhaseOrder == 1)
+                {
+                    status = isD1Paid ? InstallmentStatusConstants.Paid : InstallmentStatusConstants.Pending;
+                    if (isD1Paid) paidAt = app.UpdatedAt ?? now;
+                }
+                else if (m.PhaseOrder == 2)
+                {
+                    // Đợt 2 tự động mở khi đã ký hợp đồng
+                    status = isContractSigned ? InstallmentStatusConstants.Pending : InstallmentStatusConstants.Locked;
+                }
+                else
+                {
+                    status = InstallmentStatusConstants.Locked;
+                }
+
+                var inst = new PaymentInstallment
+                {
+                    Id            = Guid.NewGuid(),
+                    ApplicationId = applicationId,
+                    MilestoneId   = m.Id,
+                    Amount        = amount,
+                    StartDate     = now,
+                    DueDate       = now.AddDays(m.DueDays),
+                    Status        = status,
+                    PaidAt        = paidAt,
+                    CreatedAt     = now
+                };
+                newInstallments.Add(inst);
+            }
+
+            _db.PaymentInstallments.AddRange(newInstallments);
+            await _db.SaveChangesAsync();
+            _logger.LogInformation("Generated missing 6 installments for Application={AppId}.", applicationId);
+        }
+        else
+        {
+            // Tự động kiểm tra và đồng bộ trạng thái nếu thiếu
+            bool modified = false;
+
+            var d1 = existingInstallments.FirstOrDefault(i => i.Milestone.PhaseOrder == 1);
+            if (d1 != null && isD1Paid && d1.Status != InstallmentStatusConstants.Paid)
+            {
+                d1.Status = InstallmentStatusConstants.Paid;
+                d1.PaidAt ??= app.UpdatedAt ?? now;
+                d1.UpdatedAt = now;
+                modified = true;
+            }
+
+            var d2 = existingInstallments.FirstOrDefault(i => i.Milestone.PhaseOrder == 2);
+            if (d2 != null && isContractSigned && d2.Status == InstallmentStatusConstants.Locked)
+            {
+                d2.Status = InstallmentStatusConstants.Pending;
+                d2.StartDate = now;
+                d2.DueDate = now.AddDays(d2.Milestone.DueDays);
+                d2.UpdatedAt = now;
+                modified = true;
+            }
+
+            if (modified)
+            {
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Self-healed D1/D2 installments for Application={AppId}.", applicationId);
+            }
+        }
+    }
 
     /// <summary>
     /// Thuật toán chia số tiền 6 đợt không bị lệch lẻ xu:
