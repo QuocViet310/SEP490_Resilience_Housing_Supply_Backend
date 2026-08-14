@@ -49,6 +49,7 @@ public class LotteryScheduleDetailDto
 public class LotteryParticipantDto
 {
     public Guid ApplicationId { get; set; }
+    public string ApplicationCode { get; set; } = string.Empty;
     public Guid ApplicantId { get; set; }
     public string ApplicantName { get; set; } = string.Empty;
     public string CitizenId { get; set; } = string.Empty;

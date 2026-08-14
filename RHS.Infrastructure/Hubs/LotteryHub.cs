@@ -58,6 +58,16 @@ public class LotteryHub : Hub<ILotteryHubClient>
         await Clients.Group(groupName).ReceiveSxdSupervisorCount(GetSxdOnlineCount(projectId));
         if (!string.IsNullOrWhiteSpace(verify.SessionStatus))
             await Clients.Caller.ReceiveLotteryStatus(verify.SessionStatus);
+
+        try
+        {
+            var liveState = await _lotteryService.GetLiveStateAsync(projectId);
+            await Clients.Caller.ReceiveLiveState(liveState);
+        }
+        catch
+        {
+            // Suppress error if live state build fails during initial lobby join
+        }
     }
 
     public async Task LeaveProjectLobby(Guid projectId)
@@ -75,6 +85,48 @@ public class LotteryHub : Hub<ILotteryHubClient>
         {
             sxdLobby.TryRemove(Context.ConnectionId, out _);
             await Clients.Group(groupName).ReceiveSxdSupervisorCount(GetSxdOnlineCount(projectId));
+        }
+    }
+
+    /// <summary>CĐT kích hoạt bốc 1 lượt tiếp theo ("Bốc tiếp").</summary>
+    public async Task DrawNextTurn(Guid projectId)
+    {
+        var userId = GetUserId();
+        try
+        {
+            await _lotteryService.DrawNextTurnAsync(projectId, userId);
+        }
+        catch (Exception ex)
+        {
+            throw new HubException(ex.Message);
+        }
+    }
+
+    /// <summary>CĐT tạm dừng phiên quay số ("Pause").</summary>
+    public async Task PauseLive(Guid projectId)
+    {
+        var userId = GetUserId();
+        try
+        {
+            await _lotteryService.PauseLiveAsync(projectId, userId);
+        }
+        catch (Exception ex)
+        {
+            throw new HubException(ex.Message);
+        }
+    }
+
+    /// <summary>CĐT tiếp tục phiên quay số ("Tiếp tục").</summary>
+    public async Task ResumeLive(Guid projectId)
+    {
+        var userId = GetUserId();
+        try
+        {
+            await _lotteryService.ResumeLiveAsync(projectId, userId);
+        }
+        catch (Exception ex)
+        {
+            throw new HubException(ex.Message);
         }
     }
 
@@ -117,6 +169,10 @@ public class LotteryHub : Hub<ILotteryHubClient>
     }
 
     public static string GetGroupName(Guid projectId) => $"project_lottery_{projectId}";
+
+    /// <summary>Số lượng người dùng đang online trong sảnh dự án.</summary>
+    public static int GetLobbyCount(Guid projectId) =>
+        ProjectLobbies.TryGetValue(projectId, out var lobby) ? lobby.Count : 0;
 
     /// <summary>Số connection Sở Xây dựng đang online trong sảnh dự án.</summary>
     public static int GetSxdOnlineCount(Guid projectId) =>

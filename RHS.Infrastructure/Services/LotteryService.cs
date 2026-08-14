@@ -191,6 +191,7 @@ public class LotteryService : ILotteryService
             .Select(a => new LotteryParticipantDto
             {
                 ApplicationId = a.ApplicationId,
+                ApplicationCode = $"HS-{a.SubmittedAt.Year}-{(a.ApplicationId.ToString().Substring(0, 4).ToUpper())}",
                 ApplicantId = a.ApplicantId,
                 ApplicantName = a.Applicant != null ? a.Applicant.FullName : a.FullName,
                 CitizenId = a.CitizenId,
@@ -502,6 +503,346 @@ public class LotteryService : ILotteryService
         };
     }
 
+    public async Task<LotteryLiveStateDto> GetLiveStateAsync(Guid projectId, CancellationToken ct = default)
+    {
+        var project = await _db.HousingProjects
+            .AsNoTracking()
+            .Include(p => p.Developer)
+            .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, ct)
+            ?? throw new InvalidOperationException("Không tìm thấy dự án.");
+
+        var eligibleApps = await _db.HousingApplications
+            .AsNoTracking()
+            .Include(a => a.Applicant)
+            .Where(a => a.ProjectId == projectId
+                        && BatchEligibleStatuses.Contains(a.ApplicationStatus)
+                        && !a.IsViolation)
+            .OrderBy(a => a.SubmittedAt)
+            .ToListAsync(ct);
+
+        var wonStatuses = new[] { LotteryResultConstants.Won, LotteryResultConstants.PriorityWon };
+        var drawnWinners = eligibleApps
+            .Where(a => a.LotteryResult != null && wonStatuses.Contains(a.LotteryResult))
+            .OrderBy(a => a.UpdatedAt ?? a.SubmittedAt)
+            .ToList();
+
+        var undrawnApps = eligibleApps
+            .Where(a => a.LotteryResult == null || a.LotteryResult == LotteryResultConstants.Pending)
+            .OrderByDescending(a => !string.IsNullOrWhiteSpace(a.PriorityGroup))
+            .ThenBy(a => a.SubmittedAt)
+            .ToList();
+
+        var nextCandidateApp = undrawnApps.FirstOrDefault();
+
+        int drawnUnitsCount = drawnWinners.Count;
+        int remainingUnits = project.AvailableUnits;
+        int totalUnits = drawnUnitsCount + remainingUnits;
+
+        int sttCounter = 1;
+        var recentWinners = drawnWinners.Select(a => new LiveDrawResultDto
+        {
+            ProjectId = projectId,
+            ApplicationId = a.ApplicationId,
+            ApplicationCode = GetApplicationCode(a),
+            ApplicantId = a.ApplicantId,
+            ApplicantName = a.Applicant != null ? a.Applicant.FullName : a.FullName,
+            CitizenId = a.CitizenId,
+            MaskedCitizenId = MaskCitizenId(a.CitizenId),
+            Stt = sttCounter++,
+            Result = a.LotteryResult!,
+            SlotCode = a.SlotCode,
+            DrawnAt = a.UpdatedAt ?? DateTime.UtcNow,
+            RemainingUnits = remainingUnits,
+            PriorityGroup = a.PriorityGroup
+        }).ToList();
+
+        LiveDrawResultDto? latestDrawResult = recentWinners.LastOrDefault();
+
+        LotteryParticipantDto? nextCandidate = null;
+        if (nextCandidateApp != null)
+        {
+            nextCandidate = new LotteryParticipantDto
+            {
+                ApplicationId = nextCandidateApp.ApplicationId,
+                ApplicationCode = GetApplicationCode(nextCandidateApp),
+                ApplicantId = nextCandidateApp.ApplicantId,
+                ApplicantName = nextCandidateApp.Applicant != null ? nextCandidateApp.Applicant.FullName : nextCandidateApp.FullName,
+                CitizenId = nextCandidateApp.CitizenId,
+                PriorityGroup = nextCandidateApp.PriorityGroup,
+                ApplicationStatus = nextCandidateApp.ApplicationStatus,
+                SubmittedAt = nextCandidateApp.SubmittedAt
+            };
+        }
+
+        int priorityWinnersCount = drawnWinners.Count(w => w.LotteryResult == LotteryResultConstants.PriorityWon);
+        int randomWinnersCount = drawnWinners.Count(w => w.LotteryResult == LotteryResultConstants.Won);
+        int undrawnParticipantsCount = Math.Max(0, eligibleApps.Count - drawnWinners.Count);
+        double winRatePercentage = eligibleApps.Count > 0
+            ? Math.Min(100.0, Math.Round((double)totalUnits / eligibleApps.Count * 100.0, 1))
+            : 0.0;
+
+        // Build Khu vực 3: Thống kê quỹ căn của dự án
+        double overallPct = totalUnits > 0 ? Math.Round((double)remainingUnits / totalUnits * 100.0, 1) : 0.0;
+
+        var projectFundStat = new ApartmentFundQuotaStatDto
+        {
+            CategoryName = "Quỹ căn dự án",
+            TotalUnits = totalUnits,
+            RemainingUnits = remainingUnits,
+            AssignedUnits = drawnUnitsCount,
+            RemainingPercentage = overallPct
+        };
+
+        var projectApartments = await _db.Apartments
+            .AsNoTracking()
+            .Where(a => a.ProjectId == projectId)
+            .ToListAsync(ct);
+
+        var apartmentFundStats = new List<ApartmentFundQuotaStatDto>();
+
+        if (projectApartments.Count > 0)
+        {
+            var grouped = projectApartments
+                .GroupBy(a => !string.IsNullOrWhiteSpace(a.Description)
+                    ? a.Description.Trim()
+                    : (a.Area >= 60 ? "Căn 2 phòng ngủ (2PN)" : "Căn 1 phòng ngủ (1PN)"))
+                .ToList();
+
+            foreach (var group in grouped)
+            {
+                int totalInGroup = group.Count();
+                int remainingInGroup = group.Count(a => a.Status == ApartmentStatusConstants.Available);
+                int assignedInGroup = totalInGroup - remainingInGroup;
+                double pct = totalInGroup > 0 ? Math.Round((double)remainingInGroup / totalInGroup * 100.0, 1) : 0.0;
+
+                apartmentFundStats.Add(new ApartmentFundQuotaStatDto
+                {
+                    CategoryName = group.Key,
+                    TotalUnits = totalInGroup,
+                    RemainingUnits = remainingInGroup,
+                    AssignedUnits = assignedInGroup,
+                    RemainingPercentage = pct
+                });
+            }
+        }
+        else
+        {
+            apartmentFundStats.Add(projectFundStat);
+        }
+
+        var devName = project.Developer?.FullName ?? "Chủ đầu tư";
+
+        return new LotteryLiveStateDto
+        {
+            ProjectId = project.Id,
+            ProjectName = project.ProjectName,
+            DeveloperName = devName,
+            SessionStatus = project.LotterySessionStatus ?? LotterySessionStatusConstants.Scheduled,
+            TotalUnits = totalUnits,
+            DrawnUnitsCount = drawnUnitsCount,
+            RemainingUnits = remainingUnits,
+            TotalEligibleParticipants = eligibleApps.Count,
+            SxdOnlineCount = LotteryHub.GetSxdOnlineCount(projectId),
+            LobbyCount = LotteryHub.GetLobbyCount(projectId),
+            PriorityWinnersCount = priorityWinnersCount,
+            RandomWinnersCount = randomWinnersCount,
+            UndrawnParticipantsCount = undrawnParticipantsCount,
+            WinRatePercentage = winRatePercentage,
+            NextCandidate = nextCandidate,
+            LatestDrawResult = latestDrawResult,
+            RecentWinners = recentWinners,
+            ProjectApartmentFundStat = projectFundStat,
+            ApartmentFundStats = apartmentFundStats
+        };
+    }
+
+    /// <summary>CĐT kích hoạt bốc 1 lượt tiếp theo ("Bốc tiếp").</summary>
+    public async Task<LiveDrawResultDto> DrawNextTurnAsync(
+        Guid projectId,
+        Guid actorId,
+        CancellationToken ct = default)
+    {
+        var semaphore = ProjectLocks.GetOrAdd(projectId, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync(ct);
+
+        try
+        {
+            var project = await _db.HousingProjects
+                .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, ct)
+                ?? throw new InvalidOperationException("Không tìm thấy dự án.");
+
+            if (project.IsLotteryApproved != true)
+                throw new InvalidOperationException("Lịch bốc thăm chưa được Sở phê duyệt.");
+
+            if (project.LotterySessionStatus != LotterySessionStatusConstants.Live)
+                throw new InvalidOperationException(
+                    $"Chưa tới lúc bốc thăm. Trạng thái phiên hiện tại: {project.LotterySessionStatus ?? "(chưa mở)"}. Cần trạng thái Live.");
+
+            RequireSxdOnline(projectId, "bốc thăm");
+
+            var priorityUndrawn = await _db.HousingApplications
+                .Include(a => a.Applicant)
+                .Include(a => a.PrincipleAgreement)
+                .Where(a => a.ProjectId == projectId
+                            && BatchEligibleStatuses.Contains(a.ApplicationStatus)
+                            && !a.IsViolation
+                            && !string.IsNullOrWhiteSpace(a.PriorityGroup)
+                            && (a.LotteryResult == null || a.LotteryResult == LotteryResultConstants.Pending))
+                .OrderBy(a => a.SubmittedAt)
+                .FirstOrDefaultAsync(ct);
+
+            HousingApplication? app = priorityUndrawn;
+
+            if (app == null)
+            {
+                var nonPriorityUndrawn = await _db.HousingApplications
+                    .Include(a => a.Applicant)
+                    .Include(a => a.PrincipleAgreement)
+                    .Where(a => a.ProjectId == projectId
+                                && BatchEligibleStatuses.Contains(a.ApplicationStatus)
+                                && !a.IsViolation
+                                && string.IsNullOrWhiteSpace(a.PriorityGroup)
+                                && (a.LotteryResult == null || a.LotteryResult == LotteryResultConstants.Pending))
+                    .ToListAsync(ct);
+
+                if (nonPriorityUndrawn.Count > 0)
+                {
+                    app = nonPriorityUndrawn[Random.Shared.Next(nonPriorityUndrawn.Count)];
+                }
+            }
+
+            if (app == null)
+                throw new InvalidOperationException("Tất cả hồ sơ đủ điều kiện đều đã hoàn thành bốc thăm.");
+
+            var applicantId = app.ApplicantId;
+            string resultStatus;
+            string? slotCode = null;
+            var now = DateTime.UtcNow;
+            var oldStatus = app.ApplicationStatus;
+
+            var remainingBefore = await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(
+                _db, projectId, _logger, ct);
+
+            if (remainingBefore > 0)
+            {
+                bool isPriority = !string.IsNullOrWhiteSpace(app.PriorityGroup);
+                resultStatus = isPriority ? LotteryResultConstants.PriorityWon : LotteryResultConstants.Won;
+
+                slotCode = await AssignApartmentOrSlotCodeAsync(project, app, ct);
+
+                app.LotteryResult = resultStatus;
+                app.SlotCode = slotCode;
+                app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+                app.UpdatedAt = now;
+
+                if (app.PrincipleAgreement == null)
+                {
+                    _db.PrincipleAgreements.Add(new PrincipleAgreement
+                    {
+                        Id = Guid.NewGuid(),
+                        ApplicationId = app.ApplicationId,
+                        PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
+                        CreatedAt = now
+                    });
+                }
+
+                _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+                {
+                    HistoryId = Guid.NewGuid(),
+                    ApplicationId = app.ApplicationId,
+                    ChangedBy = actorId,
+                    Action = ReviewActionConstants.LotteryWon,
+                    OldStatus = oldStatus,
+                    NewStatus = ApplicationStatusConstants.ContractPending,
+                    Note = "Trúng bốc thăm live (CĐT bốc lượt), chuyển sang ký hợp đồng nguyên tắc.",
+                    ChangedAt = now
+                });
+
+                await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
+            }
+            else
+            {
+                resultStatus = LotteryResultConstants.Lost;
+                app.LotteryResult = resultStatus;
+                app.ApplicationStatus = ApplicationStatusConstants.LotteryLost;
+                app.UpdatedAt = now;
+
+                _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+                {
+                    HistoryId = Guid.NewGuid(),
+                    ApplicationId = app.ApplicationId,
+                    ChangedBy = actorId,
+                    Action = ReviewActionConstants.LotteryLost,
+                    OldStatus = oldStatus,
+                    NewStatus = ApplicationStatusConstants.LotteryLost,
+                    Note = "Trượt bốc thăm live (hết suất).",
+                    ChangedAt = now
+                });
+            }
+
+            await _db.SaveChangesAsync(ct);
+
+            try
+            {
+                if (resultStatus == LotteryResultConstants.Won || resultStatus == LotteryResultConstants.PriorityWon)
+                {
+                    await _notificationService.SendAsync(
+                        applicantId,
+                        "Trúng bốc thăm — vui lòng ký hợp đồng",
+                        "Bạn đã trúng bốc thăm. Vui lòng xem và ký hợp đồng mua bán nhà ở xã hội.",
+                        NotificationTypeConstants.ContractPending);
+                }
+                else if (resultStatus == LotteryResultConstants.Lost)
+                {
+                    await _notificationService.SendAsync(
+                        applicantId,
+                        "Kết quả bốc thăm",
+                        "Rất tiếc, hồ sơ của bạn không trúng trong phiên bốc thăm này.",
+                        NotificationTypeConstants.LotteryResultPublished);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi gửi thông báo kết quả live draw cho user {UserId}", applicantId);
+            }
+
+            var wonStatuses = new[] { LotteryResultConstants.Won, LotteryResultConstants.PriorityWon };
+            var wonCount = await _db.HousingApplications.CountAsync(a =>
+                a.ProjectId == projectId
+                && a.LotteryResult != null
+                && wonStatuses.Contains(a.LotteryResult), ct);
+
+            var liveResult = new LiveDrawResultDto
+            {
+                ProjectId = projectId,
+                ApplicationId = app.ApplicationId,
+                ApplicationCode = GetApplicationCode(app),
+                ApplicantId = app.ApplicantId,
+                ApplicantName = app.Applicant != null ? app.Applicant.FullName : app.FullName,
+                CitizenId = app.CitizenId,
+                MaskedCitizenId = MaskCitizenId(app.CitizenId),
+                Stt = wonCount,
+                Result = resultStatus,
+                SlotCode = slotCode,
+                DrawnAt = DateTime.UtcNow,
+                RemainingUnits = project.AvailableUnits,
+                PriorityGroup = app.PriorityGroup
+            };
+
+            var groupName = LotteryHub.GetGroupName(projectId);
+            await _hubContext.Clients.Group(groupName).ReceiveDrawResult(liveResult);
+
+            var updatedState = await GetLiveStateAsync(projectId, ct);
+            await _hubContext.Clients.Group(groupName).ReceiveLiveState(updatedState);
+
+            return liveResult;
+        }
+        finally
+        {
+            semaphore.Release();
+        }
+    }
+
     /// <summary>[Mục 21 & 22] Xử lý bốc thăm tương tác thời gian thực với SemaphoreSlim Concurrency Lock (Row Lock 1 mili-giây).</summary>
     public async Task<LiveDrawResultDto> DrawUnitRealtimeAsync(
         Guid projectId,
@@ -554,8 +895,7 @@ public class LotteryService : ILotteryService
                 bool isPriority = !string.IsNullOrWhiteSpace(app.PriorityGroup);
                 resultStatus = isPriority ? LotteryResultConstants.PriorityWon : LotteryResultConstants.Won;
 
-                var suffix = (DateTime.UtcNow.Ticks % 10000).ToString("D4");
-                slotCode = $"LOT-{project.Id.ToString()[..4].ToUpper()}-{suffix}";
+                slotCode = await AssignApartmentOrSlotCodeAsync(project, app, ct);
 
                 app.LotteryResult = resultStatus;
                 app.SlotCode = slotCode;
@@ -633,13 +973,22 @@ public class LotteryService : ILotteryService
                 _logger.LogError(ex, "Lỗi gửi thông báo kết quả live draw cho user {UserId}", applicantId);
             }
 
+            var wonStatuses = new[] { LotteryResultConstants.Won, LotteryResultConstants.PriorityWon };
+            var wonCount = await _db.HousingApplications.CountAsync(a =>
+                a.ProjectId == projectId
+                && a.LotteryResult != null
+                && wonStatuses.Contains(a.LotteryResult), ct);
+
             var liveResult = new LiveDrawResultDto
             {
                 ProjectId = projectId,
                 ApplicationId = app.ApplicationId,
+                ApplicationCode = GetApplicationCode(app),
                 ApplicantId = app.ApplicantId,
                 ApplicantName = app.Applicant != null ? app.Applicant.FullName : app.FullName,
                 CitizenId = app.CitizenId,
+                MaskedCitizenId = MaskCitizenId(app.CitizenId),
+                Stt = wonCount,
                 Result = resultStatus,
                 SlotCode = slotCode,
                 DrawnAt = DateTime.UtcNow,
@@ -649,6 +998,9 @@ public class LotteryService : ILotteryService
 
             var groupName = LotteryHub.GetGroupName(projectId);
             await _hubContext.Clients.Group(groupName).ReceiveDrawResult(liveResult);
+
+            var updatedState = await GetLiveStateAsync(projectId, ct);
+            await _hubContext.Clients.Group(groupName).ReceiveLiveState(updatedState);
 
             return liveResult;
         }
@@ -719,9 +1071,10 @@ public class LotteryService : ILotteryService
     {
         var project = await RequireApprovedSessionAsync(projectId, ct);
         if (project.LotterySessionStatus is not (LotterySessionStatusConstants.WaitingLobby
-            or LotterySessionStatusConstants.Scheduled))
+            or LotterySessionStatusConstants.Scheduled
+            or LotterySessionStatusConstants.Paused))
             throw new InvalidOperationException(
-                $"Chỉ mở Live từ WaitingLobby/Scheduled. Hiện tại: {project.LotterySessionStatus}");
+                $"Chỉ mở Live từ WaitingLobby/Scheduled/Paused. Hiện tại: {project.LotterySessionStatus}");
 
         RequireSxdOnline(projectId, "bắt đầu Live");
 
@@ -730,7 +1083,51 @@ public class LotteryService : ILotteryService
         await _db.SaveChangesAsync(ct);
         await BroadcastStatusAsync(projectId, project.LotterySessionStatus);
         _logger.LogInformation("Lottery LIVE started for {ProjectId} by {Actor}", projectId, actorId);
+
+        try
+        {
+            var liveState = await GetLiveStateAsync(projectId, ct);
+            await _hubContext.Clients.Group(LotteryHub.GetGroupName(projectId)).ReceiveLiveState(liveState);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Broadcast live state on StartLive failed for {ProjectId}", projectId);
+        }
+
         return await BuildLotteryScheduleDetailDtoAsync(project, ct);
+    }
+
+    public async Task<LotteryScheduleDetailDto> PauseLiveAsync(
+        Guid projectId, Guid actorId, CancellationToken ct = default)
+    {
+        var project = await RequireApprovedSessionAsync(projectId, ct);
+        if (project.LotterySessionStatus != LotterySessionStatusConstants.Live)
+            throw new InvalidOperationException(
+                $"Chỉ có thể tạm dừng khi phiên đang Live. Hiện tại: {project.LotterySessionStatus}");
+
+        project.LotterySessionStatus = LotterySessionStatusConstants.Paused;
+        project.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        await BroadcastStatusAsync(projectId, project.LotterySessionStatus);
+        _logger.LogInformation("Lottery session PAUSED for {ProjectId} by {Actor}", projectId, actorId);
+
+        try
+        {
+            var liveState = await GetLiveStateAsync(projectId, ct);
+            await _hubContext.Clients.Group(LotteryHub.GetGroupName(projectId)).ReceiveLiveState(liveState);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Broadcast live state on PauseLive failed for {ProjectId}", projectId);
+        }
+
+        return await BuildLotteryScheduleDetailDtoAsync(project, ct);
+    }
+
+    public async Task<LotteryScheduleDetailDto> ResumeLiveAsync(
+        Guid projectId, Guid actorId, CancellationToken ct = default)
+    {
+        return await StartLiveAsync(projectId, actorId, ct);
     }
 
     public async Task<LotteryScheduleDetailDto> FinishSessionAsync(
@@ -986,6 +1383,45 @@ public class LotteryService : ILotteryService
         {
             _logger.LogWarning(ex, "Broadcast lottery status failed for {ProjectId}", projectId);
         }
+    }
+
+    private async Task<string> AssignApartmentOrSlotCodeAsync(
+        HousingProject project, HousingApplication app, CancellationToken ct)
+    {
+        var availableApts = await _db.Apartments
+            .Where(a => a.ProjectId == project.Id && a.Status == ApartmentStatusConstants.Available)
+            .ToListAsync(ct);
+
+        if (availableApts.Count > 0)
+        {
+            var selectedApt = availableApts[Random.Shared.Next(availableApts.Count)];
+            selectedApt.Status = ApartmentStatusConstants.Assigned;
+            app.ApartmentId = selectedApt.Id;
+            app.SlotCode = selectedApt.UnitName;
+            return selectedApt.UnitName;
+        }
+
+        var slotCode = $"A-{(Random.Shared.Next(1, 15)):D2}.{(Random.Shared.Next(1, 20)):D2}";
+        app.SlotCode = slotCode;
+        return slotCode;
+    }
+
+    private static string GetApplicationCode(HousingApplication app)
+    {
+        var year = app.SubmittedAt != default ? app.SubmittedAt.Year : DateTime.UtcNow.Year;
+        var shortCode = app.ApplicationId.ToString()[..4].ToUpper();
+        return $"HS-{year}-{shortCode}";
+    }
+
+    private static string MaskCitizenId(string? citizenId)
+    {
+        if (string.IsNullOrWhiteSpace(citizenId)) return string.Empty;
+        var trimmed = citizenId.Trim();
+        if (trimmed.Length < 6) return trimmed;
+        var prefix = trimmed[..3];
+        var suffix = trimmed[^3..];
+        var stars = new string('*', Math.Max(3, trimmed.Length - 6));
+        return $"{prefix}{stars}{suffix}";
     }
 
     private static string GenerateJoinCode() =>

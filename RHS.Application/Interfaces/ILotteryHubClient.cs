@@ -13,6 +13,9 @@ public interface ILotteryHubClient
     /// <summary>Số đại diện Sở Xây dựng đang online giám sát phiên (Đ36.2.b).</summary>
     Task ReceiveSxdSupervisorCount(int sxdOnlineCount);
 
+    /// <summary>Gửi toàn bộ trạng thái màn hình live bốc thăm thời gian thực cho client mới join / cập nhật.</summary>
+    Task ReceiveLiveState(LotteryLiveStateDto state);
+
     /// <summary>Gửi gói tin kết quả bốc thăm vừa diễn ra cho màn hình giám sát SXD/CĐT.</summary>
     Task ReceiveDrawResult(LiveDrawResultDto data);
 

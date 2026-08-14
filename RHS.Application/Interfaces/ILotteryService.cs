@@ -12,11 +12,23 @@ public interface ILotteryService
     Task<LiveDrawResultDto> DrawUnitRealtimeAsync(Guid projectId, Guid applicantId, CancellationToken ct = default);
     Task<LotteryDrawResultDto?> GetLatestResultAsync(Guid projectId, CancellationToken ct = default);
 
+    /// <summary>Lấy toàn bộ trạng thái thời gian thực của màn hình live bốc thăm (Tiến độ bốc, Khung quay, Kết quả vừa bốc, Danh sách trúng tuyển).</summary>
+    Task<LotteryLiveStateDto> GetLiveStateAsync(Guid projectId, CancellationToken ct = default);
+
+    /// <summary>CĐT kích hoạt bốc 1 lượt tiếp theo ("Bốc tiếp").</summary>
+    Task<LiveDrawResultDto> DrawNextTurnAsync(Guid projectId, Guid actorId, CancellationToken ct = default);
+
     /// <summary>CĐT mở sảnh chờ → WaitingLobby</summary>
     Task<LotteryScheduleDetailDto> OpenLobbyAsync(Guid projectId, Guid actorId, CancellationToken ct = default);
 
     /// <summary>CĐT bắt đầu bốc → Live</summary>
     Task<LotteryScheduleDetailDto> StartLiveAsync(Guid projectId, Guid actorId, CancellationToken ct = default);
+
+    /// <summary>CĐT tạm dừng phiên bốc thăm → Paused</summary>
+    Task<LotteryScheduleDetailDto> PauseLiveAsync(Guid projectId, Guid actorId, CancellationToken ct = default);
+
+    /// <summary>CĐT tiếp tục phiên bốc thăm → Live</summary>
+    Task<LotteryScheduleDetailDto> ResumeLiveAsync(Guid projectId, Guid actorId, CancellationToken ct = default);
 
     /// <summary>CĐT kết thúc phiên → Finished + chốt người chưa bốc</summary>
     Task<LotteryScheduleDetailDto> FinishSessionAsync(Guid projectId, Guid actorId, CancellationToken ct = default);

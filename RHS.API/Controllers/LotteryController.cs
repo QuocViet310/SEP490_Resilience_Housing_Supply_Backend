@@ -131,6 +131,39 @@ public class LotteryController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Lấy toàn bộ trạng thái thời gian thực sảnh bốc thăm (Khu vực 1 & Khu vực 2).</summary>
+    [HttpGet("live-state")]
+    [Authorize]
+    public async Task<IActionResult> GetLiveState(Guid projectId, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _lotteryService.GetLiveStateAsync(projectId, ct);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>[CĐT] Kích hoạt bốc 1 lượt tiếp theo ("Bốc tiếp").</summary>
+    [HttpPost("draw-next")]
+    [Authorize(Roles = RoleConstants.HousingDeveloper)]
+    public async Task<IActionResult> DrawNextTurn(Guid projectId, CancellationToken ct)
+    {
+        try
+        {
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            var result = await _lotteryService.DrawNextTurnAsync(projectId, userId, ct);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     /// <summary>[CĐT] Mở sảnh chờ (WaitingLobby).</summary>
     [HttpPost("session/open-lobby")]
     [Authorize(Roles = RoleConstants.HousingDeveloper)]
@@ -156,6 +189,38 @@ public class LotteryController : ControllerBase
         {
             var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
             return Ok(await _lotteryService.StartLiveAsync(projectId, userId, ct));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>[CĐT] Tạm dừng bốc thăm live (Paused).</summary>
+    [HttpPost("session/pause")]
+    [Authorize(Roles = RoleConstants.HousingDeveloper)]
+    public async Task<IActionResult> PauseLive(Guid projectId, CancellationToken ct)
+    {
+        try
+        {
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            return Ok(await _lotteryService.PauseLiveAsync(projectId, userId, ct));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>[CĐT] Tiếp tục bốc thăm live (Live).</summary>
+    [HttpPost("session/resume")]
+    [Authorize(Roles = RoleConstants.HousingDeveloper)]
+    public async Task<IActionResult> ResumeLive(Guid projectId, CancellationToken ct)
+    {
+        try
+        {
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            return Ok(await _lotteryService.ResumeLiveAsync(projectId, userId, ct));
         }
         catch (InvalidOperationException ex)
         {
