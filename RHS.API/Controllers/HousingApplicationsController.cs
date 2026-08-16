@@ -742,6 +742,7 @@ public class HousingApplicationsController : ControllerBase
             }
 
             app.ApartmentId = apartment.Id;
+            app.SlotCode = apartment.UnitName;
             app.UpdatedAt = DateTime.UtcNow;
             apartment.Status = ApartmentStatusConstants.Assigned;
 

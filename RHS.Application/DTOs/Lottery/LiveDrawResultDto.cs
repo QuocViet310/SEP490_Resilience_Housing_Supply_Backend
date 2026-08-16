@@ -14,7 +14,9 @@ public class LiveDrawResultDto
     /// <summary>Kết quả: WON, PRIORITY_WON, LOST</summary>
     public string Result { get; set; } = string.Empty;
 
-    /// <summary>Mã căn / mã định danh căn hộ nếu trúng (ví dụ: A-12.05, LOT-PROJ-001)</summary>
+    /// <summary>
+    /// Mã căn do CĐT gán sau khi trúng. Live chỉ công bố hồ sơ — null = chờ chọn căn.
+    /// </summary>
     public string? SlotCode { get; set; }
 
     public DateTime DrawnAt { get; set; } = DateTime.UtcNow;

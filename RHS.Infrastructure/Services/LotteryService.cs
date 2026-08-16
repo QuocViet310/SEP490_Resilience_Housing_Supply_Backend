@@ -521,10 +521,16 @@ public class LotteryService : ILotteryService
             .ToListAsync(ct);
 
         var wonStatuses = new[] { LotteryResultConstants.Won, LotteryResultConstants.PriorityWon };
-        var drawnWinners = eligibleApps
-            .Where(a => a.LotteryResult != null && wonStatuses.Contains(a.LotteryResult))
+        // Trúng đã chuyển CONTRACT_PENDING — không còn trong pool APPROVED, query riêng.
+        var drawnWinners = await _db.HousingApplications
+            .AsNoTracking()
+            .Include(a => a.Applicant)
+            .Include(a => a.Apartment)
+            .Where(a => a.ProjectId == projectId
+                        && a.LotteryResult != null
+                        && wonStatuses.Contains(a.LotteryResult))
             .OrderBy(a => a.UpdatedAt ?? a.SubmittedAt)
-            .ToList();
+            .ToListAsync(ct);
 
         var undrawnApps = eligibleApps
             .Where(a => a.LotteryResult == null || a.LotteryResult == LotteryResultConstants.Pending)
@@ -550,7 +556,7 @@ public class LotteryService : ILotteryService
             MaskedCitizenId = MaskCitizenId(a.CitizenId),
             Stt = sttCounter++,
             Result = a.LotteryResult!,
-            SlotCode = a.SlotCode,
+            SlotCode = a.SlotCode ?? a.Apartment?.UnitName,
             DrawnAt = a.UpdatedAt ?? DateTime.UtcNow,
             RemainingUnits = remainingUnits,
             PriorityGroup = a.PriorityGroup
@@ -576,9 +582,10 @@ public class LotteryService : ILotteryService
 
         int priorityWinnersCount = drawnWinners.Count(w => w.LotteryResult == LotteryResultConstants.PriorityWon);
         int randomWinnersCount = drawnWinners.Count(w => w.LotteryResult == LotteryResultConstants.Won);
-        int undrawnParticipantsCount = Math.Max(0, eligibleApps.Count - drawnWinners.Count);
-        double winRatePercentage = eligibleApps.Count > 0
-            ? Math.Min(100.0, Math.Round((double)totalUnits / eligibleApps.Count * 100.0, 1))
+        int undrawnParticipantsCount = undrawnApps.Count;
+        int totalEligible = undrawnApps.Count + drawnWinners.Count;
+        double winRatePercentage = totalEligible > 0
+            ? Math.Min(100.0, Math.Round((double)totalUnits / totalEligible * 100.0, 1))
             : 0.0;
 
         // Build Khu vực 3: Thống kê quỹ căn của dự án
@@ -641,7 +648,7 @@ public class LotteryService : ILotteryService
             TotalUnits = totalUnits,
             DrawnUnitsCount = drawnUnitsCount,
             RemainingUnits = remainingUnits,
-            TotalEligibleParticipants = eligibleApps.Count,
+            TotalEligibleParticipants = totalEligible,
             SxdOnlineCount = LotteryHub.GetSxdOnlineCount(projectId),
             LobbyCount = LotteryHub.GetLobbyCount(projectId),
             PriorityWinnersCount = priorityWinnersCount,
@@ -728,35 +735,8 @@ public class LotteryService : ILotteryService
                 bool isPriority = !string.IsNullOrWhiteSpace(app.PriorityGroup);
                 resultStatus = isPriority ? LotteryResultConstants.PriorityWon : LotteryResultConstants.Won;
 
-                slotCode = await AssignApartmentOrSlotCodeAsync(project, app, ct);
-
-                app.LotteryResult = resultStatus;
-                app.SlotCode = slotCode;
-                app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
-                app.UpdatedAt = now;
-
-                if (app.PrincipleAgreement == null)
-                {
-                    _db.PrincipleAgreements.Add(new PrincipleAgreement
-                    {
-                        Id = Guid.NewGuid(),
-                        ApplicationId = app.ApplicationId,
-                        PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
-                        CreatedAt = now
-                    });
-                }
-
-                _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
-                {
-                    HistoryId = Guid.NewGuid(),
-                    ApplicationId = app.ApplicationId,
-                    ChangedBy = actorId,
-                    Action = ReviewActionConstants.LotteryWon,
-                    OldStatus = oldStatus,
-                    NewStatus = ApplicationStatusConstants.ContractPending,
-                    Note = "Trúng bốc thăm live (CĐT bốc lượt), chuyển sang ký hợp đồng nguyên tắc.",
-                    ChangedAt = now
-                });
+                MarkWonAwaitingApartment(app, resultStatus, actorId, oldStatus, now,
+                    "Trúng bốc thăm live (CĐT bốc lượt). Chờ Chủ đầu tư chọn căn cụ thể trước khi ký HĐ.");
 
                 await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
             }
@@ -788,8 +768,8 @@ public class LotteryService : ILotteryService
                 {
                     await _notificationService.SendAsync(
                         applicantId,
-                        "Trúng bốc thăm — vui lòng ký hợp đồng",
-                        "Bạn đã trúng bốc thăm. Vui lòng xem và ký hợp đồng mua bán nhà ở xã hội.",
+                        "Trúng bốc thăm — chờ Chủ đầu tư chọn căn",
+                        "Bạn đã trúng bốc thăm. Chủ đầu tư sẽ chọn căn cho hồ sơ của bạn; sau khi được cấp căn hãy xem và ký hợp đồng mua bán nhà ở xã hội.",
                         NotificationTypeConstants.ContractPending);
                 }
                 else if (resultStatus == LotteryResultConstants.Lost)
@@ -895,35 +875,8 @@ public class LotteryService : ILotteryService
                 bool isPriority = !string.IsNullOrWhiteSpace(app.PriorityGroup);
                 resultStatus = isPriority ? LotteryResultConstants.PriorityWon : LotteryResultConstants.Won;
 
-                slotCode = await AssignApartmentOrSlotCodeAsync(project, app, ct);
-
-                app.LotteryResult = resultStatus;
-                app.SlotCode = slotCode;
-                app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
-                app.UpdatedAt = now;
-
-                if (app.PrincipleAgreement == null)
-                {
-                    _db.PrincipleAgreements.Add(new PrincipleAgreement
-                    {
-                        Id = Guid.NewGuid(),
-                        ApplicationId = app.ApplicationId,
-                        PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
-                        CreatedAt = now
-                    });
-                }
-
-                _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
-                {
-                    HistoryId = Guid.NewGuid(),
-                    ApplicationId = app.ApplicationId,
-                    ChangedBy = applicantId,
-                    Action = ReviewActionConstants.LotteryWon,
-                    OldStatus = oldStatus,
-                    NewStatus = ApplicationStatusConstants.ContractPending,
-                    Note = "Trúng bốc thăm live, chuyển sang ký hợp đồng nguyên tắc.",
-                    ChangedAt = now
-                });
+                MarkWonAwaitingApartment(app, resultStatus, applicantId, oldStatus, now,
+                    "Trúng bốc thăm live. Chờ Chủ đầu tư chọn căn cụ thể trước khi ký HĐ.");
 
                 await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
             }
@@ -955,8 +908,8 @@ public class LotteryService : ILotteryService
                 {
                     await _notificationService.SendAsync(
                         applicantId,
-                        "Trúng bốc thăm — vui lòng ký hợp đồng",
-                        "Bạn đã trúng bốc thăm. Vui lòng xem và ký hợp đồng mua bán nhà ở xã hội; sau khi ký sẽ thanh toán Đợt 1 qua VNPay.",
+                        "Trúng bốc thăm — chờ Chủ đầu tư chọn căn",
+                        "Bạn đã trúng bốc thăm. Chủ đầu tư sẽ chọn căn cho hồ sơ của bạn; sau khi được cấp căn hãy xem và ký hợp đồng mua bán nhà ở xã hội.",
                         NotificationTypeConstants.ContractPending);
                 }
                 else if (resultStatus == LotteryResultConstants.Lost)
@@ -1385,25 +1338,45 @@ public class LotteryService : ILotteryService
         }
     }
 
-    private async Task<string> AssignApartmentOrSlotCodeAsync(
-        HousingProject project, HousingApplication app, CancellationToken ct)
+    /// <summary>
+    /// Công bố trúng: giữ suất (CONTRACT_PENDING + soft-hold), không gán căn.
+    /// CĐT chọn căn sau qua POST /api/housing-applications/{id}/assign-apartment.
+    /// </summary>
+    private void MarkWonAwaitingApartment(
+        HousingApplication app,
+        string resultStatus,
+        Guid changedBy,
+        string oldStatus,
+        DateTime now,
+        string note)
     {
-        var availableApts = await _db.Apartments
-            .Where(a => a.ProjectId == project.Id && a.Status == ApartmentStatusConstants.Available)
-            .ToListAsync(ct);
+        app.LotteryResult = resultStatus;
+        app.SlotCode = null;
+        app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+        app.UpdatedAt = now;
 
-        if (availableApts.Count > 0)
+        if (app.PrincipleAgreement == null)
         {
-            var selectedApt = availableApts[Random.Shared.Next(availableApts.Count)];
-            selectedApt.Status = ApartmentStatusConstants.Assigned;
-            app.ApartmentId = selectedApt.Id;
-            app.SlotCode = selectedApt.UnitName;
-            return selectedApt.UnitName;
+            _db.PrincipleAgreements.Add(new PrincipleAgreement
+            {
+                Id = Guid.NewGuid(),
+                ApplicationId = app.ApplicationId,
+                PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
+                CreatedAt = now
+            });
         }
 
-        var slotCode = $"A-{(Random.Shared.Next(1, 15)):D2}.{(Random.Shared.Next(1, 20)):D2}";
-        app.SlotCode = slotCode;
-        return slotCode;
+        _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+        {
+            HistoryId = Guid.NewGuid(),
+            ApplicationId = app.ApplicationId,
+            ChangedBy = changedBy,
+            Action = ReviewActionConstants.LotteryWon,
+            OldStatus = oldStatus,
+            NewStatus = ApplicationStatusConstants.ContractPending,
+            Note = note,
+            ChangedAt = now
+        });
     }
 
     private static string GetApplicationCode(HousingApplication app)
