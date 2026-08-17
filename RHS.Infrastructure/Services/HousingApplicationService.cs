@@ -711,12 +711,12 @@ public class HousingApplicationService : IHousingApplicationService
                             : LotteryResultConstants.Won;
                     }
 
-                    MoveToContractPending(
+                    MoveToDepositPending(
                         app,
                         developerUserId,
                         now,
                         ReviewActionConstants.DeveloperDecisionCloseAndSign,
-                        $"CĐT chốt danh sách + bàn giao căn {app.Apartment?.UnitName ?? ""}, chuyển ký hợp đồng mua bán NOXH.",
+                        $"CĐT chốt danh sách + bàn giao căn {app.Apartment?.UnitName ?? ""}, chuyển sang bước thanh toán cọc Đợt 1 (10%).",
                         pendingNotify);
                     appsNeedingInstallments.Add(app.ApplicationId);
                 }
@@ -789,12 +789,12 @@ public class HousingApplicationService : IHousingApplicationService
                 foreach (var app in selectedPriority)
                 {
                     app.LotteryResult = LotteryResultConstants.PriorityWon;
-                    MoveToContractPending(
+                    MoveToDepositPending(
                         app,
                         developerUserId,
                         now,
                         ReviewActionConstants.PriorityDirectApproval,
-                        $"Duyệt ưu tiên + bàn giao căn {app.Apartment?.UnitName ?? ""} (không qua bốc thăm), chuyển ký hợp đồng mua bán NOXH.",
+                        $"Duyệt ưu tiên + bàn giao căn {app.Apartment?.UnitName ?? ""} (không qua bốc thăm), chuyển sang bước thanh toán cọc Đợt 1 (10%).",
                         pendingNotify);
                     appsNeedingInstallments.Add(app.ApplicationId);
                 }
@@ -913,7 +913,7 @@ public class HousingApplicationService : IHousingApplicationService
         }
     }
 
-    private void MoveToContractPending(
+    private void MoveToDepositPending(
         HousingApplication app,
         Guid changedBy,
         DateTime now,
@@ -922,19 +922,8 @@ public class HousingApplicationService : IHousingApplicationService
         List<(Guid ApplicantId, string Note)> pendingNotify)
     {
         var oldStatus = app.ApplicationStatus;
-        app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+        app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
         app.UpdatedAt = now;
-
-        if (app.PrincipleAgreement == null)
-        {
-            _context.PrincipleAgreements.Add(new PrincipleAgreement
-            {
-                Id = Guid.NewGuid(),
-                ApplicationId = app.ApplicationId,
-                PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
-                CreatedAt = now
-            });
-        }
 
         _context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
         {
@@ -943,14 +932,14 @@ public class HousingApplicationService : IHousingApplicationService
             ChangedBy = changedBy,
             Action = action,
             OldStatus = oldStatus,
-            NewStatus = ApplicationStatusConstants.ContractPending,
+            NewStatus = ApplicationStatusConstants.DepositPending,
             Note = note,
             ChangedAt = now
         });
 
         pendingNotify.Add((
             app.ApplicantId,
-            "Hồ sơ của bạn đã được chốt suất. Vui lòng xem và ký hợp đồng mua bán nhà ở xã hội trên ứng dụng; sau khi ký sẽ thanh toán Đợt 1 qua VNPay."));
+            "Hồ sơ của bạn đã được chốt suất và cấp căn. Vui lòng thanh toán cọc Đợt 1 (10%) trên ứng dụng để tiến hành ký hợp đồng mua bán NOXH."));
     }
 
     private static ApplicationSummaryItemDto MapToSummaryItem(HousingApplication a)

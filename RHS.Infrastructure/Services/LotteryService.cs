@@ -350,20 +350,9 @@ public class LotteryService : ILotteryService
             winners.Add(app.ApplicationId);
             var oldStatus = app.ApplicationStatus;
             app.LotteryResult = LotteryResultConstants.PriorityWon;
-            app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+            app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
             app.UpdatedAt = now;
             results.Add(MapParticipant(app, LotteryResultConstants.PriorityWon, true));
-
-            if (app.PrincipleAgreement == null)
-            {
-                _db.PrincipleAgreements.Add(new PrincipleAgreement
-                {
-                    Id = Guid.NewGuid(),
-                    ApplicationId = app.ApplicationId,
-                    PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
-                    CreatedAt = now
-                });
-            }
 
             _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
             {
@@ -372,8 +361,8 @@ public class LotteryService : ILotteryService
                 ChangedBy = drawnBy,
                 Action = ReviewActionConstants.PriorityDirectApproval,
                 OldStatus = oldStatus,
-                NewStatus = ApplicationStatusConstants.ContractPending,
-                Note = "Hồ sơ thuộc diện ưu tiên được phê duyệt trực tiếp, chuyển sang ký hợp đồng nguyên tắc.",
+                NewStatus = ApplicationStatusConstants.DepositPending,
+                Note = "Hồ sơ thuộc diện ưu tiên được phê duyệt trực tiếp, chuyển sang bước thanh toán cọc Đợt 1 (10%).",
                 ChangedAt = now
             });
         }
@@ -397,20 +386,9 @@ public class LotteryService : ILotteryService
             winners.Add(app.ApplicationId);
             var oldStatus = app.ApplicationStatus;
             app.LotteryResult = LotteryResultConstants.Won;
-            app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+            app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
             app.UpdatedAt = now;
             results.Add(MapParticipant(app, LotteryResultConstants.Won, !string.IsNullOrWhiteSpace(app.PriorityGroup)));
-
-            if (app.PrincipleAgreement == null)
-            {
-                _db.PrincipleAgreements.Add(new PrincipleAgreement
-                {
-                    Id = Guid.NewGuid(),
-                    ApplicationId = app.ApplicationId,
-                    PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
-                    CreatedAt = now
-                });
-            }
 
             _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
             {
@@ -419,8 +397,8 @@ public class LotteryService : ILotteryService
                 ChangedBy = drawnBy,
                 Action = ReviewActionConstants.LotteryWon,
                 OldStatus = oldStatus,
-                NewStatus = ApplicationStatusConstants.ContractPending,
-                Note = "Hồ sơ trúng bốc thăm, chuyển sang bước ký hợp đồng nguyên tắc.",
+                NewStatus = ApplicationStatusConstants.DepositPending,
+                Note = "Hồ sơ trúng bốc thăm, chuyển sang bước thanh toán cọc Đợt 1 (10%).",
                 ChangedAt = now
             });
         }
@@ -1352,19 +1330,8 @@ public class LotteryService : ILotteryService
     {
         app.LotteryResult = resultStatus;
         app.SlotCode = null;
-        app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+        app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
         app.UpdatedAt = now;
-
-        if (app.PrincipleAgreement == null)
-        {
-            _db.PrincipleAgreements.Add(new PrincipleAgreement
-            {
-                Id = Guid.NewGuid(),
-                ApplicationId = app.ApplicationId,
-                PdfUrl = $"/api/payment/download-contract/{app.ApplicationId}",
-                CreatedAt = now
-            });
-        }
 
         _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
         {
@@ -1373,7 +1340,7 @@ public class LotteryService : ILotteryService
             ChangedBy = changedBy,
             Action = ReviewActionConstants.LotteryWon,
             OldStatus = oldStatus,
-            NewStatus = ApplicationStatusConstants.ContractPending,
+            NewStatus = ApplicationStatusConstants.DepositPending,
             Note = note,
             ChangedAt = now
         });

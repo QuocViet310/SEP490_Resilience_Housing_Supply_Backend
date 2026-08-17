@@ -107,15 +107,36 @@ public class ContractSignService : IContractSignService
             };
         }
 
-        // ── 2. Load PrincipleAgreement ──────────────────────────────────────
-        var agreement = await _agreementRepo.GetByApplicationIdAsync(applicationId);
-        if (agreement == null)
+        // Bắt buộc đã thanh toán cọc Đợt 1
+        var isD1Paid = await _context.PaymentInstallments
+            .Include(i => i.Milestone)
+            .AnyAsync(i => i.ApplicationId == applicationId
+                        && i.Milestone.PhaseOrder == 1
+                        && i.Status == InstallmentStatusConstants.Paid)
+            || await _context.Payments.AnyAsync(p => p.ApplicationId == applicationId
+                                                    && (p.Status == "Paid" || p.Status == "Success"));
+
+        if (!isD1Paid)
         {
             return new ContractSignResponseDto
             {
                 Success = false,
-                Message = "Hợp đồng mua bán nhà ở xã hội chưa được tạo. Vui lòng liên hệ hỗ trợ."
+                Message = "Vui lòng hoàn tất thanh toán cọc Đợt 1 (10%) trước khi tiến hành ký hợp đồng mua bán."
             };
+        }
+
+        // ── 2. Load PrincipleAgreement ──────────────────────────────────────
+        var agreement = await _agreementRepo.GetByApplicationIdAsync(applicationId);
+        if (agreement == null)
+        {
+            agreement = new PrincipleAgreement
+            {
+                Id = Guid.NewGuid(),
+                ApplicationId = applicationId,
+                PdfUrl = $"/api/payment/download-contract/{applicationId}",
+                CreatedAt = DateTime.UtcNow
+            };
+            await _agreementRepo.CreateAsync(agreement);
         }
 
         // Idempotency guard: nếu đã ký rồi → trả OK

@@ -82,13 +82,12 @@ public class VnPayService : IVnPayService
         };
 
         // ── Tạo chuỗi query & chữ ký HMAC-SHA512 ────────────────────────
-        var signData     = BuildSignData(vnpParams);
         var queryString  = BuildQueryString(vnpParams);
-        var signature    = HmacSha512(hashSecret, signData);
+        var signature    = HmacSha512(hashSecret, queryString);
 
-        _logger.LogWarning(
-            "VNPay DEBUG CreatePaymentUrl: SignData={SignData}, Signature={Signature}",
-            signData, signature);
+        _logger.LogInformation(
+            "VNPay Payment URL Generated: TmnCode={TmnCode}, QueryString={QueryString}, Signature={Signature}",
+            tmnCode, queryString, signature);
 
         // ── Build URL cuối cùng ───────────────────────────────────────────
         var paymentUrl = $"{baseUrl}?{queryString}&vnp_SecureHash={signature}";
@@ -120,29 +119,20 @@ public class VnPayService : IVnPayService
             }
         }
 
-        // Thử cả 2 cách tính hash: không encode (chuẩn VNPay) và có encode (legacy)
-        var signData       = BuildSignData(vnpParams);
-        var signDataEncoded = BuildQueryString(vnpParams);
+        var rawData      = BuildQueryString(vnpParams);
+        var expectedHash = HmacSha512(hashSecret, rawData);
 
-        var hashRaw     = HmacSha512(hashSecret, signData);
-        var hashEncoded = HmacSha512(hashSecret, signDataEncoded);
-
-        bool isValid = string.Equals(hashRaw, vnpSecureHash, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(hashEncoded, vnpSecureHash, StringComparison.OrdinalIgnoreCase);
+        bool isValid = string.Equals(expectedHash, vnpSecureHash, StringComparison.OrdinalIgnoreCase);
 
         if (!isValid)
         {
             _logger.LogWarning(
-                "VNPay Signature Mismatch! Received={Received}, " +
-                "ExpectedRaw={ExpectedRaw}, ExpectedEncoded={ExpectedEncoded}, " +
-                "SignData={SignData}",
-                vnpSecureHash, hashRaw, hashEncoded, signData);
+                "VNPay Signature Mismatch! Received={Received}, Expected={Expected}, RawData={RawData}",
+                vnpSecureHash, expectedHash, rawData);
         }
         else
         {
-            _logger.LogInformation("VNPay Signature Verified Successfully. MatchedMode={Mode}",
-                string.Equals(hashRaw, vnpSecureHash, StringComparison.OrdinalIgnoreCase)
-                    ? "RAW" : "ENCODED");
+            _logger.LogInformation("VNPay Signature Verified Successfully for Order: RawData={RawData}", rawData);
         }
 
         return isValid;
