@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using RHS.Application.Interfaces;
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -10,8 +11,8 @@ namespace RHS.Infrastructure.Services;
 
 /// <summary>
 /// Triển khai IVnPayService – xử lý toàn bộ logic giao tiếp với VNPay:
-/// - Tạo URL thanh toán có chữ ký HMAC-SHA512
-/// - Xác minh chữ ký trong callback
+/// - Tạo URL thanh toán có chữ ký HMAC-SHA512 chuẩn VNPay SDK
+/// - Xác minh chữ ký trong callback/IPN
 /// </summary>
 public class VnPayService : IVnPayService
 {
@@ -38,33 +39,20 @@ public class VnPayService : IVnPayService
         var baseUrl    = _configuration["VnPay:BaseUrl"] ?? "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
         var returnUrl  = ResolveReturnUrl(context);
 
-        // ── Debug: log HashSecret metadata để phát hiện ký tự ẩn ─────────
-        _logger.LogWarning(
-            "VNPay DEBUG: TmnCode='{TmnCode}' (len={TmnLen}), " +
-            "HashSecret length={SecretLen}, first3='{First3}', last3='{Last3}', " +
-            "ReturnUrl='{ReturnUrl}'",
-            tmnCode, tmnCode.Length,
-            hashSecret.Length,
-            hashSecret.Length >= 3 ? hashSecret[..3] : hashSecret,
-            hashSecret.Length >= 3 ? hashSecret[^3..] : hashSecret,
-            returnUrl);
-
         if (string.IsNullOrWhiteSpace(tmnCode) || string.IsNullOrWhiteSpace(hashSecret) ||
             tmnCode.StartsWith("YOUR_VNP", StringComparison.OrdinalIgnoreCase) ||
             hashSecret.StartsWith("YOUR_VNP", StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogError("VNPay Error: VnPay:TmnCode hoặc VnPay:HashSecret chưa được cấu hình (đang chứa placeholder 'YOUR_VNP_...'). Vui lòng cập nhật TmnCode & HashSecret từ VNPAY Sandbox Dashboard trong appsettings.json.");
-            throw new InvalidOperationException("VnPay TmnCode hoặc HashSecret chưa được cấu hình hợp lệ trong appsettings.json.");
+            _logger.LogError("VNPay Error: VnPay:TmnCode hoặc VnPay:HashSecret chưa được cấu hình. Vui lòng cập nhật trong cấu hình.");
+            throw new InvalidOperationException("VnPay TmnCode hoặc HashSecret chưa được cấu hình hợp lệ.");
         }
 
         // VNPay yêu cầu CreateDate/ExpireDate theo giờ Việt Nam (GMT+7).
-        // Không dùng DateTime.Now (UTC trên Docker) — sẽ làm ExpireDate quá hạn ngay.
         var now = GetVietnamNow();
         var expireDate = now.AddMinutes(30);
 
-        // ── Build Dictionary tham số vnp_* (sẽ được sort & ký) ──────────
-        // IPN URL cấu hình trên Merchant Admin VNPay → /api/payment/payment-ipn (VnPay:IpnUrl)
-        var vnpParams = new SortedDictionary<string, string>(StringComparer.Ordinal)
+        // ── Build Dictionary tham số vnp_* theo chuẩn so sánh VnPayCompare ──
+        var vnpParams = new SortedDictionary<string, string>(new VnPayCompare())
         {
             ["vnp_Version"]    = VnpVersion,
             ["vnp_Command"]    = VnpCommand,
@@ -74,20 +62,20 @@ public class VnPayService : IVnPayService
             ["vnp_CurrCode"]   = VnpCurrCode,
             ["vnp_IpAddr"]     = GetClientIpAddress(context),
             ["vnp_Locale"]     = VnpLocale,
-            ["vnp_OrderInfo"]  = request.OrderInfo,
-            ["vnp_OrderType"]  = request.OrderType,
+            ["vnp_OrderInfo"]  = RemoveDiacritics(request.OrderInfo),
+            ["vnp_OrderType"]  = "other",
             ["vnp_ReturnUrl"]  = returnUrl,
             ["vnp_TxnRef"]     = request.OrderId,
             ["vnp_ExpireDate"] = expireDate.ToString("yyyyMMddHHmmss"),
         };
 
         // ── Tạo chuỗi query & chữ ký HMAC-SHA512 ────────────────────────
-        var queryString  = BuildQueryString(vnpParams);
-        var signature    = HmacSha512(hashSecret, queryString);
+        var queryString = BuildQueryString(vnpParams);
+        var signature   = HmacSha512(hashSecret, queryString);
 
         _logger.LogInformation(
-            "VNPay Payment URL Generated: TmnCode={TmnCode}, QueryString={QueryString}, Signature={Signature}",
-            tmnCode, queryString, signature);
+            "VNPay URL Generated: TmnCode={TmnCode}, OrderId={OrderId}, Signature={Signature}",
+            tmnCode, request.OrderId, signature);
 
         // ── Build URL cuối cùng ───────────────────────────────────────────
         var paymentUrl = $"{baseUrl}?{queryString}&vnp_SecureHash={signature}";
@@ -107,7 +95,7 @@ public class VnPayService : IVnPayService
             return false;
 
         // Thu thập tất cả params vnp_* (trừ vnp_SecureHash và vnp_SecureHashType)
-        var vnpParams = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        var vnpParams = new SortedDictionary<string, string>(new VnPayCompare());
         foreach (var (key, value) in queryParams)
         {
             if (!string.IsNullOrEmpty(key)
@@ -155,33 +143,12 @@ public class VnPayService : IVnPayService
         }
         catch (Exception)
         {
-            // Container thiếu tzdata → cộng cố định +7
             return DateTime.UtcNow.AddHours(7);
         }
     }
 
     /// <summary>
-    /// Chuỗi dùng để tính HMAC hash — KHÔNG URL-encode giá trị.
-    /// Theo chuẩn VNPay: key1=rawValue1&key2=rawValue2 (sort alphabet).
-    /// </summary>
-    private static string BuildSignData(SortedDictionary<string, string> vnpParams)
-    {
-        var sb = new StringBuilder();
-        foreach (var (key, value) in vnpParams)
-        {
-            if (!string.IsNullOrEmpty(value))
-            {
-                if (sb.Length > 0) sb.Append('&');
-                sb.Append(key);
-                sb.Append('=');
-                sb.Append(value);
-            }
-        }
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// Chuỗi dùng làm query string trong URL — CÓ URL-encode giá trị.
+    /// Chuỗi dùng làm query string và tính chữ ký — URL-encode theo chuẩn VNPay.
     /// </summary>
     private static string BuildQueryString(SortedDictionary<string, string> vnpParams)
     {
@@ -223,19 +190,45 @@ public class VnPayService : IVnPayService
         var forwarded = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
         if (!string.IsNullOrEmpty(forwarded))
         {
-            // X-Forwarded-For có thể chứa nhiều IP, lấy IP đầu tiên
-            return forwarded.Split(',')[0].Trim();
+            var ip = forwarded.Split(',')[0].Trim();
+            if (!string.IsNullOrEmpty(ip) && ip != "::1")
+                return ip;
         }
 
-        return context.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+        var remoteIp = context.Connection.RemoteIpAddress?.ToString();
+        if (string.IsNullOrEmpty(remoteIp) || remoteIp == "::1")
+            return "127.0.0.1";
+
+        return remoteIp;
+    }
+
+    /// <summary>
+    /// Loại bỏ dấu tiếng Việt để OrderInfo luôn là chuỗi ASCII an toàn cho VNPay.
+    /// </summary>
+    private static string RemoveDiacritics(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "Thanh toan";
+
+        var normalized = text.Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder();
+
+        foreach (var c in normalized)
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(c);
+            if (category != UnicodeCategory.NonSpacingMark)
+                sb.Append(c);
+        }
+
+        return sb.ToString()
+            .Normalize(NormalizationForm.FormC)
+            .Replace("đ", "d")
+            .Replace("Đ", "D");
     }
 
     /// <summary>
     /// Tự động xác định ReturnUrl cho VNPay:
-    /// 1. Nếu VnPay:ReturnUrl được cấu hình bằng domain production thực tế (không chứa localhost/ngrok), dùng cấu hình đó.
-    /// 2. Nếu thiếu, chứa localhost/ngrok, hoặc là đường dẫn tương đối:
-    ///    Tự động xây dựng URL động từ Scheme + Host của HTTP Request thực tế.
-    ///    (Tự động chạy đúng trên cả Localhost, Render, hay Custom Domain mà không cần hardcode).
+    /// 1. Nếu VnPay:ReturnUrl được cấu hình bằng domain production thực tế, dùng cấu hình đó.
+    /// 2. Nếu thiếu hoặc chứa localhost/ngrok: tự động xây dựng URL động từ Scheme + Host.
     /// </summary>
     private string ResolveReturnUrl(HttpContext context)
     {
@@ -260,5 +253,20 @@ public class VnPayService : IVnPayService
         var path = "/api/payment/payment-callback";
 
         return $"{scheme}://{host}{path}";
+    }
+}
+
+/// <summary>
+/// Bộ so sánh chuỗi theo chuẩn của VNPay (Ordinal compareInfo en-US).
+/// </summary>
+public class VnPayCompare : IComparer<string>
+{
+    public int Compare(string? x, string? y)
+    {
+        if (x == y) return 0;
+        if (x == null) return -1;
+        if (y == null) return 1;
+        var vnpCompare = CompareInfo.GetCompareInfo("en-US");
+        return vnpCompare.Compare(x, y, CompareOptions.Ordinal);
     }
 }
