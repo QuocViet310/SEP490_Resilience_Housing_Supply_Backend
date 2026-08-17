@@ -480,7 +480,6 @@ public static class DemoDataSeeder
             LotteryApprovedBy = null,
             LotteryJoinCode = null,
             LotterySessionStatus = null,
-            Phase1Percentage = 20m,
             MinPrice = minPrice,
             MaxPrice = maxPrice,
             MinArea = minArea,

@@ -64,9 +64,6 @@ public class HousingProjectConfiguration : IEntityTypeConfiguration<HousingProje
             .HasForeignKey(x => x.LotterySupervisorId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.Property(x => x.Phase1Percentage)
-            .HasPrecision(5, 2)
-            .HasDefaultValue(20m);
 
         builder.Property(x => x.MinPrice)
             .HasPrecision(18, 2);

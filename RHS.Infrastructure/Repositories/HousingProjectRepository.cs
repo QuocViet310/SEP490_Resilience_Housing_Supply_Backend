@@ -139,7 +139,6 @@ public class HousingProjectRepository : IHousingProjectRepository
             Ward = x.Ward,
             LotteryDate = x.LotteryDate,
             LotteryLocation = x.LotteryLocation,
-            Phase1Percentage = x.Phase1Percentage,
             MinPrice = x.MinPrice,
             MaxPrice = x.MaxPrice,
             MinArea = x.MinArea,
@@ -232,7 +231,7 @@ public class HousingProjectRepository : IHousingProjectRepository
             _context.Apartments.Add(apt);
         }
 
-        // Ghi lại milestones (Đợt 1/2 theo Phase1Percentage, …)
+        // Ghi lại milestones (Đợt 1/2, …)
         foreach (var ms in entity.PaymentMilestones.ToList())
         {
             if (ms.Id == Guid.Empty) ms.Id = Guid.NewGuid();
@@ -282,5 +281,33 @@ public class HousingProjectRepository : IHousingProjectRepository
         return await _context.HousingProjectStatuses
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.StatusCode == code);
+    }
+
+    public async Task<HousingProject?> GetActiveProjectByNameAsync(
+        string projectName,
+        Guid? developerId = null,
+        Guid? excludeProjectId = null)
+    {
+        var normalizedName = projectName.Trim().ToLower();
+
+        var query = _context.HousingProjects
+            .Include(x => x.HousingProjectStatus)
+            .Where(x => !x.IsDeleted
+                        && x.ProjectName.ToLower() == normalizedName
+                        && x.HousingProjectStatus != null
+                        && x.HousingProjectStatus.StatusCode != "CLOSED"
+                        && x.HousingProjectStatus.StatusCode != "REJECTED");
+
+        if (excludeProjectId.HasValue && excludeProjectId.Value != Guid.Empty)
+        {
+            query = query.Where(x => x.Id != excludeProjectId.Value);
+        }
+
+        if (developerId.HasValue && developerId.Value != Guid.Empty)
+        {
+            query = query.Where(x => x.DeveloperId == developerId.Value);
+        }
+
+        return await query.AsNoTracking().FirstOrDefaultAsync();
     }
 }

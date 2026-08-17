@@ -376,7 +376,12 @@ public class PaymentController : ControllerBase
                 ? application.SlotCode
                 : $"PENDING-{application.ApplicationId.ToString()[..8].ToUpperInvariant()}";
 
-            var phase1Pct = project.Phase1Percentage;
+            var phase1Milestone = await context.PaymentMilestones
+                .AsNoTracking()
+                .Where(m => m.ProjectId == application.ProjectId && m.PhaseOrder == 1 && m.IsActive)
+                .FirstOrDefaultAsync();
+
+            var phase1Pct = phase1Milestone?.Percentage ?? 20m;
             var phase1Fallback = application.Apartment != null && phase1Pct > 0
                 ? Math.Round(application.Apartment.Price * phase1Pct / 100m, 0, MidpointRounding.AwayFromZero)
                 : 0m;

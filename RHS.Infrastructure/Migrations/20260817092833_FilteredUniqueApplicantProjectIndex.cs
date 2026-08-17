@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -19,7 +19,7 @@ namespace RHS.Infrastructure.Migrations
                 table: "HousingApplications",
                 columns: new[] { "ApplicantId", "ProjectId" },
                 unique: true,
-                filter: "[ApplicationStatus] NOT IN (N'CANCELED', N'REJECTED')");
+                filter: "[ApplicationStatus] <> N'CANCELED' AND [ApplicationStatus] <> N'REJECTED'");
         }
 
         /// <inheritdoc />

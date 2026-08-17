@@ -147,7 +147,7 @@ public class PaymentService : IPaymentService
                 stalePendings.Count, dto.ApplicationId);
         }
 
-        // ── 2. Số tiền Đợt 1 = installment Phase 1 (% giá căn theo Phase1Percentage) ──
+        // ── 2. Số tiền Đợt 1 = installment Phase 1 (% giá căn theo PaymentMilestones) ──
         var project = await _projectRepo.GetByIdAsync(application.ProjectId);
         if (project == null)
         {
@@ -566,7 +566,7 @@ public class PaymentService : IPaymentService
     // ═══════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Đợt 1 = installment PhaseOrder 1; fallback Round(Phase1Percentage × giá căn).
+    /// Đợt 1 = installment PhaseOrder 1; fallback từ PaymentMilestones (PhaseOrder 1) hoặc mặc định 20% giá căn.
     /// </summary>
     private async Task<decimal> ResolvePhase1AmountAsync(HousingApplication application)
     {
@@ -586,13 +586,16 @@ public class PaymentService : IPaymentService
         if (price <= 0)
             return 0m;
 
-        var project = await _context.HousingProjects
+        var milestone1 = await _context.PaymentMilestones
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == application.ProjectId);
-        if (project == null || project.Phase1Percentage <= 0 || project.Phase1Percentage > 30m)
-            return 0m;
+            .Where(m => m.ProjectId == application.ProjectId && m.PhaseOrder == 1 && m.IsActive)
+            .FirstOrDefaultAsync();
 
-        return Math.Round(price * project.Phase1Percentage / 100m, 0, MidpointRounding.AwayFromZero);
+        var pct = milestone1?.Percentage ?? 20m;
+        if (pct <= 0 || pct > 30m)
+            pct = 20m;
+
+        return Math.Round(price * pct / 100m, 0, MidpointRounding.AwayFromZero);
     }
 
     /// <summary>

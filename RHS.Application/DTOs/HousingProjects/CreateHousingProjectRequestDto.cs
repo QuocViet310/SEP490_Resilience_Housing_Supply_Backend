@@ -12,8 +12,6 @@ public class CreateHousingProjectRequestDto
     public string Ward { get; set; } = string.Empty;
     public DateTime? LotteryDate { get; set; }
     public string? LotteryLocation { get; set; }
-    /// <summary>Tỉ lệ trả trước Đợt 1 (% giá căn). Bắt buộc khi tạo dự án; tối đa 30. Đợt 2 = phần còn lại.</summary>
-    public decimal Phase1Percentage { get; set; }
     public decimal MinPrice { get; set; }
     public decimal MaxPrice { get; set; }
     public double MinArea { get; set; }

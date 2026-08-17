@@ -46,11 +46,6 @@ public class HousingProject
 
     public User? LotterySupervisor { get; set; }
 
-    /// <summary>
-    /// Tỉ lệ trả trước Đợt 1 (% giá căn) — CĐT nhập khi tạo dự án (≤ 30%).
-    /// Đợt 2 = 100 − Phase1Percentage. Người dân xem trên chi tiết dự án.
-    /// </summary>
-    public decimal Phase1Percentage { get; set; }
 
     public decimal MinPrice { get; set; }
 

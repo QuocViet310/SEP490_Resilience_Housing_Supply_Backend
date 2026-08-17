@@ -23,4 +23,6 @@ public interface IHousingProjectRepository
     Task<bool> StatusExistsAsync(Guid statusId);
 
     Task<HousingProjectStatus?> GetStatusByCodeAsync(string code);
+
+    Task<HousingProject?> GetActiveProjectByNameAsync(string projectName, Guid? developerId = null, Guid? excludeProjectId = null);
 }

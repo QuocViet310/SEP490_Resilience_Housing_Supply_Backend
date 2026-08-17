@@ -47,6 +47,30 @@ public class HousingProjectService : IHousingProjectService
         // Validate request
         ValidateHousingProjectRequest(request);
 
+        // Kiểm tra dự án trùng tên đang hoạt động (PENDING / UPCOMING / OPEN / FULL)
+        // Nếu dự án cũ đã CLOSED, REJECTED hoặc bị xóa thì vẫn cho phép tạo mới
+        var existingActive = await _repository.GetActiveProjectByNameAsync(request.ProjectName, developerId);
+        if (existingActive != null)
+        {
+            var statusName = existingActive.HousingProjectStatus?.StatusName 
+                ?? existingActive.HousingProjectStatus?.StatusCode 
+                ?? "Đang hoạt động";
+            throw new ArgumentException(
+                $"Dự án với tên '{request.ProjectName.Trim()}' hiện đang hoạt động trên hệ thống (trạng thái: {statusName}). " +
+                "Nếu bạn muốn tạo đợt mới, vui lòng đóng đợt cũ hoặc đặt tên phân biệt (ví dụ: thêm '- Đợt 2').");
+        }
+
+        // Tự động gán trạng thái PENDING nếu chưa truyền HousingProjectStatusId
+        var statusId = request.HousingProjectStatusId;
+        if (statusId == Guid.Empty)
+        {
+            var pendingStatus = await _repository.GetStatusByCodeAsync("PENDING");
+            if (pendingStatus != null)
+            {
+                statusId = pendingStatus.Id;
+            }
+        }
+
         // Upload Thumbnail if provided
         var thumbnailUrl = request.ThumbnailUrl;
         if (request.ThumbnailFile != null)
@@ -66,14 +90,13 @@ public class HousingProjectService : IHousingProjectService
             Ward = request.Ward,
             LotteryDate = request.LotteryDate,
             LotteryLocation = request.LotteryLocation,
-            Phase1Percentage = NormalizePhase1Percentage(request.Phase1Percentage),
             MinPrice = request.MinPrice,
             MaxPrice = request.MaxPrice,
             MinArea = request.MinArea,
             MaxArea = request.MaxArea,
             AvailableUnits = request.AvailableUnits,
             ThumbnailUrl = thumbnailUrl,
-            HousingProjectStatusId = request.HousingProjectStatusId,
+            HousingProjectStatusId = statusId,
             IsDeleted = false,
             
             // New legal & developer fields
@@ -166,8 +189,8 @@ public class HousingProjectService : IHousingProjectService
         }
         else
         {
-            // Đợt 1 = Phase1Percentage (CĐT chỉnh, ≤ 30%); Đợt 2 = phần còn lại.
-            AddDefaultPercentMilestones(housingProject, housingProject.Phase1Percentage);
+            // Seed mặc định 2 đợt (20% và 80%)
+            AddDefaultPercentMilestones(housingProject, 20m);
         }
 
         // Save to repository
@@ -212,12 +235,29 @@ public class HousingProjectService : IHousingProjectService
             throw new InvalidOperationException($"Housing project with ID {id} not found.");
         }
 
+        // Chỉ cho phép chỉnh sửa khi dự án ở trạng thái PENDING
+        var currentStatusCode = existingProject.HousingProjectStatus?.StatusCode?.Trim().ToUpperInvariant();
+        if (currentStatusCode != "PENDING")
+        {
+            throw new ArgumentException(
+                $"Không thể chỉnh sửa dự án. Dự án chỉ có thể được chỉnh sửa khi đang ở trạng thái Chờ duyệt (PENDING). Trạng thái hiện tại: {existingProject.HousingProjectStatus?.StatusName ?? currentStatusCode ?? "Không xác định"}.");
+        }
+
         // Self-heal: dự án cũ thiếu DeveloperId → gắn CĐT đang sửa (nếu đang login role CĐT)
         if (!existingProject.DeveloperId.HasValue
             && claimDeveloperId.HasValue
             && claimDeveloperId.Value != Guid.Empty)
         {
             existingProject.DeveloperId = claimDeveloperId;
+        }
+
+        // Kiểm tra trùng tên với dự án khác đang hoạt động
+        var effectiveDevId = existingProject.DeveloperId ?? claimDeveloperId;
+        var existingActive = await _repository.GetActiveProjectByNameAsync(request.ProjectName, effectiveDevId, existingProject.Id);
+        if (existingActive != null)
+        {
+            throw new ArgumentException(
+                $"Tên dự án '{request.ProjectName.Trim()}' đã trùng với một dự án khác đang hoạt động trên hệ thống.");
         }
 
         // Upload Thumbnail if provided
@@ -236,14 +276,13 @@ public class HousingProjectService : IHousingProjectService
         existingProject.Ward = request.Ward;
         existingProject.LotteryDate = request.LotteryDate;
         existingProject.LotteryLocation = request.LotteryLocation;
-        existingProject.Phase1Percentage = NormalizePhase1Percentage(request.Phase1Percentage);
         existingProject.MinPrice = request.MinPrice;
         existingProject.MaxPrice = request.MaxPrice;
         existingProject.MinArea = request.MinArea;
         existingProject.MaxArea = request.MaxArea;
         existingProject.AvailableUnits = request.AvailableUnits;
         existingProject.ThumbnailUrl = thumbnailUrl;
-        existingProject.HousingProjectStatusId = request.HousingProjectStatusId;
+        // Giữ nguyên trạng thái PENDING, không thay đổi trạng thái qua API PUT
 
         // Update legal fields
         existingProject.DecisionNumber = request.DecisionNumber;
@@ -309,7 +348,7 @@ public class HousingProjectService : IHousingProjectService
             ApplyApartmentAggregates(existingProject, existingProject.Apartments);
         }
 
-        // Sync PaymentMilestones (replace all nếu client gửi; không thì đồng bộ % Đợt 1/2 từ Phase1Percentage)
+        // Sync PaymentMilestones (replace all nếu client gửi; không thì giữ nguyên / seed nếu chưa có)
         if (request.Milestones != null)
         {
             existingProject.PaymentMilestones.Clear();
@@ -337,9 +376,9 @@ public class HousingProjectService : IHousingProjectService
                 });
             }
         }
-        else
+        else if (!existingProject.PaymentMilestones.Any(m => m.IsActive))
         {
-            SyncDefaultPercentMilestones(existingProject, existingProject.Phase1Percentage);
+            AddDefaultPercentMilestones(existingProject, 20m);
         }
 
         // Save to repository
@@ -469,18 +508,6 @@ public class HousingProjectService : IHousingProjectService
             throw new ArgumentException("AvailableUnits must be greater than or equal to 0.");
         }
 
-        // Đợt 1 bắt buộc: > 0 và ≤ 30% (Luật Nhà ở) — CĐT nhập khi tạo dự án.
-        if (request.Phase1Percentage <= 0)
-        {
-            throw new ArgumentException(
-                "Vui lòng nhập tỉ lệ trả trước Đợt 1 (% giá căn), lớn hơn 0 và không quá 30%.");
-        }
-        if (request.Phase1Percentage > 30m)
-        {
-            throw new ArgumentException(
-                "Tỉ lệ Đợt 1 không được vượt 30% giá trị hợp đồng (Luật Nhà ở 2023).");
-        }
-
         // IsConfirmed must be true
         if (request.IsConfirmed != true)
         {
@@ -516,7 +543,6 @@ public class HousingProjectService : IHousingProjectService
             Ward = project.Ward,
             LotteryDate = project.LotteryDate,
             LotteryLocation = project.LotteryLocation,
-            Phase1Percentage = project.Phase1Percentage,
             MinPrice = project.MinPrice,
             MaxPrice = project.MaxPrice,
             MinArea = project.MinArea,
@@ -575,21 +601,9 @@ public class HousingProjectService : IHousingProjectService
         };
     }
 
-    /// <summary>Đợt 1: bắt buộc &gt; 0 và ≤ 30%.</summary>
-    private static decimal NormalizePhase1Percentage(decimal value)
+    private static void AddDefaultPercentMilestones(HousingProject project, decimal phase1Pct = 20m)
     {
-        if (value <= 0)
-            throw new ArgumentException(
-                "Vui lòng nhập tỉ lệ trả trước Đợt 1 (% giá căn), lớn hơn 0 và không quá 30%.");
-        if (value > 30m)
-            throw new ArgumentException(
-                "Tỉ lệ Đợt 1 không được vượt 30% giá trị hợp đồng (Luật Nhà ở 2023).");
-        return Math.Round(value, 2, MidpointRounding.AwayFromZero);
-    }
-
-    private static void AddDefaultPercentMilestones(HousingProject project, decimal phase1Pct)
-    {
-        var p1 = NormalizePhase1Percentage(phase1Pct);
+        var p1 = Math.Clamp(phase1Pct, 1m, 30m);
         var p2 = 100m - p1;
         var now = DateTime.UtcNow;
         project.PaymentMilestones.Add(new PaymentMilestone
@@ -620,80 +634,6 @@ public class HousingProjectService : IHousingProjectService
             IsActive = true,
             CreatedAt = now
         });
-    }
-
-    /// <summary>Cập nhật / seed Đợt 1–2 theo Phase1Percentage (giữ milestone khác nếu có).</summary>
-    private static void SyncDefaultPercentMilestones(HousingProject project, decimal phase1Pct)
-    {
-        var p1 = NormalizePhase1Percentage(phase1Pct);
-        var p2 = 100m - p1;
-        project.Phase1Percentage = p1;
-
-        var m1 = project.PaymentMilestones.FirstOrDefault(m => m.PhaseOrder == 1 && m.IsActive);
-        var m2 = project.PaymentMilestones.FirstOrDefault(m => m.PhaseOrder == 2 && m.IsActive);
-
-        if (m1 == null && m2 == null && !project.PaymentMilestones.Any(m => m.IsActive))
-        {
-            AddDefaultPercentMilestones(project, p1);
-            return;
-        }
-
-        var now = DateTime.UtcNow;
-        if (m1 != null)
-        {
-            m1.CalculationType = CalculationTypeConstants.Percentage;
-            m1.Percentage = p1;
-            m1.FixedAmount = null;
-            m1.PhaseName = "Đợt 1";
-            m1.Description = $"Đợt 1 — {p1:0.##}% giá căn sau khi ký hợp đồng mua bán nhà ở xã hội (≤ 30%)";
-        }
-        else
-        {
-            project.PaymentMilestones.Add(new PaymentMilestone
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = project.Id,
-                PhaseOrder = 1,
-                PhaseName = "Đợt 1",
-                CalculationType = CalculationTypeConstants.Percentage,
-                Percentage = p1,
-                TriggerEvent = TriggerEventConstants.OnContractSigned,
-                DueDays = 7,
-                Description = $"Đợt 1 — {p1:0.##}% giá căn sau khi ký hợp đồng mua bán nhà ở xã hội (≤ 30%)",
-                IsActive = true,
-                CreatedAt = now
-            });
-        }
-
-        if (m2 != null)
-        {
-            m2.CalculationType = CalculationTypeConstants.Percentage;
-            m2.Percentage = p2;
-            m2.FixedAmount = null;
-            m2.PhaseName = "Đợt 2";
-            m2.Description = $"Đợt 2 — phần còn lại ({p2:0.##}% giá căn); đợt cuối nhận phần dư làm tròn";
-        }
-        else
-        {
-            project.PaymentMilestones.Add(new PaymentMilestone
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = project.Id,
-                PhaseOrder = 2,
-                PhaseName = "Đợt 2",
-                CalculationType = CalculationTypeConstants.Percentage,
-                Percentage = p2,
-                TriggerEvent = TriggerEventConstants.OnLotteryWon,
-                DueDays = 30,
-                Description = $"Đợt 2 — phần còn lại ({p2:0.##}% giá căn); đợt cuối nhận phần dư làm tròn",
-                IsActive = true,
-                CreatedAt = now
-            });
-        }
-
-        // Tắt Đợt 3+ của template cũ (40/60) nếu còn
-        foreach (var extra in project.PaymentMilestones.Where(m => m.IsActive && m.PhaseOrder >= 3))
-            extra.IsActive = false;
     }
 
     /// <summary>Đồng bộ AvailableUnits / khoảng giá-diện tích từ danh sách căn.</summary>

@@ -178,12 +178,13 @@ public class HousingProjectsController : ControllerBase
     }
 
     /// <summary>
-    /// Update a housing project (Admin/Officer only)
+    /// Update a housing project (Chỉ chỉnh sửa khi trạng thái dự án là PENDING)
     /// </summary>
     /// <param name="id">Housing project ID</param>
     /// <param name="request">Update housing project request</param>
     /// <returns>Updated housing project</returns>
     [HttpPut("{id}")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.DepartmentOfConstruction}")]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

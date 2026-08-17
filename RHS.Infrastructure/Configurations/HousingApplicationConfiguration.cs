@@ -150,7 +150,7 @@ public class HousingApplicationConfiguration : IEntityTypeConfiguration<HousingA
         // Unique chỉ với hồ sơ còn hiệu lực — CANCELED/REJECTED được nộp lại cùng dự án
         builder.HasIndex(x => new { x.ApplicantId, x.ProjectId })
             .IsUnique()
-            .HasFilter("[ApplicationStatus] NOT IN (N'CANCELED', N'REJECTED')");
+            .HasFilter("[ApplicationStatus] <> N'CANCELED' AND [ApplicationStatus] <> N'REJECTED'");
     }
 }
 

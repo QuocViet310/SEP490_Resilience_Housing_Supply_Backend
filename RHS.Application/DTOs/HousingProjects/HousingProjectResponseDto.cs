@@ -11,8 +11,6 @@ public class HousingProjectResponseDto
     public string Ward { get; set; } = string.Empty;
     public DateTime? LotteryDate { get; set; }
     public string? LotteryLocation { get; set; }
-    /// <summary>Tỉ lệ Đợt 1 (% giá căn). Đợt 2 = 100 − Phase1Percentage.</summary>
-    public decimal Phase1Percentage { get; set; }
     public decimal MinPrice { get; set; }
     public decimal MaxPrice { get; set; }
     public double MinArea { get; set; }
