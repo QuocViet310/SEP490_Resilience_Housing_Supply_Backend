@@ -91,6 +91,7 @@ public class LotteryHub : Hub<ILotteryHubClient>
     /// <summary>CĐT kích hoạt bốc 1 lượt tiếp theo ("Bốc tiếp").</summary>
     public async Task DrawNextTurn(Guid projectId)
     {
+        RequireHousingDeveloper();
         var userId = GetUserId();
         try
         {
@@ -105,6 +106,7 @@ public class LotteryHub : Hub<ILotteryHubClient>
     /// <summary>CĐT tạm dừng phiên quay số ("Pause").</summary>
     public async Task PauseLive(Guid projectId)
     {
+        RequireHousingDeveloper();
         var userId = GetUserId();
         try
         {
@@ -119,6 +121,7 @@ public class LotteryHub : Hub<ILotteryHubClient>
     /// <summary>CĐT tiếp tục phiên quay số ("Tiếp tục").</summary>
     public async Task ResumeLive(Guid projectId)
     {
+        RequireHousingDeveloper();
         var userId = GetUserId();
         try
         {
@@ -205,5 +208,12 @@ public class LotteryHub : Hub<ILotteryHubClient>
         var roles = GetRoles();
         return roles.Contains(RoleConstants.DepartmentOfConstruction)
                || roles.Contains(RoleConstants.SystemAdministrator);
+    }
+
+    private void RequireHousingDeveloper()
+    {
+        var roles = GetRoles();
+        if (!roles.Contains(RoleConstants.HousingDeveloper))
+            throw new HubException("Chỉ có Chủ đầu tư mới có quyền thực hiện thao tác này.");
     }
 }
