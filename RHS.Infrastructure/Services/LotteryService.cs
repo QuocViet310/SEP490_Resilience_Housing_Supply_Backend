@@ -717,27 +717,8 @@ public class LotteryService : ILotteryService
                 bool isPriority = !string.IsNullOrWhiteSpace(app.PriorityGroup);
                 resultStatus = isPriority ? LotteryResultConstants.PriorityWon : LotteryResultConstants.Won;
 
-                var availableApts = await _db.Apartments
-                    .Where(a => a.ProjectId == projectId && a.Status == ApartmentStatusConstants.Available)
-                    .ToListAsync(ct);
-
-                if (availableApts.Count > 0)
-                {
-                    var selectedApt = availableApts[Random.Shared.Next(availableApts.Count)];
-                    selectedApt.Status = ApartmentStatusConstants.Assigned;
-                    app.ApartmentId = selectedApt.Id;
-                    app.SlotCode = selectedApt.UnitName;
-                    slotCode = selectedApt.UnitName;
-                }
-
                 MarkWonAwaitingApartment(app, resultStatus, actorId, oldStatus, now,
-                    "Trúng bốc thăm live (CĐT bốc lượt).");
-
-                if (!string.IsNullOrEmpty(slotCode))
-                {
-                    app.SlotCode = slotCode;
-                    app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
-                }
+                    "Trúng bốc thăm live (CĐT bốc lượt). Chờ CĐT cấp căn sau.");
 
                 await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
             }
