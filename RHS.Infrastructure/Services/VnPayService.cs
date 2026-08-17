@@ -34,10 +34,24 @@ public class VnPayService : IVnPayService
     /// <inheritdoc/>
     public string CreatePaymentUrl(HttpContext context, VnPaymentRequest request)
     {
-        var tmnCode    = _configuration["VnPay:TmnCode"]?.Trim() ?? string.Empty;
-        var hashSecret = _configuration["VnPay:HashSecret"]?.Trim() ?? string.Empty;
-        var baseUrl    = _configuration["VnPay:BaseUrl"] ?? "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
-        var returnUrl  = ResolveReturnUrl(context);
+        var rawTmnCode = _configuration["VnPay:TmnCode"]
+                      ?? _configuration["VnPay__TmnCode"]
+                      ?? _configuration["VNPAY_TMNCODE"]
+                      ?? _configuration["VNPAY__TMNCODE"]
+                      ?? string.Empty;
+
+        var rawHashSecret = _configuration["VnPay:HashSecret"]
+                         ?? _configuration["VnPay__HashSecret"]
+                         ?? _configuration["VNPAY_HASHSECRET"]
+                         ?? _configuration["VNPAY__HASHSECRET"]
+                         ?? string.Empty;
+
+        // Loại bỏ triệt để ký tự xuống dòng (\r, \n), khoảng trắng, tab do copy-paste
+        var tmnCode    = CleanSecret(rawTmnCode);
+        var hashSecret = CleanSecret(rawHashSecret);
+
+        var baseUrl   = _configuration["VnPay:BaseUrl"] ?? "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
+        var returnUrl = ResolveReturnUrl(context);
 
         if (string.IsNullOrWhiteSpace(tmnCode) || string.IsNullOrWhiteSpace(hashSecret) ||
             tmnCode.StartsWith("YOUR_VNP", StringComparison.OrdinalIgnoreCase) ||
@@ -51,6 +65,9 @@ public class VnPayService : IVnPayService
         var now = GetVietnamNow();
         var expireDate = now.AddMinutes(30);
 
+        // Sanitize OrderInfo: Không dấu, không khoảng trắng, chỉ dùng ký tự an toàn
+        var safeOrderInfo = RemoveDiacritics(request.OrderInfo).Replace(" ", "_");
+
         // ── Build Dictionary tham số vnp_* theo chuẩn so sánh VnPayCompare ──
         var vnpParams = new SortedDictionary<string, string>(new VnPayCompare())
         {
@@ -62,7 +79,7 @@ public class VnPayService : IVnPayService
             ["vnp_CurrCode"]   = VnpCurrCode,
             ["vnp_IpAddr"]     = GetClientIpAddress(context),
             ["vnp_Locale"]     = VnpLocale,
-            ["vnp_OrderInfo"]  = RemoveDiacritics(request.OrderInfo),
+            ["vnp_OrderInfo"]  = safeOrderInfo,
             ["vnp_OrderType"]  = "other",
             ["vnp_ReturnUrl"]  = returnUrl,
             ["vnp_TxnRef"]     = request.OrderId,
@@ -86,7 +103,13 @@ public class VnPayService : IVnPayService
     /// <inheritdoc/>
     public bool ValidateSignature(IQueryCollection queryParams)
     {
-        var hashSecret = _configuration["VnPay:HashSecret"]?.Trim() ?? string.Empty;
+        var rawHashSecret = _configuration["VnPay:HashSecret"]
+                         ?? _configuration["VnPay__HashSecret"]
+                         ?? _configuration["VNPAY_HASHSECRET"]
+                         ?? _configuration["VNPAY__HASHSECRET"]
+                         ?? string.Empty;
+
+        var hashSecret = CleanSecret(rawHashSecret);
 
         // Lấy chữ ký VNPay gửi về
         var vnpSecureHash = queryParams["vnp_SecureHash"].ToString();
@@ -253,6 +276,15 @@ public class VnPayService : IVnPayService
         var path = "/api/payment/payment-callback";
 
         return $"{scheme}://{host}{path}";
+    }
+
+    /// <summary>
+    /// Làm sạch triệt để secret/tmnCode: loại bỏ khoảng trắng, \r, \n, \t do paste giao diện Render.
+    /// </summary>
+    private static string CleanSecret(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return string.Empty;
+        return System.Text.RegularExpressions.Regex.Replace(raw, @"\s+", "");
     }
 }
 

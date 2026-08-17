@@ -19,9 +19,10 @@ var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
 if (File.Exists(envPath))
 {
     DotNetEnv.Env.Load(envPath);
-    // Nạp các biến từ .env vào Configuration để IOptions<T> đọc được
-    builder.Configuration.AddEnvironmentVariables();
 }
+
+// Nạp các biến môi trường hệ thống (hỗ trợ Docker / Render / Cloud)
+builder.Configuration.AddEnvironmentVariables();
 
 // Add services to the container.
 
