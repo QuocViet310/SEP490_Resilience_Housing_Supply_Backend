@@ -736,6 +736,7 @@ public class LotteryService : ILotteryService
                 if (!string.IsNullOrEmpty(slotCode))
                 {
                     app.SlotCode = slotCode;
+                    app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
                 }
 
                 await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
@@ -1337,7 +1338,7 @@ public class LotteryService : ILotteryService
     {
         app.LotteryResult = resultStatus;
         app.SlotCode = null;
-        app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
+        app.ApplicationStatus = ApplicationStatusConstants.LotteryWon;
         app.UpdatedAt = now;
 
         _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
@@ -1347,7 +1348,7 @@ public class LotteryService : ILotteryService
             ChangedBy = changedBy,
             Action = ReviewActionConstants.LotteryWon,
             OldStatus = oldStatus,
-            NewStatus = ApplicationStatusConstants.DepositPending,
+            NewStatus = ApplicationStatusConstants.LotteryWon,
             Note = note,
             ChangedAt = now
         });
