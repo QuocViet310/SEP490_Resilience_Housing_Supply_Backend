@@ -929,6 +929,77 @@ public static class DemoDataSeeder
                 "", PriorityGroupConstants.UrbanPoor, 0, 8_000_000m,
                 null, null, false, false, 0, "Công nhân", new DateTime(1998, 4, 22, 0, 0, 0, DateTimeKind.Utc),
                 SkipApplication: true),
+
+            // 10 tài khoản người dân đã xác minh danh tính (eKYC/CCCD) — dùng test hệ thống độc lập
+            Def("c2000001-0001-0001-0001-000000000001", "00000000-0000-0000-0000-000000000000",
+                "dan.test01@rhs.local", "Nguyễn Văn An", "079095000001", "0908000001",
+                "", PriorityGroupConstants.UrbanPoor, 0, 8_500_000m,
+                null, null, false, false, 0, "Công nhân", new DateTime(1995, 1, 15, 0, 0, 0, DateTimeKind.Utc),
+                address: "123 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM",
+                SkipApplication: true),
+
+            Def("c2000001-0001-0001-0001-000000000002", "00000000-0000-0000-0000-000000000002",
+                "dan.test02@rhs.local", "Trần Thị Bình", "079093000002", "0908000002",
+                "", PriorityGroupConstants.UrbanNearPoor, 0, 9_000_000m,
+                null, null, false, false, 0, "Nhân viên văn phòng", new DateTime(1993, 4, 20, 0, 0, 0, DateTimeKind.Utc),
+                address: "456 Lê Duẩn, Phường Bến Nghé, Quận 1, TP.HCM",
+                SkipApplication: true),
+
+            Def("c2000001-0001-0001-0001-000000000003", "00000000-0000-0000-0000-000000000003",
+                "dan.test03@rhs.local", "Lê Hoàng Cường", "079090000003", "0908000003",
+                "", PriorityGroupConstants.LowIncomeUrban, 0, 9_500_000m,
+                null, null, false, false, 0, "Kỹ thuật viên", new DateTime(1990, 9, 10, 0, 0, 0, DateTimeKind.Utc),
+                address: "789 Điện Biên Phủ, Phường 25, Bình Thạnh, TP.HCM",
+                SkipApplication: true),
+
+            Def("c2000001-0001-0001-0001-000000000004", "00000000-0000-0000-0000-000000000004",
+                "dan.test04@rhs.local", "Phạm Thị Dung", "079096000004", "0908000004",
+                "", PriorityGroupConstants.Worker, 0, 10_000_000m,
+                null, null, false, false, 0, "Công nhân khu chế xuất", new DateTime(1996, 12, 5, 0, 0, 0, DateTimeKind.Utc),
+                address: "101 Võ Văn Ngân, Phường Linh Chiểu, TP. Thủ Đức, TP.HCM",
+                SkipApplication: true),
+
+            Def("c2000001-0001-0001-0001-000000000005", "00000000-0000-0000-0000-000000000005",
+                "dan.test05@rhs.local", "Hoàng Văn Em", "079088000005", "0908000005",
+                "", PriorityGroupConstants.UrbanPoor, 0, 7_800_000m,
+                null, null, false, false, 0, "Lao động tự do", new DateTime(1988, 3, 25, 0, 0, 0, DateTimeKind.Utc),
+                address: "202 Quang Trung, Phường 10, Gò Vấp, TP.HCM",
+                SkipApplication: true),
+
+            Def("c2000001-0001-0001-0001-000000000006", "00000000-0000-0000-0000-000000000006",
+                "dan.test06@rhs.local", "Võ Thị Hạnh", "079097000006", "0908000006",
+                "", PriorityGroupConstants.LowIncomeUrban, 0, 8_900_000m,
+                null, null, false, false, 0, "Nhân viên bán hàng", new DateTime(1997, 6, 18, 0, 0, 0, DateTimeKind.Utc),
+                address: "303 Cách Mạng Tháng 8, Phường 12, Quận 10, TP.HCM",
+                SkipApplication: true),
+
+            Def("c2000001-0001-0001-0001-000000000007", "00000000-0000-0000-0000-000000000007",
+                "dan.test07@rhs.local", "Đặng Quốc Hùng", "079091000007", "0908000007",
+                "", PriorityGroupConstants.Worker, 0, 10_500_000m,
+                null, null, false, false, 0, "Kỹ sư công nghệ", new DateTime(1991, 11, 30, 0, 0, 0, DateTimeKind.Utc),
+                address: "404 Hoàng Văn Thụ, Phường 4, Tân Bình, TP.HCM",
+                SkipApplication: true),
+
+            Def("c2000001-0001-0001-0001-000000000008", "00000000-0000-0000-0000-000000000008",
+                "dan.test08@rhs.local", "Bùi Mai Linh", "079094000008", "0908000008",
+                "", PriorityGroupConstants.UrbanNearPoor, 0, 9_200_000m,
+                null, null, false, false, 0, "Kế toán viên", new DateTime(1994, 8, 14, 0, 0, 0, DateTimeKind.Utc),
+                address: "505 Nguyễn Văn Linh, Phường Tân Phong, Quận 7, TP.HCM",
+                SkipApplication: true),
+
+            Def("c2000001-0001-0001-0001-000000000009", "00000000-0000-0000-0000-000000000009",
+                "dan.test09@rhs.local", "Ngô Thanh Nam", "079092000009", "0908000009",
+                "", PriorityGroupConstants.UrbanPoor, 0, 8_000_000m,
+                null, null, false, false, 0, "Tài xế công nghệ", new DateTime(1992, 2, 28, 0, 0, 0, DateTimeKind.Utc),
+                address: "606 Kinh Dương Vương, Phường An Lạc, Bình Tân, TP.HCM",
+                SkipApplication: true),
+
+            Def("c2000001-0001-0001-0001-000000000010", "00000000-0000-0000-0000-000000000010",
+                "dan.test10@rhs.local", "Đỗ Phương Oanh", "079099000010", "0908000010",
+                "", PriorityGroupConstants.LowIncomeUrban, 0, 8_300_000m,
+                null, null, false, false, 0, "Dược sĩ", new DateTime(1999, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                address: "707 Nguyễn Oanh, Phường 17, Gò Vấp, TP.HCM",
+                SkipApplication: true),
         ];
     }
 
