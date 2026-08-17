@@ -518,9 +518,13 @@ public class LotteryService : ILotteryService
 
         var nextCandidateApp = undrawnApps.FirstOrDefault();
 
+        int totalProjectApartments = await _db.Apartments.CountAsync(a => a.ProjectId == projectId, ct);
+        int totalUnits = totalProjectApartments > 0
+            ? totalProjectApartments
+            : (project.AvailableUnits + drawnWinners.Count);
+
         int drawnUnitsCount = drawnWinners.Count;
-        int remainingUnits = project.AvailableUnits;
-        int totalUnits = drawnUnitsCount + remainingUnits;
+        int remainingUnits = Math.Max(0, totalUnits - drawnUnitsCount);
 
         int sttCounter = 1;
         var recentWinners = drawnWinners.Select(a => new LiveDrawResultDto
@@ -713,29 +717,32 @@ public class LotteryService : ILotteryService
                 bool isPriority = !string.IsNullOrWhiteSpace(app.PriorityGroup);
                 resultStatus = isPriority ? LotteryResultConstants.PriorityWon : LotteryResultConstants.Won;
 
+                var availableApts = await _db.Apartments
+                    .Where(a => a.ProjectId == projectId && a.Status == ApartmentStatusConstants.Available)
+                    .ToListAsync(ct);
+
+                if (availableApts.Count > 0)
+                {
+                    var selectedApt = availableApts[Random.Shared.Next(availableApts.Count)];
+                    selectedApt.Status = ApartmentStatusConstants.Assigned;
+                    app.ApartmentId = selectedApt.Id;
+                    app.SlotCode = selectedApt.UnitName;
+                    slotCode = selectedApt.UnitName;
+                }
+
                 MarkWonAwaitingApartment(app, resultStatus, actorId, oldStatus, now,
-                    "Trúng bốc thăm live (CĐT bốc lượt). Chờ Chủ đầu tư chọn căn cụ thể trước khi ký HĐ.");
+                    "Trúng bốc thăm live (CĐT bốc lượt).");
+
+                if (!string.IsNullOrEmpty(slotCode))
+                {
+                    app.SlotCode = slotCode;
+                }
 
                 await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
             }
             else
             {
-                resultStatus = LotteryResultConstants.Lost;
-                app.LotteryResult = resultStatus;
-                app.ApplicationStatus = ApplicationStatusConstants.LotteryLost;
-                app.UpdatedAt = now;
-
-                _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
-                {
-                    HistoryId = Guid.NewGuid(),
-                    ApplicationId = app.ApplicationId,
-                    ChangedBy = actorId,
-                    Action = ReviewActionConstants.LotteryLost,
-                    OldStatus = oldStatus,
-                    NewStatus = ApplicationStatusConstants.LotteryLost,
-                    Note = "Trượt bốc thăm live (hết suất).",
-                    ChangedAt = now
-                });
+                throw new InvalidOperationException("Đã bốc hết tổng số căn hộ mở phân bổ cho phiên bốc thăm này. Tất cả các căn đều đã được bốc trúng.");
             }
 
             await _db.SaveChangesAsync(ct);
