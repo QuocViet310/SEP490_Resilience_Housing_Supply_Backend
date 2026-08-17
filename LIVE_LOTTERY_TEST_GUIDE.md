@@ -4,6 +4,25 @@ Tài liệu hướng dẫn chi tiết kịch bản kiểm thử (Test Workflow) 
 
 ---
 
+## ⚡ HƯỚNG DẪN TEST NHANH 2 PHÚT (VỚI DỮ LIỆU SEEDED SẴN)
+
+Nếu muốn test ngay trên Swagger mà không cần tạo dự án hay hồ sơ thủ công, bạn hãy sử dụng dữ liệu demo đã seed sẵn:
+
+- **Demo Project ID (`ProjectId`)**: `b1000001-0001-0001-0001-000000000001` (NOXH Bình Minh — Thủ Đức)
+- **Tài khoản CĐT**: `cdt.demo@rhs.local` / Mật khẩu: `123456`
+- **Tài khoản SXD**: `sxd.demo@rhs.local` / Mật khẩu: `123456`
+
+### Các bước test nhanh trên Swagger UI:
+1. **Đăng nhập**: Call `POST /api/auth/login` với tài khoản CĐT và SXD để lấy 2 token Bearer.
+2. **Lên lịch (CĐT)**: Call `POST /api/projects/b1000001-0001-0001-0001-000000000001/lottery/schedule` (Token CĐT, `totalUnits: 5`).
+3. **Duyệt lịch (SXD)**: Call `POST /api/projects/b1000001-0001-0001-0001-000000000001/lottery/schedule/approve` (Token SXD) -> Nhận mã OTP.
+4. **Mở sảnh chờ (CĐT)**: Call `POST /api/projects/b1000001-0001-0001-0001-000000000001/lottery/session/open-lobby` (Token CĐT).
+5. **Mở 1 tab trình duyệt ấn F12 Console dán script SignalR** kết nối tài khoản SXD vào sảnh giám sát.
+6. **Bắt đầu Live (CĐT)**: Call `POST /api/projects/b1000001-0001-0001-0001-000000000001/lottery/session/start` (Token CĐT).
+7. **Bốc tiếp (CĐT)**: Call `POST /api/projects/b1000001-0001-0001-0001-000000000001/lottery/draw-next` -> Hệ thống bốc ngẫu nhiên người đăng ký & chọn ngẫu nhiên 1 căn hộ khả dụng (`A-12.05`), cập nhật Quỹ căn thời gian thực!
+
+---
+
 ## 1. Tổng Quan Luồng Nghiệp Vụ & Vai Trò (Roles & FSM)
 
 ### FSM Trạng Thái Phiên Bốc Thăm
@@ -45,7 +64,7 @@ Tài liệu hướng dẫn chi tiết kịch bản kiểm thử (Test Workflow) 
 - **Body JSON**:
   ```json
   {
-    "lotteryDate": "2026-08-20T09:00:00Z",
+    "lotteryDate": "2026-08-25T09:00:00Z",
     "lotteryLocation": "Phòng họp trực tuyến Zoom / Sảnh bốc thăm",
     "lotteryType": "ONLINE",
     "lotteryDescription": "Phiên bốc thăm quyền mua nhà ở xã hội đợt 1",
@@ -173,7 +192,7 @@ Tài liệu hướng dẫn chi tiết kịch bản kiểm thử (Test Workflow) 
        "stt": 1,
        "result": "PRIORITY_WON",
        "slotCode": "A-12.05",
-       "drawnAt": "2026-08-14T15:35:22Z",
+       "drawnAt": "2026-08-17T18:35:22Z",
        "remainingUnits": 99,
        "priorityGroup": "GROUP_1"
      }
@@ -257,7 +276,7 @@ Tài liệu hướng dẫn chi tiết kịch bản kiểm thử (Test Workflow) 
 | **Client Invoke** | `DrawNextTurn(projectId)` | CĐT | Kích hoạt Bốc tiếp từ Hub |
 | **Client Invoke** | `PauseLive(projectId)` | CĐT | Kích hoạt Pause từ Hub |
 | **Client Invoke** | `ResumeLive(projectId)` | CĐT | Kích hoạt Resume từ Hub |
-| **Server Broadcast** | `ReceiveLiveState(state)` | Clients | Đẩy toàn bộ dữ liệu trạng tháiLive |
+| **Server Broadcast** | `ReceiveLiveState(state)` | Clients | Đẩy toàn bộ dữ liệu trạng thái Live |
 | **Server Broadcast** | `ReceiveDrawResult(result)` | Clients | Đẩy kết quả lượt vừa bốc thăm |
 | **Server Broadcast** | `ReceiveLotteryStatus(status)` | Clients | Đẩy cập nhật trạng thái phiên |
 | **Server Broadcast** | `ReceiveSxdSupervisorCount(count)`| Clients | Đẩy số đại diện Sở Xây dựng online |
