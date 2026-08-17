@@ -147,7 +147,10 @@ public class HousingApplicationConfiguration : IEntityTypeConfiguration<HousingA
         builder.HasIndex(x => x.ApplicationStatus);
         builder.HasIndex(x => x.SubmittedAt);
         builder.HasIndex(x => x.CitizenId);
-        builder.HasIndex(x => new { x.ApplicantId, x.ProjectId }).IsUnique();
+        // Unique chỉ với hồ sơ còn hiệu lực — CANCELED/REJECTED được nộp lại cùng dự án
+        builder.HasIndex(x => new { x.ApplicantId, x.ProjectId })
+            .IsUnique()
+            .HasFilter("[ApplicationStatus] NOT IN (N'CANCELED', N'REJECTED')");
     }
 }
 

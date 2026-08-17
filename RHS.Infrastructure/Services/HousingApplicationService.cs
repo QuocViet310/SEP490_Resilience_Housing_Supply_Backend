@@ -119,8 +119,18 @@ public class HousingApplicationService : IHousingApplicationService
             HouseholdMembers       = MapHouseholdMembers(request.HouseholdMembers)
         };
 
-        // 4. Lưu vào DB
-        await _applicationRepo.CreateAsync(application);
+        try
+        {
+            await _applicationRepo.CreateAsync(application);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            _logger.LogWarning(
+                ex,
+                "Unique constraint khi tạo hồ sơ Applicant {ApplicantId} Project {ProjectId}.",
+                applicantId, request.ProjectId);
+            throw new DuplicateApplicationException(applicantId, request.ProjectId);
+        }
 
         _logger.LogInformation(
             "Tạo hồ sơ thành công. ApplicationId={ApplicationId}, Status={Status}.",
@@ -954,5 +964,11 @@ public class HousingApplicationService : IHousingApplicationService
             SubmittedAt = a.SubmittedAt,
             ApplicationStatus = a.ApplicationStatus
         };
+    }
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    {
+        return ex.InnerException is Microsoft.Data.SqlClient.SqlException sql
+            && sql.Number is 2601 or 2627;
     }
 }
