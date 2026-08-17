@@ -153,11 +153,19 @@ public class InstallmentService : IInstallmentService
 
         if (app == null) return null;
 
+        var apartment = app.Apartment;
+        if (apartment == null && app.ApartmentId.HasValue)
+        {
+            apartment = await _db.Apartments
+                .AsNoTracking()
+                .FirstOrDefaultAsync(a => a.Id == app.ApartmentId.Value);
+        }
+
         var installments = await _db.PaymentInstallments
             .AsNoTracking()
             .Include(i => i.Milestone)
             .Where(i => i.ApplicationId == applicationId)
-            .OrderBy(i => i.Milestone.PhaseOrder)
+            .OrderBy(i => i.Milestone != null ? i.Milestone.PhaseOrder : 0)
             .ToListAsync();
 
         var now = DateTime.UtcNow;
@@ -165,8 +173,8 @@ public class InstallmentService : IInstallmentService
         var phases = installments.Select(i => new InstallmentDto
         {
             Id            = i.Id,
-            PhaseOrder    = i.Milestone.PhaseOrder,
-            PhaseName     = i.Milestone.PhaseName,
+            PhaseOrder    = i.Milestone?.PhaseOrder ?? 0,
+            PhaseName     = i.Milestone?.PhaseName ?? $"Đợt",
             Amount        = i.Amount,
             StartDate     = i.StartDate,
             DueDate       = i.DueDate,
@@ -179,9 +187,9 @@ public class InstallmentService : IInstallmentService
         return new InstallmentSummaryDto
         {
             ApplicationId     = applicationId,
-            ApartmentTypeName = app.Apartment?.UnitName, // legacy field name = tên căn đã bàn giao
-            ApartmentArea     = app.Apartment?.Area,
-            ApartmentPrice    = app.Apartment?.Price,
+            ApartmentTypeName = apartment?.UnitName,
+            ApartmentArea     = apartment?.Area,
+            ApartmentPrice    = apartment?.Price,
             TotalAmount       = phases.Sum(p => p.Amount),
             TotalPaid         = phases.Where(p => p.Status == InstallmentStatusConstants.Paid).Sum(p => p.Amount),
             TotalRemaining    = phases.Where(p => p.Status != InstallmentStatusConstants.Paid
@@ -594,8 +602,21 @@ public class InstallmentService : IInstallmentService
             .Include(a => a.Apartment)
             .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
 
-        if (app == null || app.Apartment == null)
+        if (app == null)
             return;
+
+        var apartment = app.Apartment;
+        if (apartment == null && app.ApartmentId.HasValue)
+        {
+            apartment = await _db.Apartments.FirstOrDefaultAsync(a => a.Id == app.ApartmentId.Value);
+            app.Apartment = apartment;
+        }
+
+        if (apartment == null)
+        {
+            _logger.LogWarning("EnsureInstallments: App {AppId} has no apartment assigned yet.", applicationId);
+            return;
+        }
 
         await EnsureDefaultMilestonesAsync(app.ProjectId);
 
@@ -614,7 +635,7 @@ public class InstallmentService : IInstallmentService
             .ToListAsync();
 
         var now = DateTime.UtcNow;
-        var (a1, a2, a3, a4, a5, a6) = Calculate6PhaseAmounts(app.Apartment.Price);
+        var (a1, a2, a3, a4, a5, a6) = Calculate6PhaseAmounts(apartment.Price);
         var amountsByPhase = new Dictionary<int, decimal>
         {
             [1] = a1,
@@ -647,7 +668,7 @@ public class InstallmentService : IInstallmentService
             {
                 var amount = amountsByPhase.TryGetValue(m.PhaseOrder, out var amt)
                     ? amt
-                    : CalculateAmount(m, app.Apartment);
+                    : CalculateAmount(m, apartment);
 
                 string status;
                 DateTime? paidAt = null;
@@ -750,7 +771,11 @@ public class InstallmentService : IInstallmentService
             .OrderBy(m => m.PhaseOrder)
             .ToListAsync();
 
-        if (active.Count >= 6)
+        var isStandard6 = active.Count == 6
+            && active.Select(m => m.PhaseOrder).Distinct().Count() == 6
+            && active.All(m => m.PhaseOrder >= 1 && m.PhaseOrder <= 6);
+
+        if (isStandard6)
             return;
 
         // Vô hiệu hóa các template cũ chưa chuẩn 6 đợt
