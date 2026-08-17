@@ -577,10 +577,10 @@ public static class DemoDataSeeder
         [
             (
                 Make(p1, "NOXH Bình Minh — Thủ Đức", "Thành phố Hồ Chí Minh", "Phường Thủ Đức", "Phường Thủ Đức",
-                    "12 Đại lộ Mai Chí Thọ", openId, 5, 720_000_000m, 1_280_000_000m, 38, 67,
+                    "12 Đại lộ Mai Chí Thọ", openId, 2, 720_000_000m, 1_280_000_000m, 38, 67,
                     now.AddDays(-10), now.AddDays(60), now.AddDays(-40),
                     "Dự án OPEN demo Thủ Đức — đang nhận hồ sơ."),
-                Quotas(p1, 5),
+                Quotas(p1, 2),
                 Images(p1, 0, 1)
             ),
             (
@@ -868,6 +868,21 @@ public static class DemoDataSeeder
                 "dan.timeout@rhs.local", "Đặng Văn Timeout", "001090000007", "0901000007",
                 ApplicationStatusConstants.ApprovedByTimeout, PriorityGroupConstants.UrbanNearPoor, 45, 9_500_000m,
                 null, null, false, false, -25, "Nhân viên", new DateTime(1989, 12, 2, 0, 0, 0, DateTimeKind.Utc)),
+
+            Def("c1000001-0001-0001-0001-000000000010", "d1000001-0001-0001-0001-000000000010",
+                "dan.approved1@rhs.local", "Hoàng Văn Approved 1", "001090000010", "0901000010",
+                ApplicationStatusConstants.Approved, PriorityGroupConstants.UrbanPoor, 50, 8_500_000m,
+                null, null, false, false, -11, "Công nhân", new DateTime(1994, 5, 10, 0, 0, 0, DateTimeKind.Utc)),
+
+            Def("c1000001-0001-0001-0001-000000000011", "d1000001-0001-0001-0001-000000000011",
+                "dan.approved2@rhs.local", "Lê Thị Approved 2", "001090000011", "0901000011",
+                ApplicationStatusConstants.Approved, PriorityGroupConstants.LowIncomeUrban, 40, 9_000_000m,
+                null, null, false, false, -10, "Nhân viên", new DateTime(1991, 8, 15, 0, 0, 0, DateTimeKind.Utc)),
+
+            Def("c1000001-0001-0001-0001-000000000012", "d1000001-0001-0001-0001-000000000012",
+                "dan.approved3@rhs.local", "Phạm Văn Approved 3", "001090000012", "0901000012",
+                ApplicationStatusConstants.Approved, PriorityGroupConstants.Worker, 35, 10_000_000m,
+                null, null, false, false, -9, "Công nhân", new DateTime(1990, 2, 20, 0, 0, 0, DateTimeKind.Utc)),
 
             Def("c1000001-0001-0001-0001-000000000008", "d1000001-0001-0001-0001-000000000008",
                 "dan.contract@rhs.local", "Bùi Thị ContractPending", "001090000008", "0901000008",
