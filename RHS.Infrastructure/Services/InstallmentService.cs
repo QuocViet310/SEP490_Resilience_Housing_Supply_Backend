@@ -766,114 +766,79 @@ public class InstallmentService : IInstallmentService
     /// </summary>
     private async Task EnsureDefaultMilestonesAsync(Guid projectId)
     {
-        var active = await _db.PaymentMilestones
-            .Where(m => m.ProjectId == projectId && m.IsActive)
-            .OrderBy(m => m.PhaseOrder)
+        var allMilestones = await _db.PaymentMilestones
+            .Where(m => m.ProjectId == projectId)
             .ToListAsync();
 
-        var isStandard6 = active.Count == 6
-            && active.Select(m => m.PhaseOrder).Distinct().Count() == 6
-            && active.All(m => m.PhaseOrder >= 1 && m.PhaseOrder <= 6);
-
-        if (isStandard6)
-            return;
-
-        // Vô hiệu hóa các template cũ chưa chuẩn 6 đợt
-        foreach (var m in active)
-            m.IsActive = false;
-
-        await _db.SaveChangesAsync();
+        var standardConfigs = new (int PhaseOrder, string PhaseName, decimal Pct, string Trigger, int DueDays, string Desc)[]
+        {
+            (1, "Đợt 1", 10m, TriggerEventConstants.OnLotteryWon, 7, "Đợt 1 — 10% giá trị căn hộ khi trúng bốc thăm / cấp nhà"),
+            (2, "Đợt 2", 20m, TriggerEventConstants.OnContractSigned, 15, "Đợt 2 — 20% giá trị căn hộ khi ký Hợp đồng mua bán chính thức"),
+            (3, "Đợt 3", 20m, TriggerEventConstants.ConstructionRoughFloor, 30, "Đợt 3 — 20% giá trị căn hộ khi hoàn thành xây thô"),
+            (4, "Đợt 4", 20m, TriggerEventConstants.RoofingCompleted, 30, "Đợt 4 — 20% giá trị căn hộ khi cất nóc tòa nhà"),
+            (5, "Đợt 5", 25m, TriggerEventConstants.Handover, 30, "Đợt 5 — 25% giá trị căn hộ (+ 2% Phí bảo trì) khi bàn giao nhà & chìa khóa"),
+            (6, "Đợt 6", 5m, TriggerEventConstants.RedBookIssued, 30, "Đợt 6 — 5% phần còn lại khi nhận Giấy chứng nhận (Sổ hồng)")
+        };
 
         var now = DateTime.UtcNow;
-        _db.PaymentMilestones.AddRange(
-            new PaymentMilestone
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = projectId,
-                PhaseOrder = 1,
-                PhaseName = "Đợt 1",
-                CalculationType = CalculationTypeConstants.Percentage,
-                Percentage = 10m,
-                TriggerEvent = TriggerEventConstants.OnLotteryWon,
-                DueDays = 7,
-                Description = "Đợt 1 — 10% giá trị căn hộ khi trúng bốc thăm / cấp nhà",
-                IsActive = true,
-                CreatedAt = now
-            },
-            new PaymentMilestone
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = projectId,
-                PhaseOrder = 2,
-                PhaseName = "Đợt 2",
-                CalculationType = CalculationTypeConstants.Percentage,
-                Percentage = 20m,
-                TriggerEvent = TriggerEventConstants.OnContractSigned,
-                DueDays = 15,
-                Description = "Đợt 2 — 20% giá trị căn hộ khi ký Hợp đồng mua bán chính thức",
-                IsActive = true,
-                CreatedAt = now
-            },
-            new PaymentMilestone
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = projectId,
-                PhaseOrder = 3,
-                PhaseName = "Đợt 3",
-                CalculationType = CalculationTypeConstants.Percentage,
-                Percentage = 20m,
-                TriggerEvent = TriggerEventConstants.ConstructionRoughFloor,
-                DueDays = 30,
-                Description = "Đợt 3 — 20% giá trị căn hộ khi hoàn thành xây thô",
-                IsActive = true,
-                CreatedAt = now
-            },
-            new PaymentMilestone
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = projectId,
-                PhaseOrder = 4,
-                PhaseName = "Đợt 4",
-                CalculationType = CalculationTypeConstants.Percentage,
-                Percentage = 20m,
-                TriggerEvent = TriggerEventConstants.RoofingCompleted,
-                DueDays = 30,
-                Description = "Đợt 4 — 20% giá trị căn hộ khi cất nóc tòa nhà",
-                IsActive = true,
-                CreatedAt = now
-            },
-            new PaymentMilestone
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = projectId,
-                PhaseOrder = 5,
-                PhaseName = "Đợt 5",
-                CalculationType = CalculationTypeConstants.Percentage,
-                Percentage = 25m,
-                TriggerEvent = TriggerEventConstants.Handover,
-                DueDays = 30,
-                Description = "Đợt 5 — 25% giá trị căn hộ (+ 2% Phí bảo trì) khi bàn giao nhà & chìa khóa",
-                IsActive = true,
-                CreatedAt = now
-            },
-            new PaymentMilestone
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = projectId,
-                PhaseOrder = 6,
-                PhaseName = "Đợt 6",
-                CalculationType = CalculationTypeConstants.Percentage,
-                Percentage = 5m,
-                TriggerEvent = TriggerEventConstants.RedBookIssued,
-                DueDays = 30,
-                Description = "Đợt 6 — 5% phần còn lại khi nhận Giấy chứng nhận (Sổ hồng)",
-                IsActive = true,
-                CreatedAt = now
-            });
+        bool changed = false;
 
-        await _db.SaveChangesAsync();
-        _logger.LogInformation(
-            "Seeded default 6-phase payment milestones for Project={ProjectId}.", projectId);
+        foreach (var (order, name, pct, trigger, dueDays, desc) in standardConfigs)
+        {
+            var existing = allMilestones.FirstOrDefault(m => m.PhaseOrder == order);
+            if (existing != null)
+            {
+                // Cập nhật lại milestone hiện có để đảm bảo chuẩn 6 đợt và không vi phạm Unique Index (ProjectId, PhaseOrder)
+                if (existing.PhaseName != name
+                    || existing.Percentage != pct
+                    || existing.TriggerEvent != trigger
+                    || existing.DueDays != dueDays
+                    || !existing.IsActive
+                    || existing.CalculationType != CalculationTypeConstants.Percentage)
+                {
+                    existing.PhaseName = name;
+                    existing.CalculationType = CalculationTypeConstants.Percentage;
+                    existing.Percentage = pct;
+                    existing.TriggerEvent = trigger;
+                    existing.DueDays = dueDays;
+                    existing.Description = desc;
+                    existing.IsActive = true;
+                    existing.FixedAmount = null;
+                    changed = true;
+                }
+            }
+            else
+            {
+                _db.PaymentMilestones.Add(new PaymentMilestone
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = projectId,
+                    PhaseOrder = order,
+                    PhaseName = name,
+                    CalculationType = CalculationTypeConstants.Percentage,
+                    Percentage = pct,
+                    TriggerEvent = trigger,
+                    DueDays = dueDays,
+                    Description = desc,
+                    IsActive = true,
+                    CreatedAt = now
+                });
+                changed = true;
+            }
+        }
+
+        // Vô hiệu hóa các đợt cũ > 6 nếu có
+        foreach (var extra in allMilestones.Where(m => m.PhaseOrder > 6 && m.IsActive))
+        {
+            extra.IsActive = false;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            await _db.SaveChangesAsync();
+            _logger.LogInformation("Ensured and synced default 6-phase payment milestones for Project={ProjectId}.", projectId);
+        }
     }
 
     /// <summary>
