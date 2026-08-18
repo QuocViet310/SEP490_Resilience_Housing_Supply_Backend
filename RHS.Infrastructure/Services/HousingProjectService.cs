@@ -60,16 +60,13 @@ public class HousingProjectService : IHousingProjectService
                 "Nếu bạn muốn tạo đợt mới, vui lòng đóng đợt cũ hoặc đặt tên phân biệt (ví dụ: thêm '- Đợt 2').");
         }
 
-        // Tự động gán trạng thái PENDING nếu chưa truyền HousingProjectStatusId
-        var statusId = request.HousingProjectStatusId;
-        if (statusId == Guid.Empty)
+        // Tạo dự án luôn PENDING — CĐT/client không được chọn status (SXD mới duyệt → UPCOMING).
+        var pendingStatus = await _repository.GetStatusByCodeAsync("PENDING");
+        if (pendingStatus == null)
         {
-            var pendingStatus = await _repository.GetStatusByCodeAsync("PENDING");
-            if (pendingStatus != null)
-            {
-                statusId = pendingStatus.Id;
-            }
+            throw new InvalidOperationException("Không tìm thấy trạng thái PENDING trên hệ thống.");
         }
+        var statusId = pendingStatus.Id;
 
         // Upload Thumbnail if provided
         var thumbnailUrl = request.ThumbnailUrl;
@@ -99,13 +96,13 @@ public class HousingProjectService : IHousingProjectService
             HousingProjectStatusId = statusId,
             IsDeleted = false,
             
-            // New legal & developer fields
+            // New legal & developer fields — duyệt/công bố chỉ SXD set khi APPROVE
             DecisionNumber = request.DecisionNumber,
-            ApprovalDate = request.ApprovalDate,
-            IsConfirmed = request.IsConfirmed,
+            ApprovalDate = null,
+            IsConfirmed = false,
             ApplicationOpenDate = request.ApplicationOpenDate,
             ApplicationCloseDate = request.ApplicationCloseDate,
-            PublicAnnounceAt = request.IsConfirmed ? DateTime.UtcNow : null,
+            PublicAnnounceAt = null,
             DeveloperId = developerId
         };
 
@@ -661,7 +658,7 @@ public class HousingProjectService : IHousingProjectService
         }
 
         // Must be PENDING to approve/reject
-        if (project.HousingProjectStatus?.StatusCode != "PENDING")
+        if (!string.Equals(project.HousingProjectStatus?.StatusCode, "PENDING", StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException("Chỉ dự án có trạng thái PENDING mới có thể phê duyệt hoặc từ chối.");
         }
@@ -701,7 +698,7 @@ public class HousingProjectService : IHousingProjectService
             throw new ArgumentException("Hành động không hợp lệ. Chỉ chấp nhận APPROVE hoặc REJECT.");
         }
 
-        await _repository.UpdateAsync(project);
+        await _repository.UpdateStatusOnlyAsync(project);
         
         var updatedProject = await _repository.GetByIdAsync(project.Id);
         return MapToResponseDto(updatedProject ?? project);
@@ -778,7 +775,7 @@ public class HousingProjectService : IHousingProjectService
         // Note hiện chưa có cột riêng — giữ tham số để mở rộng audit sau
         _ = note;
 
-        await _repository.UpdateAsync(project);
+        await _repository.UpdateStatusOnlyAsync(project);
 
         var updated = await _repository.GetByIdAsync(project.Id);
         return MapToResponseDto(updated ?? project);
