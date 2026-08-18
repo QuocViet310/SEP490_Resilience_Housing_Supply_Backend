@@ -40,7 +40,7 @@ Tất cả dự án gắn CĐT demo, đã `IsConfirmed`, có `PublicAnnounceAt` 
 
 Hồ sơ gắn dự án **NOXH Bình Minh — Thủ Đức** (1 TK = 1 hồ sơ). Tài khoản trống: `dan.free@rhs.local`.
 
-### 10 Tài khoản người dân đã xác minh danh tính (Dùng test hệ thống)
+### 11 Tài khoản người dân đã xác minh danh tính (Dùng test hệ thống)
 
 Tất cả đều có mật khẩu: `123456`, trạng thái `Active`, đã có thông tin CCCD, Ngày sinh, Địa chỉ, SĐT, chưa gắn hồ sơ nào (có thể dùng để test nộp hồ sơ vào bất kỳ dự án nào):
 
@@ -56,6 +56,7 @@ Tất cả đều có mật khẩu: `123456`, trạng thái `Active`, đã có t
 | `dan.test08@rhs.local` | Bùi Mai Linh | `079094000008` | `0908000008` | 14/08/1994 | 505 Nguyễn Văn Linh, P. Tân Phong, Q.7, TP.HCM |
 | `dan.test09@rhs.local` | Ngô Thanh Nam | `079092000009` | `0908000009` | 28/02/1992 | 606 Kinh Dương Vương, P. An Lạc, Bình Tân, TP.HCM |
 | `dan.test10@rhs.local` | Đỗ Phương Oanh | `079099000010` | `0908000010` | 08/10/1999 | 707 Nguyễn Oanh, P. 17, Gò Vấp, TP.HCM |
+| `dan.test11@rhs.local` | Trần Quốc Phong | `079098000011` | `0908000011` | 20/05/1998 | 808 Phạm Văn Đồng, P. 1, Gò Vấp, TP.HCM |
 
 ## Code
 

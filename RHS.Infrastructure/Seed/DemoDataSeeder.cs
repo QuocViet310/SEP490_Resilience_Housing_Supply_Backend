@@ -1000,6 +1000,13 @@ public static class DemoDataSeeder
                 null, null, false, false, 0, "Dược sĩ", new DateTime(1999, 10, 8, 0, 0, 0, DateTimeKind.Utc),
                 address: "707 Nguyễn Oanh, Phường 17, Gò Vấp, TP.HCM",
                 SkipApplication: true),
+
+            Def("c2000001-0001-0001-0001-000000000011", "00000000-0000-0000-0000-000000000000",
+                "dan.test11@rhs.local", "Trần Quốc Phong", "079098000011", "0908000011",
+                "", PriorityGroupConstants.LowIncomeUrban, 0, 9_000_000m,
+                null, null, false, false, 0, "Kỹ sư phần mềm", new DateTime(1998, 5, 20, 0, 0, 0, DateTimeKind.Utc),
+                address: "808 Phạm Văn Đồng, Phường 1, Gò Vấp, TP.HCM",
+                SkipApplication: true),
         ];
     }
 
