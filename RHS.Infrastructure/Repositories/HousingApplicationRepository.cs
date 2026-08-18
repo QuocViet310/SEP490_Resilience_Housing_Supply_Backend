@@ -295,19 +295,7 @@ public class HousingApplicationRepository : IHousingApplicationRepository
     public async Task<PagedResult<HousingApplicationDashboardItemDto>> GetHousingDeveloperDashboardAsync(
         HousingApplicationDashboardQueryDto query)
     {
-        var allowedStatuses = new[]
-        {
-            ApplicationStatusConstants.Submitted,
-            ApplicationStatusConstants.Reviewing,
-            ApplicationStatusConstants.NeedMoreDocuments,
-            ApplicationStatusConstants.PendingSxdReview,
-            ApplicationStatusConstants.Approved,
-            ApplicationStatusConstants.ApprovedByTimeout,
-            ApplicationStatusConstants.ContractPending,
-            ApplicationStatusConstants.ContractSigned,
-            ApplicationStatusConstants.DepositPaid,
-            ApplicationStatusConstants.Rejected
-        };
+        var allowedStatuses = ApplicationStatusConstants.AllStatuses.ToArray();
 
         var baseQuery = _context.HousingApplications
             .AsNoTracking()

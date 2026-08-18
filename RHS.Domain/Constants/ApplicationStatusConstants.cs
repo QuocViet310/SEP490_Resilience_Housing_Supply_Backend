@@ -54,6 +54,9 @@ public static class ApplicationStatusConstants
     /// <summary>Chờ người dân ký hợp đồng nguyên tắc (đã tạo hợp đồng)</summary>
     public const string ContractPending = "CONTRACT_PENDING";
 
+    /// <summary>Đã trúng bốc thăm — chờ CĐT cấp/chọn căn cụ thể</summary>
+    public const string LotteryWon = "LOTTERY_WON";
+
     /// <summary>Đã trượt bốc thăm</summary>
     public const string LotteryLost = "LOTTERY_LOST";
 
@@ -70,6 +73,7 @@ public static class ApplicationStatusConstants
         Rejected,
         Canceled,
         Expired,
+        LotteryWon,
         DepositPending,
         DepositPaid,
         InstallmentInProgress,

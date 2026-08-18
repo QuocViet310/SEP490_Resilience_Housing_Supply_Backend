@@ -161,7 +161,6 @@ public class PdfReceiptService : IPdfReceiptService
                             columns.ConstantColumn(40);
                             columns.RelativeColumn(3);
                             columns.RelativeColumn(2);
-                            columns.RelativeColumn(2);
                         });
 
                         table.Header(header =>
@@ -169,7 +168,6 @@ public class PdfReceiptService : IPdfReceiptService
                             header.Cell().Background(Colors.Grey.Lighten2).Border(1).Padding(5).AlignCenter().Text("STT").Bold().FontSize(9);
                             header.Cell().Background(Colors.Grey.Lighten2).Border(1).Padding(5).AlignCenter().Text("Tên tệp tin").Bold().FontSize(9);
                             header.Cell().Background(Colors.Grey.Lighten2).Border(1).Padding(5).AlignCenter().Text("Loại tài liệu").Bold().FontSize(9);
-                            header.Cell().Background(Colors.Grey.Lighten2).Border(1).Padding(5).AlignCenter().Text("Trạng thái AI").Bold().FontSize(9);
                         });
 
                         if (application.Documents != null && application.Documents.Any())
@@ -180,20 +178,12 @@ public class PdfReceiptService : IPdfReceiptService
                                 table.Cell().Border(1).Padding(5).AlignCenter().Text(idx.ToString()).FontSize(9);
                                 table.Cell().Border(1).Padding(5).AlignLeft().Text(doc.FileName).FontSize(9);
                                 table.Cell().Border(1).Padding(5).AlignLeft().Text(doc.DocumentType).FontSize(9);
-
-                                var statusText = doc.VerificationStatus switch
-                                {
-                                    "VERIFIED" => "Đã xác minh (Khớp)",
-                                    "REJECTED" => "Từ chối (Không khớp)",
-                                    _ => "Chưa xác minh"
-                                };
-                                table.Cell().Border(1).Padding(5).AlignCenter().Text(statusText).FontSize(9);
                                 idx++;
                             }
                         }
                         else
                         {
-                            table.Cell().ColumnSpan(4).Border(1).Padding(5).AlignCenter().Text("Chưa có tài liệu đính kèm").Italic().FontSize(9);
+                            table.Cell().ColumnSpan(3).Border(1).Padding(5).AlignCenter().Text("Chưa có tài liệu đính kèm").Italic().FontSize(9);
                         }
                     });
                     col.Item().Height(10);

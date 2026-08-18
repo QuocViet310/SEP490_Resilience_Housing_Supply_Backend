@@ -487,7 +487,6 @@ public static class DemoDataSeeder
             AvailableUnits = units,
             HousingProjectStatusId = statusId,
             IsDeleted = false,
-            IsConfirmed = true,
             DecisionNumber = $"QĐ-DEMO-{id.ToString()[..8].ToUpperInvariant()}",
             ApprovalDate = now.AddDays(-60),
             ApplicationOpenDate = open,

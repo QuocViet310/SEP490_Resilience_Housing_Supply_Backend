@@ -13,12 +13,13 @@ public static class ProjectUnitSeatHelper
 {
     public static bool HoldsReservedUnit(string? applicationStatus) =>
         applicationStatus is
+            ApplicationStatusConstants.LotteryWon or
             ApplicationStatusConstants.DepositPending or
             ApplicationStatusConstants.ContractPending or
             ApplicationStatusConstants.ContractSigned;
 
     /// <summary>
-    /// Đồng bộ AvailableUnits = Count(AVAILABLE) − soft-hold (DEPOSIT_PENDING / CONTRACT_* chưa có ApartmentId).
+    /// Đồng bộ AvailableUnits = Count(AVAILABLE) − soft-hold (LOTTERY_WON / DEPOSIT_PENDING / CONTRACT_* chưa có ApartmentId).
     /// Đây là căn cứ chốt danh sách / bốc thăm khi dự án đã có dòng căn.
     /// Dùng ToList + đếm in-memory để phản ánh thay đổi đang track chưa SaveChanges.
     /// </summary>
@@ -49,7 +50,8 @@ public static class ProjectUnitSeatHelper
         // Hồ sơ đã chốt/trúng nhưng chưa gắn căn cụ thể vẫn giữ 1 suất
         var holdingApps = await db.HousingApplications
             .Where(a => a.ProjectId == projectId
-                        && (a.ApplicationStatus == ApplicationStatusConstants.DepositPending
+                        && (a.ApplicationStatus == ApplicationStatusConstants.LotteryWon
+                            || a.ApplicationStatus == ApplicationStatusConstants.DepositPending
                             || a.ApplicationStatus == ApplicationStatusConstants.ContractPending
                             || a.ApplicationStatus == ApplicationStatusConstants.ContractSigned))
             .ToListAsync(ct);

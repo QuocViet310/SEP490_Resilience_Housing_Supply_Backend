@@ -150,7 +150,6 @@ public class HousingProjectRepository : IHousingProjectRepository
             Status = x.HousingProjectStatus?.StatusName,
             DecisionNumber = x.DecisionNumber,
             ApprovalDate = x.ApprovalDate,
-            IsConfirmed = x.IsConfirmed,
             ApplicationOpenDate = x.ApplicationOpenDate,
             ApplicationCloseDate = x.ApplicationCloseDate,
             RejectReason = x.RejectReason,
@@ -250,6 +249,26 @@ public class HousingProjectRepository : IHousingProjectRepository
 
         // AvailableUnits = Count(AVAILABLE) − soft-hold
         await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_context, entity.Id);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdateStatusOnlyAsync(HousingProject entity)
+    {
+        var tracked = await _context.HousingProjects
+            .FirstOrDefaultAsync(x => x.Id == entity.Id);
+        if (tracked == null)
+        {
+            throw new InvalidOperationException($"Housing project with ID {entity.Id} not found.");
+        }
+
+        tracked.HousingProjectStatusId = entity.HousingProjectStatusId;
+        tracked.RejectReason = entity.RejectReason;
+        tracked.ApprovalDate = entity.ApprovalDate;
+        tracked.PublicAnnounceAt = entity.PublicAnnounceAt;
+        tracked.ApplicationOpenDate = entity.ApplicationOpenDate;
+        tracked.ApplicationCloseDate = entity.ApplicationCloseDate;
+        tracked.UpdatedAt = DateTime.UtcNow;
+
         await _context.SaveChangesAsync();
     }
 

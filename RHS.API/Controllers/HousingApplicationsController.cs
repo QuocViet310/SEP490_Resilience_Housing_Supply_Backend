@@ -741,8 +741,13 @@ public class HousingApplicationsController : ControllerBase
                 });
             }
 
+            var oldStatus = app.ApplicationStatus;
             app.ApartmentId = apartment.Id;
             app.SlotCode = apartment.UnitName;
+            if (app.ApplicationStatus == ApplicationStatusConstants.LotteryWon)
+            {
+                app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
+            }
             app.UpdatedAt = DateTime.UtcNow;
             apartment.Status = ApartmentStatusConstants.Assigned;
 
@@ -753,7 +758,7 @@ public class HousingApplicationsController : ControllerBase
             {
                 HistoryId     = Guid.NewGuid(),
                 ApplicationId = id,
-                OldStatus     = app.ApplicationStatus,
+                OldStatus     = oldStatus,
                 NewStatus     = app.ApplicationStatus,
                 Action        = ReviewActionConstants.AssignApartment,
                 Note          = $"Cấp căn: {apartment.UnitName} {apartment.Area}m² - {apartment.Price:N0} VND",

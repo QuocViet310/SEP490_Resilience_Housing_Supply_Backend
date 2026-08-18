@@ -717,26 +717,8 @@ public class LotteryService : ILotteryService
                 bool isPriority = !string.IsNullOrWhiteSpace(app.PriorityGroup);
                 resultStatus = isPriority ? LotteryResultConstants.PriorityWon : LotteryResultConstants.Won;
 
-                var availableApts = await _db.Apartments
-                    .Where(a => a.ProjectId == projectId && a.Status == ApartmentStatusConstants.Available)
-                    .ToListAsync(ct);
-
-                if (availableApts.Count > 0)
-                {
-                    var selectedApt = availableApts[Random.Shared.Next(availableApts.Count)];
-                    selectedApt.Status = ApartmentStatusConstants.Assigned;
-                    app.ApartmentId = selectedApt.Id;
-                    app.SlotCode = selectedApt.UnitName;
-                    slotCode = selectedApt.UnitName;
-                }
-
                 MarkWonAwaitingApartment(app, resultStatus, actorId, oldStatus, now,
-                    "Trúng bốc thăm live (CĐT bốc lượt).");
-
-                if (!string.IsNullOrEmpty(slotCode))
-                {
-                    app.SlotCode = slotCode;
-                }
+                    "Trúng bốc thăm live (CĐT bốc lượt). Chờ CĐT cấp căn sau.");
 
                 await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
             }
@@ -1337,7 +1319,7 @@ public class LotteryService : ILotteryService
     {
         app.LotteryResult = resultStatus;
         app.SlotCode = null;
-        app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
+        app.ApplicationStatus = ApplicationStatusConstants.LotteryWon;
         app.UpdatedAt = now;
 
         _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
@@ -1347,7 +1329,7 @@ public class LotteryService : ILotteryService
             ChangedBy = changedBy,
             Action = ReviewActionConstants.LotteryWon,
             OldStatus = oldStatus,
-            NewStatus = ApplicationStatusConstants.DepositPending,
+            NewStatus = ApplicationStatusConstants.LotteryWon,
             Note = note,
             ChangedAt = now
         });

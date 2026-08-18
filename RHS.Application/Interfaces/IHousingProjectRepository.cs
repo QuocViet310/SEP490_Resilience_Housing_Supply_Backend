@@ -16,6 +16,12 @@ public interface IHousingProjectRepository
 
     Task UpdateAsync(HousingProject entity);
 
+    /// <summary>
+    /// Chỉ ghi các cột trạng thái / công bố (PENDING→UPCOMING, lifecycle).
+    /// Không đụng ProjectImages, Apartments, PaymentMilestones.
+    /// </summary>
+    Task UpdateStatusOnlyAsync(HousingProject entity);
+
     Task SoftDeleteAsync(HousingProject entity);
 
     Task<bool> ExistsAsync(Guid id);
