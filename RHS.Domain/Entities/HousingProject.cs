@@ -70,7 +70,6 @@ public class HousingProject
     // New Legal and Developer properties
     public string? DecisionNumber { get; set; }
     public DateTime? ApprovalDate { get; set; }
-    public bool IsConfirmed { get; set; }
     public DateTime? ApplicationOpenDate { get; set; }
     public DateTime? ApplicationCloseDate { get; set; }
     public string? RejectReason { get; set; }

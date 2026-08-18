@@ -108,9 +108,6 @@ public class HousingProjectConfiguration : IEntityTypeConfiguration<HousingProje
         builder.Property(x => x.ApprovalDate)
             .IsRequired(false);
 
-        builder.Property(x => x.IsConfirmed)
-            .HasDefaultValue(false);
-
         builder.Property(x => x.ApplicationOpenDate)
             .IsRequired(false);
 

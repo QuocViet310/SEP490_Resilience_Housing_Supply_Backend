@@ -706,11 +706,6 @@ namespace RHS.Infrastructure.Migrations
                     b.Property<Guid>("HousingProjectStatusId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<bool>("IsConfirmed")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
-
                     b.Property<bool>("IsDeleted")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")

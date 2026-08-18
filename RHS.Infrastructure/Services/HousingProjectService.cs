@@ -99,7 +99,6 @@ public class HousingProjectService : IHousingProjectService
             // New legal & developer fields — duyệt/công bố chỉ SXD set khi APPROVE
             DecisionNumber = request.DecisionNumber,
             ApprovalDate = null,
-            IsConfirmed = false,
             ApplicationOpenDate = request.ApplicationOpenDate,
             ApplicationCloseDate = request.ApplicationCloseDate,
             PublicAnnounceAt = null,
@@ -284,7 +283,6 @@ public class HousingProjectService : IHousingProjectService
         // Update legal fields
         existingProject.DecisionNumber = request.DecisionNumber;
         existingProject.ApprovalDate = request.ApprovalDate;
-        existingProject.IsConfirmed = request.IsConfirmed;
         existingProject.ApplicationOpenDate = request.ApplicationOpenDate;
         existingProject.ApplicationCloseDate = request.ApplicationCloseDate;
 
@@ -505,12 +503,6 @@ public class HousingProjectService : IHousingProjectService
             throw new ArgumentException("AvailableUnits must be greater than or equal to 0.");
         }
 
-        // IsConfirmed must be true
-        if (request.IsConfirmed != true)
-        {
-            throw new ArgumentException("IsConfirmed must be true.");
-        }
-
         // DecisionNumber cannot be blank
         if (string.IsNullOrWhiteSpace(request.DecisionNumber))
         {
@@ -551,7 +543,6 @@ public class HousingProjectService : IHousingProjectService
             Status = project.HousingProjectStatus?.StatusName,
             DecisionNumber = project.DecisionNumber,
             ApprovalDate = project.ApprovalDate,
-            IsConfirmed = project.IsConfirmed,
             ApplicationOpenDate = project.ApplicationOpenDate,
             ApplicationCloseDate = project.ApplicationCloseDate,
             RejectReason = project.RejectReason,
@@ -675,7 +666,6 @@ public class HousingProjectService : IHousingProjectService
             project.RejectReason = null;
             project.ApprovalDate = DateTime.UtcNow;
             project.PublicAnnounceAt ??= DateTime.UtcNow;
-            project.IsConfirmed = true;
         }
         else if (action.Equals("REJECT", StringComparison.OrdinalIgnoreCase))
         {
@@ -761,7 +751,6 @@ public class HousingProjectService : IHousingProjectService
 
         if (normalized == "OPEN")
         {
-            project.IsConfirmed = true;
             project.PublicAnnounceAt ??= now;
             // Demo/vận hành: nếu chưa có ngày mở ĐK thì ghi nhận thời điểm mở
             project.ApplicationOpenDate ??= now;

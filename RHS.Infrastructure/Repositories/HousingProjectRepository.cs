@@ -150,7 +150,6 @@ public class HousingProjectRepository : IHousingProjectRepository
             Status = x.HousingProjectStatus?.StatusName,
             DecisionNumber = x.DecisionNumber,
             ApprovalDate = x.ApprovalDate,
-            IsConfirmed = x.IsConfirmed,
             ApplicationOpenDate = x.ApplicationOpenDate,
             ApplicationCloseDate = x.ApplicationCloseDate,
             RejectReason = x.RejectReason,
@@ -266,7 +265,6 @@ public class HousingProjectRepository : IHousingProjectRepository
         tracked.RejectReason = entity.RejectReason;
         tracked.ApprovalDate = entity.ApprovalDate;
         tracked.PublicAnnounceAt = entity.PublicAnnounceAt;
-        tracked.IsConfirmed = entity.IsConfirmed;
         tracked.ApplicationOpenDate = entity.ApplicationOpenDate;
         tracked.ApplicationCloseDate = entity.ApplicationCloseDate;
         tracked.UpdatedAt = DateTime.UtcNow;
