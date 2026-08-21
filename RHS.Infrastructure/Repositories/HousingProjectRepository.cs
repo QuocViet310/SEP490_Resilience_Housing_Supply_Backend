@@ -194,6 +194,7 @@ public class HousingProjectRepository : IHousingProjectRepository
             .Include(x => x.HousingProjectStatus)
             .Include(x => x.ProjectImages)
             .Include(x => x.Apartments)
+                .ThenInclude(a => a.ApartmentType)
             .Include(x => x.PaymentMilestones)
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id);

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using RHS.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using RHS.Infrastructure.Data;
 namespace RHS.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260821141608_AddApartmentTypeEntity")]
+    partial class AddApartmentTypeEntity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -585,9 +588,6 @@ namespace RHS.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<Guid?>("DesiredApartmentTypeId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<DateTime?>("FinalDecisionDate")
                         .HasColumnType("datetime2");
 
@@ -684,8 +684,6 @@ namespace RHS.Infrastructure.Migrations
                     b.HasIndex("ApplicationStatus");
 
                     b.HasIndex("CitizenId");
-
-                    b.HasIndex("DesiredApartmentTypeId");
 
                     b.HasIndex("OfficerId");
 
@@ -1761,11 +1759,6 @@ namespace RHS.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("RHS.Domain.Entities.ApartmentType", "DesiredApartmentType")
-                        .WithMany()
-                        .HasForeignKey("DesiredApartmentTypeId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("RHS.Domain.Entities.User", "Officer")
                         .WithMany("AssignedApplications")
                         .HasForeignKey("OfficerId")
@@ -1780,8 +1773,6 @@ namespace RHS.Infrastructure.Migrations
                     b.Navigation("Apartment");
 
                     b.Navigation("Applicant");
-
-                    b.Navigation("DesiredApartmentType");
 
                     b.Navigation("HousingProject");
 

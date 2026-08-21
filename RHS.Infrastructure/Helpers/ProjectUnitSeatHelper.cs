@@ -72,6 +72,48 @@ public static class ProjectUnitSeatHelper
     }
 
     /// <summary>
+    /// Tính số căn khả dụng cho một loại căn hộ cụ thể trong dự án (AVAILABLE − soft-holds của loại căn đó).
+    /// </summary>
+    public static async Task<int> GetAvailableUnitsByTypeAsync(
+        AppDbContext db,
+        Guid projectId,
+        Guid? desiredApartmentTypeId,
+        CancellationToken ct = default)
+    {
+        var apartments = await db.Apartments
+            .Include(a => a.ApartmentType)
+            .Where(a => a.ProjectId == projectId)
+            .ToListAsync(ct);
+
+        if (apartments.Count == 0)
+        {
+            var project = await db.HousingProjects
+                .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, ct);
+            return project?.AvailableUnits ?? 0;
+        }
+
+        // Đếm căn AVAILABLE của loại này (nếu desiredApartmentTypeId == null thì đếm tất cả)
+        var availableAptsForType = apartments.Count(a =>
+            (desiredApartmentTypeId == null || a.ApartmentTypeId == desiredApartmentTypeId) &&
+            string.Equals(a.Status, ApartmentStatusConstants.Available, StringComparison.OrdinalIgnoreCase));
+
+        // Đếm hồ sơ soft-hold chưa gán căn cụ thể có DesiredApartmentTypeId trùng loại
+        var holdingApps = await db.HousingApplications
+            .Where(a => a.ProjectId == projectId
+                        && (a.ApplicationStatus == ApplicationStatusConstants.LotteryWon
+                            || a.ApplicationStatus == ApplicationStatusConstants.DepositPending
+                            || a.ApplicationStatus == ApplicationStatusConstants.ContractPending
+                            || a.ApplicationStatus == ApplicationStatusConstants.ContractSigned))
+            .ToListAsync(ct);
+
+        var softHoldsForType = holdingApps.Count(a =>
+            a.ApartmentId == null &&
+            (desiredApartmentTypeId == null || a.DesiredApartmentTypeId == desiredApartmentTypeId));
+
+        return Math.Max(0, availableAptsForType - softHoldsForType);
+    }
+
+    /// <summary>
     /// Hoàn căn đã cấp (nếu có) về AVAILABLE rồi sync lại AvailableUnits.
     /// </summary>
     public static async Task<bool> TryReleaseReservedUnitAsync(

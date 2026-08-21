@@ -39,6 +39,8 @@ public class ApplicationDetailResponseDto
     public string? LotteryResult { get; set; }
     public Guid? ApartmentId { get; set; }
     public string? ApartmentUnitName { get; set; }
+    public string? ApartmentType { get; set; }
+    public string? ApartmentTypeLabel { get; set; }
     public double? ApartmentArea { get; set; }
     public decimal? ApartmentPrice { get; set; }
     public string? ApartmentStatus { get; set; }
@@ -47,6 +49,9 @@ public class ApplicationDetailResponseDto
     public decimal? AverageHousingAreaPerPerson { get; set; }
     public bool IsViolation { get; set; }
     public string? ViolationReason { get; set; }
+    public Guid? DesiredApartmentTypeId { get; set; }
+    public string? DesiredApartmentType { get; set; }
+    public string? DesiredApartmentTypeLabel { get; set; }
 
     /// <summary>Kết quả thẩm định điều kiện Đ29–30 gần nhất.</summary>
     public EligibilityResultDto? Eligibility { get; set; }

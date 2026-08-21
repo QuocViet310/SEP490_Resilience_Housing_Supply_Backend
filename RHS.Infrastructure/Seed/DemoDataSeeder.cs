@@ -27,13 +27,49 @@ public static class DemoDataSeeder
     /// <summary>Marker trong Description để nhận diện dự án seed.</summary>
     private const string SeedMarker = "[DEMO_SEED]";
 
+    public static readonly Guid OneBedroomApartmentTypeId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    public static readonly Guid TwoBedroomApartmentTypeId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
     public static async Task EnsureSeededAsync(AppDbContext db, ILogger? logger = null, CancellationToken ct = default)
     {
+        await EnsureApartmentTypesAsync(db, logger, ct);
         await EnsureProjectStatusesAsync(db, logger, ct);
         var developer = await EnsureDemoStaffAsync(db, logger, ct);
         await EnsureDemoProjectsAsync(db, developer.Id, logger, ct);
         await RepairOrphanProjectDeveloperIdsAsync(db, developer.Id, logger, ct);
         await EnsureDemoApplicantsAndApplicationsAsync(db, logger, ct);
+    }
+
+    private static async Task EnsureApartmentTypesAsync(AppDbContext db, ILogger? logger, CancellationToken ct)
+    {
+        var existingCodes = await db.ApartmentTypes
+            .AsNoTracking()
+            .Select(t => t.TypeCode)
+            .ToListAsync(ct);
+
+        var required = new (Guid Id, string Code, string Name, string Desc)[]
+        {
+            (OneBedroomApartmentTypeId, ApartmentTypeConstants.OneBedroom, "Căn hộ 1 phòng ngủ", "Căn hộ tiêu chuẩn 1 phòng ngủ cho cá nhân/vợ chồng mới cưới"),
+            (TwoBedroomApartmentTypeId, ApartmentTypeConstants.TwoBedroom, "Căn hộ 2 phòng ngủ", "Căn hộ 2 phòng ngủ cho hộ gia đình")
+        };
+
+        var toAdd = required
+            .Where(r => !existingCodes.Contains(r.Code))
+            .Select(r => new ApartmentType
+            {
+                Id = r.Id,
+                TypeCode = r.Code,
+                TypeName = r.Name,
+                Description = r.Desc,
+                CreatedAt = DateTime.UtcNow
+            })
+            .ToList();
+
+        if (toAdd.Count == 0) return;
+
+        db.ApartmentTypes.AddRange(toAdd);
+        await db.SaveChangesAsync(ct);
+        logger?.LogInformation("Seeded {Count} ApartmentTypes.", toAdd.Count);
     }
 
     private static async Task EnsureProjectStatusesAsync(AppDbContext db, ILogger? logger, CancellationToken ct)

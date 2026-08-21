@@ -31,6 +31,11 @@ public class Apartment
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>Khóa ngoại liên kết tới loại căn hộ (ApartmentType)</summary>
+    public Guid? ApartmentTypeId { get; set; }
+
+    public ApartmentType? ApartmentType { get; set; }
+
     public HousingProject HousingProject { get; set; } = null!;
 
     public ICollection<HousingApplication> HousingApplications { get; set; }

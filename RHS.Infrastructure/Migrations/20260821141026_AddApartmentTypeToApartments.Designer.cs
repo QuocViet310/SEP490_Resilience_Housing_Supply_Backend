@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using RHS.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using RHS.Infrastructure.Data;
 namespace RHS.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260821141026_AddApartmentTypeToApartments")]
+    partial class AddApartmentTypeToApartments
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -211,8 +214,12 @@ namespace RHS.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("ApartmentTypeId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<string>("ApartmentType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("TWO_BEDROOM");
 
                     b.Property<double>("Area")
                         .HasColumnType("float");
@@ -253,38 +260,11 @@ namespace RHS.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ApartmentTypeId");
-
                     b.HasIndex("ProjectId");
 
                     b.HasIndex("ProjectId", "Status");
 
                     b.ToTable("Apartments", (string)null);
-                });
-
-            modelBuilder.Entity("RHS.Domain.Entities.ApartmentType", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("TypeCode")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("TypeName")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("ApartmentTypes");
                 });
 
             modelBuilder.Entity("RHS.Domain.Entities.ApplicationDocument", b =>
@@ -585,9 +565,6 @@ namespace RHS.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<Guid?>("DesiredApartmentTypeId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<DateTime?>("FinalDecisionDate")
                         .HasColumnType("datetime2");
 
@@ -684,8 +661,6 @@ namespace RHS.Infrastructure.Migrations
                     b.HasIndex("ApplicationStatus");
 
                     b.HasIndex("CitizenId");
-
-                    b.HasIndex("DesiredApartmentTypeId");
 
                     b.HasIndex("OfficerId");
 
@@ -1644,18 +1619,11 @@ namespace RHS.Infrastructure.Migrations
 
             modelBuilder.Entity("RHS.Domain.Entities.Apartment", b =>
                 {
-                    b.HasOne("RHS.Domain.Entities.ApartmentType", "ApartmentType")
-                        .WithMany("Apartments")
-                        .HasForeignKey("ApartmentTypeId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("RHS.Domain.Entities.HousingProject", "HousingProject")
                         .WithMany("Apartments")
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("ApartmentType");
 
                     b.Navigation("HousingProject");
                 });
@@ -1761,11 +1729,6 @@ namespace RHS.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("RHS.Domain.Entities.ApartmentType", "DesiredApartmentType")
-                        .WithMany()
-                        .HasForeignKey("DesiredApartmentTypeId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("RHS.Domain.Entities.User", "Officer")
                         .WithMany("AssignedApplications")
                         .HasForeignKey("OfficerId")
@@ -1780,8 +1743,6 @@ namespace RHS.Infrastructure.Migrations
                     b.Navigation("Apartment");
 
                     b.Navigation("Applicant");
-
-                    b.Navigation("DesiredApartmentType");
 
                     b.Navigation("HousingProject");
 
@@ -2043,11 +2004,6 @@ namespace RHS.Infrastructure.Migrations
             modelBuilder.Entity("RHS.Domain.Entities.Apartment", b =>
                 {
                     b.Navigation("HousingApplications");
-                });
-
-            modelBuilder.Entity("RHS.Domain.Entities.ApartmentType", b =>
-                {
-                    b.Navigation("Apartments");
                 });
 
             modelBuilder.Entity("RHS.Domain.Entities.ApplicationDocument", b =>

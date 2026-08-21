@@ -92,6 +92,9 @@ public class HousingApplication
     /// <summary>Loại căn hộ được phân sau bốc thăm trúng</summary>
     public Guid? ApartmentId { get; set; }
 
+    /// <summary>Loại căn hộ đăng ký mong muốn mua (1 phòng ngủ / 2 phòng ngủ)</summary>
+    public Guid? DesiredApartmentTypeId { get; set; }
+
     // ─────────────────────────────────────────────────────────────
     // Navigation properties
     // ─────────────────────────────────────────────────────────────
@@ -103,6 +106,8 @@ public class HousingApplication
     public HousingProject HousingProject { get; set; } = null!;
 
     public Apartment? Apartment { get; set; }
+
+    public ApartmentType? DesiredApartmentType { get; set; }
 
     public ICollection<ApplicationDocument> Documents { get; set; }
         = new List<ApplicationDocument>();

@@ -30,4 +30,7 @@ public class ApplicationSummaryResponseDto
     public int DocumentCount { get; set; }
     public bool IsViolation { get; set; }
     public string? ViolationReason { get; set; }
+    public Guid? DesiredApartmentTypeId { get; set; }
+    public string? DesiredApartmentType { get; set; }
+    public string? DesiredApartmentTypeLabel { get; set; }
 }

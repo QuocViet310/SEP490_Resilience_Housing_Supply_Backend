@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using RHS.Domain.Constants;
 
 namespace RHS.API.Controllers;
@@ -81,6 +82,33 @@ public class LookupController : ControllerBase
                     .TryGetValue(code, out var dt2) ? DocumentTypeConstants.GetLabel(dt2) : null
             })
             .ToList();
+
+        return Ok(items);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // GET /api/lookup/apartment-types
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lấy danh sách tất cả loại căn hộ trong CSDL (1 phòng ngủ, 2 phòng ngủ...).
+    /// FE dùng để render dropdown chọn loại căn hộ cho CĐT khi tạo/sửa dự án.
+    /// </summary>
+    [HttpGet("apartment-types")]
+    public async Task<IActionResult> GetApartmentTypes(
+        [FromServices] RHS.Infrastructure.Data.AppDbContext dbContext)
+    {
+        var items = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+            dbContext.ApartmentTypes
+                .AsNoTracking()
+                .OrderBy(t => t.TypeCode)
+                .Select(t => new
+                {
+                    id = t.Id,
+                    typeCode = t.TypeCode,
+                    typeName = t.TypeName,
+                    description = t.Description
+                }));
 
         return Ok(items);
     }

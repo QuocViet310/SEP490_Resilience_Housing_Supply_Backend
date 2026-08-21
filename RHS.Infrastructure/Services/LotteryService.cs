@@ -320,9 +320,12 @@ public class LotteryService : ILotteryService
         if (units > participants.Count)
             units = participants.Count;
 
+        var seed = Environment.TickCount;
+        var rng = new Random(seed);
+
         var priorityApps = participants
             .Where(a => !string.IsNullOrWhiteSpace(a.PriorityGroup))
-            .OrderBy(a => a.SubmittedAt)
+            .OrderBy(_ => rng.Next())
             .ToList();
 
         var nonPriority = participants
@@ -374,8 +377,6 @@ public class LotteryService : ILotteryService
         }
 
         var remainingUnits = units - priorityWinners.Count;
-        var seed = Environment.TickCount;
-        var rng = new Random(seed);
 
         var shuffled = nonPriority.OrderBy(_ => rng.Next()).ToList();
         var randomWinners = shuffled.Take(remainingUnits).ToList();
@@ -583,6 +584,7 @@ public class LotteryService : ILotteryService
         };
 
         var projectApartments = await _db.Apartments
+            .Include(a => a.ApartmentType)
             .AsNoTracking()
             .Where(a => a.ProjectId == projectId)
             .ToListAsync(ct);
@@ -592,21 +594,27 @@ public class LotteryService : ILotteryService
         if (projectApartments.Count > 0)
         {
             var grouped = projectApartments
-                .GroupBy(a => !string.IsNullOrWhiteSpace(a.Description)
-                    ? a.Description.Trim()
-                    : (a.Area >= 60 ? "Căn 2 phòng ngủ (2PN)" : "Căn 1 phòng ngủ (1PN)"))
+                .GroupBy(a => a.ApartmentTypeId)
                 .ToList();
 
             foreach (var group in grouped)
             {
+                var typeId = group.Key;
+                var sampleApt = group.First();
+                string categoryName = sampleApt.ApartmentType?.TypeName
+                    ?? (!string.IsNullOrWhiteSpace(sampleApt.Description) ? sampleApt.Description.Trim() : "Loại căn");
+                string? typeCode = sampleApt.ApartmentType?.TypeCode;
+
                 int totalInGroup = group.Count();
-                int remainingInGroup = group.Count(a => a.Status == ApartmentStatusConstants.Available);
-                int assignedInGroup = totalInGroup - remainingInGroup;
+                int remainingInGroup = await ProjectUnitSeatHelper.GetAvailableUnitsByTypeAsync(_db, projectId, typeId, ct);
+                int assignedInGroup = Math.Max(0, totalInGroup - remainingInGroup);
                 double pct = totalInGroup > 0 ? Math.Round((double)remainingInGroup / totalInGroup * 100.0, 1) : 0.0;
 
                 apartmentFundStats.Add(new ApartmentFundQuotaStatDto
                 {
-                    CategoryName = group.Key,
+                    ApartmentTypeId = typeId,
+                    ApartmentTypeCode = typeCode,
+                    CategoryName = categoryName,
                     TotalUnits = totalInGroup,
                     RemainingUnits = remainingInGroup,
                     AssignedUnits = assignedInGroup,
@@ -669,39 +677,83 @@ public class LotteryService : ILotteryService
 
             RequireSxdOnline(projectId, "bốc thăm");
 
-            var priorityUndrawn = await _db.HousingApplications
+            var undrawnApps = await _db.HousingApplications
                 .Include(a => a.Applicant)
+                .Include(a => a.DesiredApartmentType)
                 .Include(a => a.PrincipleAgreement)
                 .Where(a => a.ProjectId == projectId
                             && BatchEligibleStatuses.Contains(a.ApplicationStatus)
                             && !a.IsViolation
-                            && !string.IsNullOrWhiteSpace(a.PriorityGroup)
                             && (a.LotteryResult == null || a.LotteryResult == LotteryResultConstants.Pending))
                 .OrderBy(a => a.SubmittedAt)
-                .FirstOrDefaultAsync(ct);
+                .ToListAsync(ct);
 
-            HousingApplication? app = priorityUndrawn;
+            if (undrawnApps.Count == 0)
+                throw new InvalidOperationException("Tất cả hồ sơ đủ điều kiện đều đã hoàn thành bốc thăm.");
 
-            if (app == null)
+            // 1. Tìm TẤT CẢ ứng viên ưu tiên có loại căn mong muốn còn suất
+            var validPriorityApps = new List<HousingApplication>();
+            foreach (var a in undrawnApps.Where(a => !string.IsNullOrWhiteSpace(a.PriorityGroup)))
             {
-                var nonPriorityUndrawn = await _db.HousingApplications
-                    .Include(a => a.Applicant)
-                    .Include(a => a.PrincipleAgreement)
-                    .Where(a => a.ProjectId == projectId
-                                && BatchEligibleStatuses.Contains(a.ApplicationStatus)
-                                && !a.IsViolation
-                                && string.IsNullOrWhiteSpace(a.PriorityGroup)
-                                && (a.LotteryResult == null || a.LotteryResult == LotteryResultConstants.Pending))
-                    .ToListAsync(ct);
-
-                if (nonPriorityUndrawn.Count > 0)
+                int availForType = await ProjectUnitSeatHelper.GetAvailableUnitsByTypeAsync(_db, projectId, a.DesiredApartmentTypeId, ct);
+                if (availForType > 0)
                 {
-                    app = nonPriorityUndrawn[Random.Shared.Next(nonPriorityUndrawn.Count)];
+                    validPriorityApps.Add(a);
                 }
             }
 
+            HousingApplication? app = null;
+            if (validPriorityApps.Count > 0)
+            {
+                // Chọn NGẪU NHIÊN 1 ứng viên trong danh sách ưu tiên còn loại căn
+                app = validPriorityApps[Random.Shared.Next(validPriorityApps.Count)];
+            }
+            else
+            {
+                // 2. Nếu không có ứng viên ưu tiên còn loại căn khả dụng -> Tìm TẤT CẢ ứng viên thường có loại căn mong muốn còn suất
+                var validNonPriority = new List<HousingApplication>();
+                foreach (var a in undrawnApps.Where(a => string.IsNullOrWhiteSpace(a.PriorityGroup)))
+                {
+                    int availForType = await ProjectUnitSeatHelper.GetAvailableUnitsByTypeAsync(_db, projectId, a.DesiredApartmentTypeId, ct);
+                    if (availForType > 0)
+                    {
+                        validNonPriority.Add(a);
+                    }
+                }
+
+                if (validNonPriority.Count > 0)
+                {
+                    // Chọn NGẪU NHIÊN 1 ứng viên trong danh sách thường còn loại căn
+                    app = validNonPriority[Random.Shared.Next(validNonPriority.Count)];
+                }
+            }
+
+            // Nếu không còn ứng viên nào có loại căn mong muốn còn suất -> Đánh dấu các ứng viên còn lại trượt do hết loại căn
             if (app == null)
-                throw new InvalidOperationException("Tất cả hồ sơ đủ điều kiện đều đã hoàn thành bốc thăm.");
+            {
+                var nowExhausted = DateTime.UtcNow;
+                foreach (var remainingApp in undrawnApps)
+                {
+                    remainingApp.LotteryResult = LotteryResultConstants.Lost;
+                    remainingApp.ApplicationStatus = ApplicationStatusConstants.LotteryLost;
+                    remainingApp.UpdatedAt = nowExhausted;
+
+                    _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+                    {
+                        HistoryId = Guid.NewGuid(),
+                        ApplicationId = remainingApp.ApplicationId,
+                        ChangedBy = actorId,
+                        Action = ReviewActionConstants.LotteryLost,
+                        OldStatus = remainingApp.ApplicationStatus,
+                        NewStatus = ApplicationStatusConstants.LotteryLost,
+                        Note = "Trượt bốc thăm (loại căn hộ đăng ký đã hết suất).",
+                        ChangedAt = nowExhausted
+                    });
+                }
+
+                await _db.SaveChangesAsync(ct);
+                throw new InvalidOperationException("Loại căn hộ mà các hồ sơ còn lại đăng ký đều đã hết suất bốc thăm.");
+            }
 
             var applicantId = app.ApplicantId;
             string resultStatus;
@@ -709,22 +761,38 @@ public class LotteryService : ILotteryService
             var now = DateTime.UtcNow;
             var oldStatus = app.ApplicationStatus;
 
-            var remainingBefore = await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(
-                _db, projectId, _logger, ct);
+            int remainingForTypeBefore = await ProjectUnitSeatHelper.GetAvailableUnitsByTypeAsync(_db, projectId, app.DesiredApartmentTypeId, ct);
+            var remainingTotalBefore = await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
 
-            if (remainingBefore > 0)
+            if (remainingForTypeBefore > 0 && remainingTotalBefore > 0)
             {
                 bool isPriority = !string.IsNullOrWhiteSpace(app.PriorityGroup);
                 resultStatus = isPriority ? LotteryResultConstants.PriorityWon : LotteryResultConstants.Won;
 
+                string typeName = app.DesiredApartmentType?.TypeName ?? "loại căn đã chọn";
                 MarkWonAwaitingApartment(app, resultStatus, actorId, oldStatus, now,
-                    "Trúng bốc thăm live (CĐT bốc lượt). Chờ CĐT cấp căn sau.");
+                    $"Trúng bốc thăm live ({typeName}). Chờ CĐT cấp căn sau.");
 
                 await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
             }
             else
             {
-                throw new InvalidOperationException("Đã bốc hết tổng số căn hộ mở phân bổ cho phiên bốc thăm này. Tất cả các căn đều đã được bốc trúng.");
+                resultStatus = LotteryResultConstants.Lost;
+                app.LotteryResult = resultStatus;
+                app.ApplicationStatus = ApplicationStatusConstants.LotteryLost;
+                app.UpdatedAt = now;
+
+                _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+                {
+                    HistoryId = Guid.NewGuid(),
+                    ApplicationId = app.ApplicationId,
+                    ChangedBy = actorId,
+                    Action = ReviewActionConstants.LotteryLost,
+                    OldStatus = oldStatus,
+                    NewStatus = ApplicationStatusConstants.LotteryLost,
+                    Note = "Trượt bốc thăm live (loại căn hộ đăng ký đã hết suất).",
+                    ChangedAt = now
+                });
             }
 
             await _db.SaveChangesAsync(ct);
@@ -816,6 +884,7 @@ public class LotteryService : ILotteryService
 
             var app = await _db.HousingApplications
                 .Include(a => a.Applicant)
+                .Include(a => a.DesiredApartmentType)
                 .Include(a => a.PrincipleAgreement)
                 .FirstOrDefaultAsync(a => a.ProjectId == projectId
                                           && a.ApplicantId == applicantId
@@ -833,17 +902,17 @@ public class LotteryService : ILotteryService
             var now = DateTime.UtcNow;
             var oldStatus = app.ApplicationStatus;
 
-            // Căn cứ = đếm căn AVAILABLE − soft-hold (không AvailableUnits-- tay)
-            var remainingBefore = await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(
-                _db, projectId, _logger, ct);
+            int remainingForTypeBefore = await ProjectUnitSeatHelper.GetAvailableUnitsByTypeAsync(_db, projectId, app.DesiredApartmentTypeId, ct);
+            var remainingTotalBefore = await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
 
-            if (remainingBefore > 0)
+            if (remainingForTypeBefore > 0 && remainingTotalBefore > 0)
             {
                 bool isPriority = !string.IsNullOrWhiteSpace(app.PriorityGroup);
                 resultStatus = isPriority ? LotteryResultConstants.PriorityWon : LotteryResultConstants.Won;
 
+                string typeName = app.DesiredApartmentType?.TypeName ?? "loại căn đã chọn";
                 MarkWonAwaitingApartment(app, resultStatus, applicantId, oldStatus, now,
-                    "Trúng bốc thăm live. Chờ Chủ đầu tư chọn căn cụ thể trước khi ký HĐ.");
+                    $"Trúng bốc thăm live ({typeName}). Chờ Chủ đầu tư chọn căn cụ thể trước khi ký HĐ.");
 
                 await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
             }
@@ -862,7 +931,7 @@ public class LotteryService : ILotteryService
                     Action = ReviewActionConstants.LotteryLost,
                     OldStatus = oldStatus,
                     NewStatus = ApplicationStatusConstants.LotteryLost,
-                    Note = "Trượt bốc thăm live (hết suất).",
+                    Note = "Trượt bốc thăm live (Loại căn hộ đã chọn đã hết suất).",
                     ChangedAt = now
                 });
             }

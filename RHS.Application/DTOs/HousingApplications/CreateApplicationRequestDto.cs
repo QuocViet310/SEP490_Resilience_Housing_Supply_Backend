@@ -82,4 +82,10 @@ public class CreateApplicationRequestDto
     /// <summary>Diện tích nhà ở bình quân đầu người (m²) — bắt buộc khi SMALL_HOUSE</summary>
     [Range(0, 1000, ErrorMessage = "Diện tích bình quân không hợp lệ.")]
     public decimal? AverageHousingAreaPerPerson { get; set; }
+
+    /// <summary>ID của Loại căn hộ mong muốn mua (ApartmentType Entity)</summary>
+    public Guid? DesiredApartmentTypeId { get; set; }
+
+    /// <summary>Mã loại căn hộ mong muốn mua: ONE_BEDROOM (1 phòng ngủ) hoặc TWO_BEDROOM (2 phòng ngủ)</summary>
+    public string? DesiredApartmentType { get; set; }
 }

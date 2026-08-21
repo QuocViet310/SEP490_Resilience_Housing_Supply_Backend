@@ -48,6 +48,7 @@ public class AppDbContext : DbContext
     public DbSet<PrincipleAgreement> PrincipleAgreements { get; set; }
     public DbSet<LotteryDraw> LotteryDraws { get; set; }
     public DbSet<Apartment> Apartments { get; set; }
+    public DbSet<ApartmentType> ApartmentTypes { get; set; }
     public DbSet<PaymentMilestone> PaymentMilestones { get; set; }
     public DbSet<PaymentInstallment> PaymentInstallments { get; set; }
     public DbSet<HouseholdMember> HouseholdMembers { get; set; }

@@ -93,6 +93,8 @@ public class HousingApplicationRepository : IHousingApplicationRepository
                 .ThenInclude(h => h.ChangedByUser)
             .Include(x => x.HouseholdMembers)
             .Include(x => x.Apartment)
+                .ThenInclude(a => a.ApartmentType)
+            .Include(x => x.DesiredApartmentType)
             .FirstOrDefaultAsync(x => x.ApplicationId == applicationId);
     }
 

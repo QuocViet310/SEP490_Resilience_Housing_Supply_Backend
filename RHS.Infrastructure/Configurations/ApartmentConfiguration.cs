@@ -39,6 +39,11 @@ public class ApartmentConfiguration : IEntityTypeConfiguration<Apartment>
             .HasForeignKey(x => x.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.HasOne(x => x.ApartmentType)
+            .WithMany(t => t.Apartments)
+            .HasForeignKey(x => x.ApartmentTypeId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasIndex(x => x.ProjectId);
         builder.HasIndex(x => new { x.ProjectId, x.Status });
     }

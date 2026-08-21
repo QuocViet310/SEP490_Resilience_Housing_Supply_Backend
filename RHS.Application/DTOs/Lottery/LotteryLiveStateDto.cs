@@ -67,6 +67,9 @@ public class LotteryLiveStateDto
 
 public class ApartmentFundQuotaStatDto
 {
+    public Guid? ApartmentTypeId { get; set; }
+    public string? ApartmentTypeCode { get; set; }
+
     /// <summary>Tên loại căn (ví dụ: Căn 2 phòng ngủ (2PN), Căn 1 phòng ngủ (1PN))</summary>
     public string CategoryName { get; set; } = string.Empty;
 

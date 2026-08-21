@@ -116,6 +116,7 @@ public class HousingApplicationService : IHousingApplicationService
             SpouseMonthlyIncome    = request.SpouseMonthlyIncome,
             AverageHousingAreaPerPerson = request.AverageHousingAreaPerPerson,
             LotteryResult          = LotteryResultConstants.Pending,
+            DesiredApartmentTypeId = await ResolveDesiredApartmentTypeIdAsync(request.DesiredApartmentTypeId, request.DesiredApartmentType),
             HouseholdMembers       = MapHouseholdMembers(request.HouseholdMembers)
         };
 
@@ -208,6 +209,7 @@ public class HousingApplicationService : IHousingApplicationService
         application.MonthlyIncome         = request.MonthlyIncome;
         application.SpouseMonthlyIncome   = request.SpouseMonthlyIncome;
         application.AverageHousingAreaPerPerson = request.AverageHousingAreaPerPerson;
+        application.DesiredApartmentTypeId = await ResolveDesiredApartmentTypeIdAsync(request.DesiredApartmentTypeId, request.DesiredApartmentType);
         application.UpdatedAt             = DateTime.UtcNow;
 
         // Replace danh sách thành viên hộ gia đình nếu request chứa members
@@ -334,6 +336,8 @@ public class HousingApplicationService : IHousingApplicationService
             LotteryResult          = app.LotteryResult,
             ApartmentId            = app.ApartmentId,
             ApartmentUnitName      = app.Apartment?.UnitName,
+            ApartmentType          = app.Apartment?.ApartmentType?.TypeCode,
+            ApartmentTypeLabel     = app.Apartment?.ApartmentType?.TypeName,
             ApartmentArea          = app.Apartment?.Area,
             ApartmentPrice         = app.Apartment?.Price,
             ApartmentStatus        = app.Apartment?.Status,
@@ -342,6 +346,9 @@ public class HousingApplicationService : IHousingApplicationService
             AverageHousingAreaPerPerson = app.AverageHousingAreaPerPerson,
             IsViolation            = app.IsViolation,
             ViolationReason        = app.ViolationReason,
+            DesiredApartmentTypeId = app.DesiredApartmentTypeId,
+            DesiredApartmentType   = app.DesiredApartmentType?.TypeCode,
+            DesiredApartmentTypeLabel = app.DesiredApartmentType?.TypeName,
 
             // ── Cán bộ thẩm định ──────────────────────────────────
             OfficerId      = app.OfficerId,
@@ -968,7 +975,27 @@ public class HousingApplicationService : IHousingApplicationService
 
     private static bool IsUniqueConstraintViolation(DbUpdateException ex)
     {
-        return ex.InnerException is Microsoft.Data.SqlClient.SqlException sql
-            && sql.Number is 2601 or 2627;
+        return ex.InnerException is Microsoft.Data.SqlClient.SqlException sqlEx &&
+               (sqlEx.Number == 2601 || sqlEx.Number == 2627);
+    }
+
+    private async Task<Guid?> ResolveDesiredApartmentTypeIdAsync(
+        Guid? requestedTypeId,
+        string? requestedTypeCode)
+    {
+        if (requestedTypeId.HasValue && requestedTypeId.Value != Guid.Empty)
+            return requestedTypeId.Value;
+
+        if (!string.IsNullOrWhiteSpace(requestedTypeCode))
+        {
+            var code = requestedTypeCode.Trim().ToUpperInvariant();
+            var matchedType = await _context.ApartmentTypes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.TypeCode == code);
+            if (matchedType != null)
+                return matchedType.Id;
+        }
+
+        return null;
     }
 }
