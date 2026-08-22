@@ -281,7 +281,13 @@ public class HousingApplicationRepository : IHousingApplicationRepository
                 ReceiptUrl        = x.ReceiptUrl,
                 DocumentCount     = x.Documents.Count,
                 IsViolation       = x.IsViolation,
-                ViolationReason   = x.ViolationReason
+                ViolationReason   = x.ViolationReason,
+                DesiredApartmentTypeId = x.DesiredApartmentTypeId,
+                DesiredApartmentType   = x.DesiredApartmentType != null ? x.DesiredApartmentType.TypeCode : null,
+                DesiredApartmentTypeLabel = x.DesiredApartmentType != null ? x.DesiredApartmentType.TypeName : null,
+                WaitlistNumber    = x.WaitlistNumber,
+                WaitlistPromotedAt = x.WaitlistPromotedAt,
+                DepositDeadline   = x.DepositDeadline
             })
             .ToListAsync();
 

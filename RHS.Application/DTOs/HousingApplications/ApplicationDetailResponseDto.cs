@@ -52,6 +52,9 @@ public class ApplicationDetailResponseDto
     public Guid? DesiredApartmentTypeId { get; set; }
     public string? DesiredApartmentType { get; set; }
     public string? DesiredApartmentTypeLabel { get; set; }
+    public int? WaitlistNumber { get; set; }
+    public DateTime? WaitlistPromotedAt { get; set; }
+    public DateTime? DepositDeadline { get; set; }
 
     /// <summary>Kết quả thẩm định điều kiện Đ29–30 gần nhất.</summary>
     public EligibilityResultDto? Eligibility { get; set; }

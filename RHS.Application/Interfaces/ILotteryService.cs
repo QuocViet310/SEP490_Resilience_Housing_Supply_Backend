@@ -1,4 +1,6 @@
+using RHS.Application.DTOs.HousingApplications;
 using RHS.Application.DTOs.Lottery;
+using RHS.Domain.Entities;
 
 namespace RHS.Application.Interfaces;
 
@@ -42,4 +44,10 @@ public interface ILotteryService
 
     /// <summary>Ghi nhận SXD giám sát phiên (khi join Hub) — Đ36.2.b NĐ 100/2024.</summary>
     Task RecordSupervisorAsync(Guid projectId, Guid sxdUserId, CancellationToken ct = default);
+
+    /// <summary>Đôn ứng viên tiếp theo trong Danh sách chờ (Waitlist) lên suất trúng mua khi có căn hộ bị trả lại / quá hạn cọc.</summary>
+    Task<HousingApplication?> PromoteNextWaitlistApplicantAsync(Guid projectId, Guid? desiredApartmentTypeId, CancellationToken ct = default);
+
+    /// <summary>Lấy Danh sách chờ (Waitlist) của dự án theo thứ tự dự bị (1, 2, 3...).</summary>
+    Task<List<ApplicationSummaryResponseDto>> GetWaitlistAsync(Guid projectId, Guid? desiredApartmentTypeId = null, CancellationToken ct = default);
 }

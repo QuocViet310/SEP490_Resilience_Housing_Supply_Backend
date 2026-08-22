@@ -349,6 +349,9 @@ public class HousingApplicationService : IHousingApplicationService
             DesiredApartmentTypeId = app.DesiredApartmentTypeId,
             DesiredApartmentType   = app.DesiredApartmentType?.TypeCode,
             DesiredApartmentTypeLabel = app.DesiredApartmentType?.TypeName,
+            WaitlistNumber         = app.WaitlistNumber,
+            WaitlistPromotedAt     = app.WaitlistPromotedAt,
+            DepositDeadline        = app.DepositDeadline,
 
             // ── Cán bộ thẩm định ──────────────────────────────────
             OfficerId      = app.OfficerId,

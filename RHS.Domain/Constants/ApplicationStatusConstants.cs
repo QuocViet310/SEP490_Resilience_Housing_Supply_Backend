@@ -60,6 +60,9 @@ public static class ApplicationStatusConstants
     /// <summary>Đã trượt bốc thăm</summary>
     public const string LotteryLost = "LOTTERY_LOST";
 
+    /// <summary>Thuộc danh sách dự bị (Waitlist)</summary>
+    public const string Waitlist = "WAITLIST";
+
     /// <summary>Danh sách tất cả trạng thái hợp lệ</summary>
     public static readonly IReadOnlyList<string> AllStatuses = new[]
     {
@@ -80,7 +83,8 @@ public static class ApplicationStatusConstants
         FullyPaid,
         ContractSigned,
         ContractPending,
-        LotteryLost
+        LotteryLost,
+        Waitlist
     };
 
     /// <summary>

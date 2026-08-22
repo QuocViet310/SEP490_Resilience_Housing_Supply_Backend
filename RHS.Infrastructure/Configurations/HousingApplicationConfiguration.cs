@@ -62,6 +62,15 @@ public class HousingApplicationConfiguration : IEntityTypeConfiguration<HousingA
             .IsRequired(false)
             .HasMaxLength(1000);
 
+        builder.Property(x => x.WaitlistNumber)
+            .IsRequired(false);
+
+        builder.Property(x => x.WaitlistPromotedAt)
+            .IsRequired(false);
+
+        builder.Property(x => x.DepositDeadline)
+            .IsRequired(false);
+
         // ── Thời gian ─────────────────────────────────────────────
         builder.Property(x => x.CreatedAt)
             .IsRequired();

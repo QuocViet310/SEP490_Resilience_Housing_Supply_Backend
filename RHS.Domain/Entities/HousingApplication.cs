@@ -95,6 +95,15 @@ public class HousingApplication
     /// <summary>Loại căn hộ đăng ký mong muốn mua (1 phòng ngủ / 2 phòng ngủ)</summary>
     public Guid? DesiredApartmentTypeId { get; set; }
 
+    /// <summary>Thứ tự dự bị trong Danh sách chờ (1, 2, 3...)</summary>
+    public int? WaitlistNumber { get; set; }
+
+    /// <summary>Thời điểm được đôn từ Danh sách chờ (Waitlist) lên trúng tuyển</summary>
+    public DateTime? WaitlistPromotedAt { get; set; }
+
+    /// <summary>Hạn chót xác nhận nộp cọc Đợt 1 (VD: 48 giờ kể từ lúc trúng / được đôn)</summary>
+    public DateTime? DepositDeadline { get; set; }
+
     // ─────────────────────────────────────────────────────────────
     // Navigation properties
     // ─────────────────────────────────────────────────────────────

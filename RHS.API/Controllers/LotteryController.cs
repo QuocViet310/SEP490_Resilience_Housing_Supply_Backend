@@ -296,4 +296,30 @@ public class LotteryController : ControllerBase
         var bytes = await reports.ExportLotteryMinutesPdfAsync(projectId);
         return File(bytes, "application/pdf", $"BienBan_BocTham_{projectId:N}.pdf");
     }
+
+    /// <summary>Xem Danh sách chờ (Waitlist) của dự án (xếp theo thứ tự dự bị 1, 2, 3...).</summary>
+    [HttpGet("waitlist")]
+    [Authorize]
+    public async Task<IActionResult> GetWaitlist(
+        Guid projectId,
+        [FromQuery] Guid? desiredApartmentTypeId,
+        CancellationToken ct)
+    {
+        var result = await _lotteryService.GetWaitlistAsync(projectId, desiredApartmentTypeId, ct);
+        return Ok(result);
+    }
+
+    /// <summary>[CĐT/Admin] Đôn ứng viên đứng đầu Danh sách chờ (Waitlist) lên suất trúng mua khi có căn bị hoàn lại / quá hạn cọc.</summary>
+    [HttpPost("promote-waitlist")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    public async Task<IActionResult> PromoteWaitlist(
+        Guid projectId,
+        [FromQuery] Guid? desiredApartmentTypeId,
+        CancellationToken ct)
+    {
+        var promoted = await _lotteryService.PromoteNextWaitlistApplicantAsync(projectId, desiredApartmentTypeId, ct);
+        if (promoted is null)
+            return NotFound(new { message = "Không có ứng viên nào trong Danh sách chờ (Waitlist) thỏa mãn để đôn quyền mua." });
+        return Ok(new { message = "Đã đôn thành công ứng viên đứng đầu Waitlist lên suất trúng mua.", applicationId = promoted.ApplicationId, waitlistNumber = promoted.WaitlistNumber, depositDeadline = promoted.DepositDeadline });
+    }
 }

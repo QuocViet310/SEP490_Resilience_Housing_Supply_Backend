@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using RHS.Application.DTOs.HousingApplications;
 using RHS.Application.DTOs.Lottery;
 using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
@@ -728,31 +729,48 @@ public class LotteryService : ILotteryService
                 }
             }
 
-            // Nếu không còn ứng viên nào có loại căn mong muốn còn suất -> Đánh dấu các ứng viên còn lại trượt do hết loại căn
+            // Nếu không còn ứng viên nào có loại căn mong muốn còn suất -> Xếp các ứng viên còn lại vào Danh sách chờ (Waitlist)
             if (app == null)
             {
                 var nowExhausted = DateTime.UtcNow;
-                foreach (var remainingApp in undrawnApps)
-                {
-                    remainingApp.LotteryResult = LotteryResultConstants.Lost;
-                    remainingApp.ApplicationStatus = ApplicationStatusConstants.LotteryLost;
-                    remainingApp.UpdatedAt = nowExhausted;
 
-                    _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+                var groupedByDesiredType = undrawnApps.GroupBy(a => a.DesiredApartmentTypeId);
+
+                foreach (var group in groupedByDesiredType)
+                {
+                    int existingWaitlistCount = await _db.HousingApplications.CountAsync(
+                        a => a.ProjectId == projectId
+                             && a.DesiredApartmentTypeId == group.Key
+                             && a.WaitlistNumber.HasValue, ct);
+
+                    var shuffledGroup = group.OrderBy(_ => Random.Shared.Next()).ToList();
+                    int waitlistRank = existingWaitlistCount + 1;
+
+                    foreach (var remainingApp in shuffledGroup)
                     {
-                        HistoryId = Guid.NewGuid(),
-                        ApplicationId = remainingApp.ApplicationId,
-                        ChangedBy = actorId,
-                        Action = ReviewActionConstants.LotteryLost,
-                        OldStatus = remainingApp.ApplicationStatus,
-                        NewStatus = ApplicationStatusConstants.LotteryLost,
-                        Note = "Trượt bốc thăm (loại căn hộ đăng ký đã hết suất).",
-                        ChangedAt = nowExhausted
-                    });
+                        remainingApp.WaitlistNumber = waitlistRank;
+                        remainingApp.LotteryResult = LotteryResultConstants.Waitlist;
+                        remainingApp.ApplicationStatus = ApplicationStatusConstants.Waitlist;
+                        remainingApp.UpdatedAt = nowExhausted;
+
+                        _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+                        {
+                            HistoryId = Guid.NewGuid(),
+                            ApplicationId = remainingApp.ApplicationId,
+                            ChangedBy = actorId,
+                            Action = ReviewActionConstants.LotteryLost,
+                            OldStatus = remainingApp.ApplicationStatus,
+                            NewStatus = ApplicationStatusConstants.Waitlist,
+                            Note = $"Không trúng đợt bốc chính thức. Được tự động xếp vào Danh sách dự bị (Waitlist #{waitlistRank}) cho loại căn hộ đã chọn.",
+                            ChangedAt = nowExhausted
+                        });
+
+                        waitlistRank++;
+                    }
                 }
 
                 await _db.SaveChangesAsync(ct);
-                throw new InvalidOperationException("Loại căn hộ mà các hồ sơ còn lại đăng ký đều đã hết suất bốc thăm.");
+                throw new InvalidOperationException("Loại căn hộ mà các hồ sơ còn lại đăng ký đều đã hết suất bốc thăm. Tất cả hồ sơ còn lại đã được xếp vào Danh sách dự bị (Waitlist).");
             }
 
             var applicantId = app.ApplicantId;
@@ -918,10 +936,17 @@ public class LotteryService : ILotteryService
             }
             else
             {
-                resultStatus = LotteryResultConstants.Lost;
+                resultStatus = LotteryResultConstants.Waitlist;
                 app.LotteryResult = resultStatus;
-                app.ApplicationStatus = ApplicationStatusConstants.LotteryLost;
+                app.ApplicationStatus = ApplicationStatusConstants.Waitlist;
                 app.UpdatedAt = now;
+
+                int existingWaitlistCount = await _db.HousingApplications.CountAsync(
+                    a => a.ProjectId == projectId
+                         && a.DesiredApartmentTypeId == app.DesiredApartmentTypeId
+                         && a.WaitlistNumber.HasValue, ct);
+
+                app.WaitlistNumber = existingWaitlistCount + 1;
 
                 _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
                 {
@@ -930,8 +955,8 @@ public class LotteryService : ILotteryService
                     ChangedBy = applicantId,
                     Action = ReviewActionConstants.LotteryLost,
                     OldStatus = oldStatus,
-                    NewStatus = ApplicationStatusConstants.LotteryLost,
-                    Note = "Trượt bốc thăm live (Loại căn hộ đã chọn đã hết suất).",
+                    NewStatus = ApplicationStatusConstants.Waitlist,
+                    Note = $"Trượt bốc thăm live (Loại căn hộ đã chọn đã hết suất). Đã được xếp vào Danh sách dự bị (Waitlist #{app.WaitlistNumber}).",
                     ChangedAt = now
                 });
             }
@@ -1435,7 +1460,147 @@ public class LotteryService : ILotteryService
         CitizenId = app.CitizenId,
         SlotCode = app.SlotCode,
         PriorityGroup = app.PriorityGroup,
-        Result = result,
         IsPriority = isPriority
     };
+
+    public async Task<HousingApplication?> PromoteNextWaitlistApplicantAsync(
+        Guid projectId,
+        Guid? desiredApartmentTypeId,
+        CancellationToken ct = default)
+    {
+        var semaphore = ProjectLocks.GetOrAdd(projectId, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync(ct);
+
+        try
+        {
+            var nextCandidate = await _db.HousingApplications
+                .Include(a => a.Applicant)
+                .Include(a => a.DesiredApartmentType)
+                .Where(a => a.ProjectId == projectId
+                            && (a.ApplicationStatus == ApplicationStatusConstants.Waitlist || a.LotteryResult == LotteryResultConstants.Waitlist)
+                            && a.WaitlistNumber.HasValue
+                            && (desiredApartmentTypeId == null || a.DesiredApartmentTypeId == desiredApartmentTypeId))
+                .OrderBy(a => a.WaitlistNumber)
+                .FirstOrDefaultAsync(ct);
+
+            if (nextCandidate == null)
+            {
+                _logger.LogInformation(
+                    "Không tìm thấy ứng viên trong Danh sách chờ (Waitlist) cho dự án {ProjectId} (Type: {TypeId}).",
+                    projectId, desiredApartmentTypeId);
+                return null;
+            }
+
+            var now = DateTime.UtcNow;
+            var oldStatus = nextCandidate.ApplicationStatus;
+
+            nextCandidate.LotteryResult = LotteryResultConstants.Won;
+            nextCandidate.ApplicationStatus = ApplicationStatusConstants.LotteryWon;
+            nextCandidate.WaitlistPromotedAt = now;
+            nextCandidate.DepositDeadline = now.AddHours(48);
+            nextCandidate.UpdatedAt = now;
+
+            string typeName = nextCandidate.DesiredApartmentType?.TypeName ?? "loại căn đã chọn";
+
+            _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+            {
+                HistoryId = Guid.NewGuid(),
+                ApplicationId = nextCandidate.ApplicationId,
+                ChangedBy = nextCandidate.ApplicantId,
+                Action = ReviewActionConstants.LotteryWon,
+                OldStatus = oldStatus,
+                NewStatus = ApplicationStatusConstants.LotteryWon,
+                Note = $"Được tự động đôn từ Danh sách dự bị (Waitlist #{nextCandidate.WaitlistNumber}) lên suất trúng mua ({typeName}) do có suất hoàn trả. Hạn chót xác nhận nộp cọc: {nextCandidate.DepositDeadline:dd/MM/yyyy HH:mm} (48h).",
+                ChangedAt = now
+            });
+
+            await _db.SaveChangesAsync(ct);
+
+            await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
+
+            try
+            {
+                await _notificationService.SendAsync(
+                    nextCandidate.ApplicantId,
+                    "Bạn đã được đôn từ Danh sách dự bị lên suất trúng mua NOXH!",
+                    $"Chúc mừng! Do có căn hộ ({typeName}) bị hoàn lại, hồ sơ của bạn (Waitlist #{nextCandidate.WaitlistNumber}) đã được đôn lên suất trúng mua. Vui lòng hoàn tất nộp cọc đợt 1 trước {nextCandidate.DepositDeadline:HH:mm dd/MM/yyyy} (trong vòng 48h).",
+                    NotificationTypeConstants.ContractPending);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi gửi thông báo đôn Waitlist cho applicant {ApplicantId}", nextCandidate.ApplicantId);
+            }
+
+            try
+            {
+                var groupName = LotteryHub.GetGroupName(projectId);
+                var updatedState = await GetLiveStateAsync(projectId, ct);
+                await _hubContext.Clients.Group(groupName).ReceiveLiveState(updatedState);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi broadcast live state sau khi đôn Waitlist dự án {ProjectId}", projectId);
+            }
+
+            _logger.LogInformation(
+                "Đã đôn thành công ứng viên {ApplicantId} (Waitlist #{WaitlistNum}) lên suất trúng mua cho dự án {ProjectId}.",
+                nextCandidate.ApplicantId, nextCandidate.WaitlistNumber, projectId);
+
+            return nextCandidate;
+        }
+        finally
+        {
+            semaphore.Release();
+        }
+    }
+
+    public async Task<List<ApplicationSummaryResponseDto>> GetWaitlistAsync(
+        Guid projectId,
+        Guid? desiredApartmentTypeId = null,
+        CancellationToken ct = default)
+    {
+        var query = _db.HousingApplications
+            .AsNoTracking()
+            .Include(a => a.HousingProject)
+            .Include(a => a.DesiredApartmentType)
+            .Where(a => a.ProjectId == projectId
+                        && (a.ApplicationStatus == ApplicationStatusConstants.Waitlist || a.LotteryResult == LotteryResultConstants.Waitlist)
+                        && a.WaitlistNumber.HasValue);
+
+        if (desiredApartmentTypeId.HasValue)
+        {
+            query = query.Where(a => a.DesiredApartmentTypeId == desiredApartmentTypeId.Value);
+        }
+
+        return await query
+            .OrderBy(a => a.WaitlistNumber)
+            .Select(x => new ApplicationSummaryResponseDto
+            {
+                ApplicationId     = x.ApplicationId,
+                ProjectId         = x.ProjectId,
+                ProjectName       = x.HousingProject.ProjectName,
+                ApplicantId       = x.ApplicantId,
+                ApplicantFullName = x.FullName,
+                CitizenId         = x.CitizenId,
+                ApplicationStatus = x.ApplicationStatus,
+                CreatedAt         = x.CreatedAt,
+                SubmittedAt       = x.SubmittedAt,
+                FinalDecisionDate = x.FinalDecisionDate,
+                HousingStatus     = x.HousingStatus,
+                MaritalStatus     = x.MaritalStatus,
+                HouseholdMembersCount = x.HouseholdMembersCount,
+                PriorityGroup     = x.PriorityGroup,
+                ReceiptUrl        = x.ReceiptUrl,
+                DocumentCount     = x.Documents.Count,
+                IsViolation       = x.IsViolation,
+                ViolationReason   = x.ViolationReason,
+                DesiredApartmentTypeId = x.DesiredApartmentTypeId,
+                DesiredApartmentType   = x.DesiredApartmentType != null ? x.DesiredApartmentType.TypeCode : null,
+                DesiredApartmentTypeLabel = x.DesiredApartmentType != null ? x.DesiredApartmentType.TypeName : null,
+                WaitlistNumber    = x.WaitlistNumber,
+                WaitlistPromotedAt = x.WaitlistPromotedAt,
+                DepositDeadline   = x.DepositDeadline
+            })
+            .ToListAsync(ct);
+    }
 }
