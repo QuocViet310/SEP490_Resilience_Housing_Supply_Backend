@@ -52,6 +52,8 @@ public class AppDbContext : DbContext
     public DbSet<PaymentMilestone> PaymentMilestones { get; set; }
     public DbSet<PaymentInstallment> PaymentInstallments { get; set; }
     public DbSet<HouseholdMember> HouseholdMembers { get; set; }
+    public DbSet<UserHouseholdMember> UserHouseholdMembers { get; set; }
+    public DbSet<UserDocument> UserDocuments { get; set; }
     public DbSet<Announcement> Announcements { get; set; }
     public DbSet<AnnouncementAttachment> AnnouncementAttachments { get; set; }
 
@@ -83,6 +85,8 @@ public class AppDbContext : DbContext
         modelBuilder.ApplyConfiguration(new PaymentMilestoneConfiguration());
         modelBuilder.ApplyConfiguration(new PaymentInstallmentConfiguration());
         modelBuilder.ApplyConfiguration(new HouseholdMemberConfiguration());
+        modelBuilder.ApplyConfiguration(new UserHouseholdMemberConfiguration());
+        modelBuilder.ApplyConfiguration(new UserDocumentConfiguration());
         modelBuilder.ApplyConfiguration(new AnnouncementConfiguration());
         modelBuilder.ApplyConfiguration(new AnnouncementAttachmentConfiguration());
         // Role Configuration
@@ -107,6 +111,30 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CitizenId).HasMaxLength(20);
             entity.Property(e => e.Status).IsRequired().HasMaxLength(50);
             entity.Property(e => e.ProfileImageUrl).HasMaxLength(500);
+
+            // eKYC & nhân thân
+            entity.Property(e => e.Gender).HasMaxLength(20);
+            entity.Property(e => e.Nationality).HasMaxLength(100);
+            entity.Property(e => e.PlaceOfOrigin).HasMaxLength(500);
+            entity.Property(e => e.IdIssuePlace).HasMaxLength(255);
+
+            // Hôn nhân & Vợ chồng
+            entity.Property(e => e.MaritalStatus).HasMaxLength(50);
+            entity.Property(e => e.SpouseFullName).HasMaxLength(100);
+            entity.Property(e => e.SpouseCitizenId).HasMaxLength(20);
+            entity.Property(e => e.SpouseMonthlyIncome).HasColumnType("decimal(18,2)");
+
+            // Việc làm, Nơi ở, Thu nhập
+            entity.Property(e => e.Occupation).HasMaxLength(200);
+            entity.Property(e => e.WorkPlace).HasMaxLength(500);
+            entity.Property(e => e.CurrentResidence).HasMaxLength(500);
+            entity.Property(e => e.PermanentAddress).HasMaxLength(500);
+            entity.Property(e => e.MonthlyIncome).HasColumnType("decimal(18,2)");
+
+            // Nhà ở & Đối tượng
+            entity.Property(e => e.HousingStatus).HasMaxLength(50);
+            entity.Property(e => e.AverageHousingAreaPerPerson).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.PriorityGroup).HasMaxLength(100);
 
             entity.HasOne(e => e.Role)
                 .WithMany(r => r.Users)

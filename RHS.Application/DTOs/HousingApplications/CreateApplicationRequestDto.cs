@@ -88,4 +88,10 @@ public class CreateApplicationRequestDto
 
     /// <summary>Mã loại căn hộ mong muốn mua: ONE_BEDROOM (1 phòng ngủ) hoặc TWO_BEDROOM (2 phòng ngủ)</summary>
     public string? DesiredApartmentType { get; set; }
+
+    /// <summary>
+    /// Tự động sao chép các tài liệu hợp lệ có sẵn trong Kho tài liệu cá nhân (Document Vault) sang hồ sơ mới.
+    /// Mặc định: true.
+    /// </summary>
+    public bool InheritDocumentsFromVault { get; set; } = true;
 }

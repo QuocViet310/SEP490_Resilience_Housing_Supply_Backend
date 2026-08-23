@@ -91,6 +91,38 @@ public class HousingApplicationService : IHousingApplicationService
 
         // 3. Map DTO → Entity (trạng thái ban đầu = DRAFT)
         var now = DateTime.UtcNow;
+
+        // Nếu request không gửi danh sách thành viên nhưng user có sẵn trong Profile -> Tự động kế thừa
+        List<HouseholdMember> initialMembers;
+        if (request.HouseholdMembers != null && request.HouseholdMembers.Count > 0)
+        {
+            initialMembers = MapHouseholdMembers(request.HouseholdMembers);
+        }
+        else
+        {
+            var savedMembers = await _context.UserHouseholdMembers
+                .AsNoTracking()
+                .Where(m => m.UserId == applicantId)
+                .ToListAsync();
+
+            initialMembers = savedMembers.Select(m => new HouseholdMember
+            {
+                MemberId        = Guid.NewGuid(),
+                FullName        = m.FullName,
+                CitizenId       = m.CitizenId,
+                DateOfBirth     = m.DateOfBirth,
+                Relationship    = m.Relationship,
+                Occupation      = m.Occupation,
+                MonthlyIncome   = m.MonthlyIncome,
+                IsDependent     = m.IsDependent,
+                DependentReason = m.DependentReason,
+                HasMeritService = m.HasMeritService,
+                MeritDetails    = m.MeritDetails,
+                Note            = m.Note,
+                CreatedAt       = now
+            }).ToList();
+        }
+
         var application = new HousingApplication
         {
             ApplicationId          = Guid.NewGuid(),
@@ -110,15 +142,47 @@ public class HousingApplicationService : IHousingApplicationService
             PermanentAddress       = request.PermanentAddress.Trim(),
             HousingStatus          = request.HousingStatus,
             MaritalStatus          = request.MaritalStatus.Trim(),
-            HouseholdMembersCount  = 1 + (request.HouseholdMembers?.Count ?? 0),
+            HouseholdMembersCount  = 1 + initialMembers.Count,
             PriorityGroup          = request.PriorityGroup.Trim(),
             MonthlyIncome          = request.MonthlyIncome,
             SpouseMonthlyIncome    = request.SpouseMonthlyIncome,
             AverageHousingAreaPerPerson = request.AverageHousingAreaPerPerson,
             LotteryResult          = LotteryResultConstants.Pending,
             DesiredApartmentTypeId = await ResolveDesiredApartmentTypeIdAsync(request.DesiredApartmentTypeId, request.DesiredApartmentType),
-            HouseholdMembers       = MapHouseholdMembers(request.HouseholdMembers)
+            HouseholdMembers       = initialMembers
         };
+
+        // Kế thừa tài liệu từ Kho hồ sơ cá nhân (Document Vault)
+        if (request.InheritDocumentsFromVault)
+        {
+            var vaultDocs = await _context.UserDocuments
+                .AsNoTracking()
+                .Where(d => d.UserId == applicantId && d.FileUrl.EndsWith(".pdf"))
+                .ToListAsync();
+
+            // Nhóm theo loại giấy tờ mới nhất
+            var docsByType = vaultDocs
+                .Where(d => DocumentTypeConstants.AllowedApplicantDocumentTypes.Contains(d.DocumentType))
+                .GroupBy(d => d.DocumentType)
+                .Select(g => g.OrderByDescending(x => x.UploadedAt).First())
+                .ToList();
+
+            foreach (var vd in docsByType)
+            {
+                application.Documents.Add(new ApplicationDocument
+                {
+                    DocumentId         = Guid.NewGuid(),
+                    ApplicationId      = application.ApplicationId,
+                    UploadedBy         = applicantId,
+                    DocumentType       = vd.DocumentType,
+                    FileName           = vd.FileName,
+                    FileUrl            = vd.FileUrl,
+                    FileSizeBytes      = vd.FileSizeBytes,
+                    UploadedAt         = now,
+                    VerificationStatus = "PENDING"
+                });
+            }
+        }
 
         try
         {
@@ -134,16 +198,17 @@ public class HousingApplicationService : IHousingApplicationService
         }
 
         _logger.LogInformation(
-            "Tạo hồ sơ thành công. ApplicationId={ApplicationId}, Status={Status}.",
-            application.ApplicationId, application.ApplicationStatus);
+            "Tạo hồ sơ thành công. ApplicationId={ApplicationId}, Status={Status}, InhertedDocs={DocCount}.",
+            application.ApplicationId, application.ApplicationStatus, application.Documents.Count);
 
         return new CreateApplicationResponseDto
         {
             ApplicationId     = application.ApplicationId,
             ApplicationStatus = application.ApplicationStatus,
             CreatedAt         = application.CreatedAt,
-            Message           = "Hồ sơ đã được tạo thành công với trạng thái DRAFT. " +
-                                "Vui lòng upload giấy tờ và nộp hồ sơ."
+            Message           = application.Documents.Count > 0
+                ? $"Hồ sơ đã được tạo thành công với trạng thái DRAFT. Đã tự động kế thừa {application.Documents.Count} tài liệu từ Kho hồ sơ cá nhân của bạn."
+                : "Hồ sơ đã được tạo thành công với trạng thái DRAFT. Vui lòng upload giấy tờ và nộp hồ sơ."
         };
     }
 
@@ -458,14 +523,20 @@ public class HousingApplicationService : IHousingApplicationService
         var now = DateTime.UtcNow;
         var member = new HouseholdMember
         {
-            MemberId      = Guid.NewGuid(),
-            ApplicationId = applicationId,
-            FullName      = request.FullName.Trim(),
-            CitizenId     = request.CitizenId?.Trim(),
-            DateOfBirth   = request.DateOfBirth,
-            Relationship  = request.Relationship.Trim().ToUpperInvariant(),
-            Note          = request.Note?.Trim(),
-            CreatedAt     = now
+            MemberId        = Guid.NewGuid(),
+            ApplicationId   = applicationId,
+            FullName        = request.FullName.Trim(),
+            CitizenId       = request.CitizenId?.Trim(),
+            DateOfBirth     = request.DateOfBirth,
+            Relationship    = request.Relationship.Trim().ToUpperInvariant(),
+            Occupation      = request.Occupation?.Trim(),
+            MonthlyIncome   = request.MonthlyIncome,
+            IsDependent     = request.IsDependent,
+            DependentReason = request.DependentReason?.Trim().ToUpperInvariant(),
+            HasMeritService = request.HasMeritService,
+            MeritDetails    = request.MeritDetails?.Trim(),
+            Note            = request.Note?.Trim(),
+            CreatedAt       = now
         };
 
         _context.HouseholdMembers.Add(member);
@@ -496,12 +567,18 @@ public class HousingApplicationService : IHousingApplicationService
             ?? throw new KeyNotFoundException(
                 $"Không tìm thấy thành viên {memberId} trong hồ sơ {applicationId}.");
 
-        member.FullName     = request.FullName.Trim();
-        member.CitizenId    = request.CitizenId?.Trim();
-        member.DateOfBirth  = request.DateOfBirth;
-        member.Relationship = request.Relationship.Trim().ToUpperInvariant();
-        member.Note         = request.Note?.Trim();
-        member.UpdatedAt    = DateTime.UtcNow;
+        member.FullName        = request.FullName.Trim();
+        member.CitizenId       = request.CitizenId?.Trim();
+        member.DateOfBirth     = request.DateOfBirth;
+        member.Relationship    = request.Relationship.Trim().ToUpperInvariant();
+        member.Occupation      = request.Occupation?.Trim();
+        member.MonthlyIncome   = request.MonthlyIncome;
+        member.IsDependent     = request.IsDependent;
+        member.DependentReason = request.DependentReason?.Trim().ToUpperInvariant();
+        member.HasMeritService = request.HasMeritService;
+        member.MeritDetails    = request.MeritDetails?.Trim();
+        member.Note            = request.Note?.Trim();
+        member.UpdatedAt       = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
 
@@ -606,13 +683,19 @@ public class HousingApplicationService : IHousingApplicationService
             ValidateMemberRequest(dto);
             return new HouseholdMember
             {
-                MemberId     = Guid.NewGuid(),
-                FullName     = dto.FullName.Trim(),
-                CitizenId    = dto.CitizenId?.Trim(),
-                DateOfBirth  = dto.DateOfBirth,
-                Relationship = dto.Relationship.Trim().ToUpperInvariant(),
-                Note         = dto.Note?.Trim(),
-                CreatedAt    = now
+                MemberId        = Guid.NewGuid(),
+                FullName        = dto.FullName.Trim(),
+                CitizenId       = dto.CitizenId?.Trim(),
+                DateOfBirth     = dto.DateOfBirth,
+                Relationship    = dto.Relationship.Trim().ToUpperInvariant(),
+                Occupation      = dto.Occupation?.Trim(),
+                MonthlyIncome   = dto.MonthlyIncome,
+                IsDependent     = dto.IsDependent,
+                DependentReason = dto.DependentReason?.Trim().ToUpperInvariant(),
+                HasMeritService = dto.HasMeritService,
+                MeritDetails    = dto.MeritDetails?.Trim(),
+                Note            = dto.Note?.Trim(),
+                CreatedAt       = now
             };
         }).ToList();
     }
@@ -621,13 +704,19 @@ public class HousingApplicationService : IHousingApplicationService
     {
         return new HouseholdMemberResponseDto
         {
-            MemberId     = m.MemberId,
-            FullName     = m.FullName,
-            CitizenId    = m.CitizenId,
-            DateOfBirth  = m.DateOfBirth,
-            Relationship = m.Relationship,
-            Note         = m.Note,
-            CreatedAt    = m.CreatedAt
+            MemberId        = m.MemberId,
+            FullName        = m.FullName,
+            CitizenId       = m.CitizenId,
+            DateOfBirth     = m.DateOfBirth,
+            Relationship    = m.Relationship,
+            Occupation      = m.Occupation,
+            MonthlyIncome   = m.MonthlyIncome,
+            IsDependent     = m.IsDependent,
+            DependentReason = m.DependentReason,
+            HasMeritService = m.HasMeritService,
+            MeritDetails    = m.MeritDetails,
+            Note            = m.Note,
+            CreatedAt       = m.CreatedAt
         };
     }
 

@@ -1,15 +1,14 @@
 namespace RHS.Domain.Entities;
 
 /// <summary>
-/// Thành viên trong hộ gia đình của người đăng ký nhà ở xã hội.
-/// Mỗi HousingApplication có 0–N thành viên (không tính chủ hộ/người đứng đơn).
-/// Dùng để đối chiếu trùng lặp CCCD giữa các hồ sơ.
+/// Thành viên trong hộ gia đình lưu trong Hồ sơ cá nhân (Citizen Profile) của User.
+/// Dùng để lưu trữ danh sách nhân khẩu tái sử dụng cho các lần nộp hồ sơ NOXH.
 /// </summary>
-public class HouseholdMember
+public class UserHouseholdMember
 {
     public Guid MemberId { get; set; }
 
-    public Guid ApplicationId { get; set; }
+    public Guid UserId { get; set; }
 
     /// <summary>Họ và tên thành viên</summary>
     public string FullName { get; set; } = string.Empty;
@@ -25,16 +24,15 @@ public class HouseholdMember
     public DateTime? DateOfBirth { get; set; }
 
     /// <summary>
-    /// Quan hệ với người đứng đơn (chủ hộ).
+    /// Quan hệ với chủ tài khoản/chủ hộ (SPOUSE, CHILD, PARENT, SIBLING, GRANDPARENT, GRANDCHILD, OTHER).
     /// Sử dụng HouseholdRelationshipConstants.
-    /// Ví dụ: SPOUSE, CHILD, PARENT, SIBLING, GRANDPARENT, GRANDCHILD, OTHER
     /// </summary>
     public string Relationship { get; set; } = string.Empty;
 
     /// <summary>Nghề nghiệp / Công việc hiện tại</summary>
     public string? Occupation { get; set; }
 
-    /// <summary>Thu nhập tháng (VNĐ) của thành viên trong độ tuổi lao động</summary>
+    /// <summary>Thu nhập hàng tháng (VNĐ) của thành viên nếu trong độ tuổi lao động</summary>
     public decimal? MonthlyIncome { get; set; }
 
     /// <summary>
@@ -58,7 +56,7 @@ public class HouseholdMember
     /// <summary>Chi tiết diện người có công / thân nhân liệt sĩ</summary>
     public string? MeritDetails { get; set; }
 
-    /// <summary>Ghi chú bổ sung (ví dụ: "con gái 5 tuổi chưa có CCCD")</summary>
+    /// <summary>Ghi chú bổ sung</summary>
     public string? Note { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -69,5 +67,5 @@ public class HouseholdMember
     // Navigation properties
     // ─────────────────────────────────────────────────────────────
 
-    public HousingApplication HousingApplication { get; set; } = null!;
+    public User User { get; set; } = null!;
 }

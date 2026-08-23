@@ -489,11 +489,25 @@ public class EKycController : ControllerBase
             if (user is null)
                 return NotFound(new { success = false, message = "Không tìm thấy tài khoản." });
 
-            user.FullName    = ocrResult.Data.Name;
-            user.CitizenId   = extractedCitizenId;
-            user.DateOfBirth = ParseVietnameseDate(ocrResult.Data.Dob);
-            user.Address     = ocrResult.Data.Address;
-            user.UpdatedAt   = DateTime.UtcNow;
+            user.FullName         = ocrResult.Data.Name;
+            user.CitizenId        = extractedCitizenId;
+            user.DateOfBirth      = ParseVietnameseDate(ocrResult.Data.Dob);
+            user.Address          = ocrResult.Data.Address;
+            user.PermanentAddress = ocrResult.Data.Address;
+            if (string.IsNullOrWhiteSpace(user.CurrentResidence))
+            {
+                user.CurrentResidence = ocrResult.Data.Address;
+            }
+
+            user.Gender           = ocrResult.Data.Sex;
+            user.Nationality      = ocrResult.Data.Nationality;
+            user.PlaceOfOrigin    = ocrResult.Data.Home;
+            user.IdIssueDate      = ParseVietnameseDate(ocrResult.Data.IssueDate);
+            user.IdIssuePlace     = ocrResult.Data.IssueLoc;
+
+            user.IsEkycVerified   = true;
+            user.EkycVerifiedAt   = DateTime.UtcNow;
+            user.UpdatedAt        = DateTime.UtcNow;
 
             await _userRepository.UpdateAsync(user);
 
@@ -503,14 +517,20 @@ public class EKycController : ControllerBase
                 message = "Xác minh danh tính thành công. Thông tin CCCD đã được lưu vào hồ sơ.",
                 data = new
                 {
-                    similarity    = faceResult.Similarity,
-                    isMatch       = true,
-                    threshold     = _faceMatchThreshold,
-                    profileLocked = true,
-                    citizenId     = user.CitizenId,
-                    fullName      = user.FullName,
-                    dateOfBirth   = user.DateOfBirth?.ToString("dd/MM/yyyy"),
-                    address       = user.Address
+                    similarity     = faceResult.Similarity,
+                    isMatch        = true,
+                    threshold      = _faceMatchThreshold,
+                    profileLocked  = true,
+                    isEkycVerified = true,
+                    citizenId      = user.CitizenId,
+                    fullName       = user.FullName,
+                    dateOfBirth    = user.DateOfBirth?.ToString("dd/MM/yyyy"),
+                    gender         = user.Gender,
+                    nationality    = user.Nationality,
+                    placeOfOrigin  = user.PlaceOfOrigin,
+                    address        = user.Address,
+                    idIssueDate    = user.IdIssueDate?.ToString("dd/MM/yyyy"),
+                    idIssuePlace   = user.IdIssuePlace
                 }
             });
         }

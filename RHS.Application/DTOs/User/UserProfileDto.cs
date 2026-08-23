@@ -11,6 +11,12 @@ public class UserProfileDto
     public string? Address { get; set; }
     public string Role { get; set; } = string.Empty;
     public bool IsEmailVerified { get; set; }
+    public bool IsEkycVerified { get; set; }
+    public DateTime? EkycVerifiedAt { get; set; }
+    public string? MaritalStatus { get; set; }
+    public decimal? MonthlyIncome { get; set; }
+    public string? HousingStatus { get; set; }
+    public string? PriorityGroup { get; set; }
     public string? ProfileImageUrl { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? LastLoginAt { get; set; }

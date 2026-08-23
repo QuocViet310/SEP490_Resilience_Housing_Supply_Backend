@@ -63,6 +63,31 @@ public static class DocumentTypeConstants
     public const string IncomeCertificate = "INCOME_CERTIFICATE";
 
     // ════════════════════════════════════════════════════════════════
+    // (D) Giấy tờ nhân thân & Hồ sơ cá nhân tái sử dụng (Profile Document Vault)
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>Căn cước công dân - Mặt trước</summary>
+    public const string CitizenIdFront = "CITIZEN_ID_FRONT";
+
+    /// <summary>Căn cước công dân - Mặt sau</summary>
+    public const string CitizenIdBack = "CITIZEN_ID_BACK";
+
+    /// <summary>Giấy chứng nhận kết hôn</summary>
+    public const string MarriageCertificate = "MARRIAGE_CERTIFICATE";
+
+    /// <summary>Giấy xác nhận tình trạng độc thân</summary>
+    public const string SingleStatusCertificate = "SINGLE_STATUS_CERTIFICATE";
+
+    /// <summary>Quyết định / Bản án ly hôn của Tòa án</summary>
+    public const string DivorceCertificate = "DIVORCE_CERTIFICATE";
+
+    /// <summary>Giấy tờ chứng minh người phụ thuộc (Giấy khai sinh con, xác nhận sinh viên, giám định khuyết tật...)</summary>
+    public const string DependentProof = "DEPENDENT_PROOF";
+
+    /// <summary>Giấy xác nhận thông tin cư trú (CT07 / CT08 / Sổ hộ khẩu)</summary>
+    public const string ResidenceConfirmation = "RESIDENCE_CONFIRMATION";
+
+    // ════════════════════════════════════════════════════════════════
     // Collections & Mappings
     // ════════════════════════════════════════════════════════════════
 
@@ -79,7 +104,7 @@ public static class DocumentTypeConstants
         LandRecoveryDecision
     };
 
-    /// <summary>Tất cả loại giấy tờ mà Applicant được phép upload.</summary>
+    /// <summary>Tất cả loại giấy tờ mà Applicant được phép upload vào đơn đăng ký.</summary>
     public static readonly IReadOnlyList<string> AllowedApplicantDocumentTypes = new[]
     {
         // (A) Bắt buộc tất cả
@@ -94,7 +119,35 @@ public static class DocumentTypeConstants
         PublicHousingReturnCertificate,
         LandRecoveryDecision,
         // (C) Thu nhập
-        IncomeCertificate
+        IncomeCertificate,
+        // (D) Hồ sơ nhân thân đi kèm
+        MarriageCertificate,
+        SingleStatusCertificate,
+        DivorceCertificate,
+        DependentProof,
+        ResidenceConfirmation
+    };
+
+    /// <summary>Tất cả loại giấy tờ được phép lưu trong Kho tài liệu cá nhân tái sử dụng (Profile Document Vault).</summary>
+    public static readonly IReadOnlyList<string> AllowedProfileDocumentTypes = new[]
+    {
+        CitizenIdFront,
+        CitizenIdBack,
+        HousingConditionProof,
+        PovertyHouseholdCertificate,
+        MeritPersonCertificate,
+        LowIncomeCertificate,
+        EmploymentCertificate,
+        MilitaryServiceCertificate,
+        CivilServantCertificate,
+        PublicHousingReturnCertificate,
+        LandRecoveryDecision,
+        IncomeCertificate,
+        MarriageCertificate,
+        SingleStatusCertificate,
+        DivorceCertificate,
+        DependentProof,
+        ResidenceConfirmation
     };
 
     /// <summary>
@@ -143,12 +196,23 @@ public static class DocumentTypeConstants
         [CivilServantCertificate]        = "Giấy xác nhận cán bộ/công chức/viên chức",
         [PublicHousingReturnCertificate] = "Văn bản trả lại nhà ở công vụ",
         [LandRecoveryDecision]           = "Quyết định thu hồi đất/giải tỏa nhà ở",
-        [IncomeCertificate]              = "Giấy xác nhận thu nhập"
+        [IncomeCertificate]              = "Giấy xác nhận thu nhập",
+        [CitizenIdFront]                 = "CCCD - Mặt trước",
+        [CitizenIdBack]                  = "CCCD - Mặt sau",
+        [MarriageCertificate]            = "Giấy chứng nhận kết hôn",
+        [SingleStatusCertificate]        = "Giấy xác nhận tình trạng độc thân",
+        [DivorceCertificate]             = "Quyết định ly hôn của Tòa án",
+        [DependentProof]                 = "Giấy tờ chứng minh người phụ thuộc",
+        [ResidenceConfirmation]          = "Giấy xác nhận thông tin cư trú"
     };
 
     /// <summary>Kiểm tra loại giấy tờ có được phép upload hay không.</summary>
     public static bool IsAllowedApplicantType(string documentType)
         => AllowedApplicantDocumentTypes.Contains(documentType);
+
+    /// <summary>Kiểm tra loại giấy tờ có được phép upload vào Kho hồ sơ cá nhân hay không.</summary>
+    public static bool IsAllowedProfileDocumentType(string documentType)
+        => AllowedProfileDocumentTypes.Contains(documentType);
 
     /// <summary>
     /// Trả về danh sách giấy tờ bắt buộc khi submit,

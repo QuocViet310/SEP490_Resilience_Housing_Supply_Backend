@@ -4,11 +4,11 @@ using RHS.Domain.Entities;
 
 namespace RHS.Infrastructure.Configurations;
 
-public class HouseholdMemberConfiguration : IEntityTypeConfiguration<HouseholdMember>
+public class UserHouseholdMemberConfiguration : IEntityTypeConfiguration<UserHouseholdMember>
 {
-    public void Configure(EntityTypeBuilder<HouseholdMember> builder)
+    public void Configure(EntityTypeBuilder<UserHouseholdMember> builder)
     {
-        builder.ToTable("HouseholdMembers");
+        builder.ToTable("UserHouseholdMembers");
 
         builder.HasKey(x => x.MemberId);
 
@@ -64,17 +64,17 @@ public class HouseholdMemberConfiguration : IEntityTypeConfiguration<HouseholdMe
             .IsRequired(false);
 
         // ── Relationships ────────────────────────────────────────
-        builder.HasOne(x => x.HousingApplication)
-            .WithMany(x => x.HouseholdMembers)
-            .HasForeignKey(x => x.ApplicationId)
+        builder.HasOne(x => x.User)
+            .WithMany(x => x.UserHouseholdMembers)
+            .HasForeignKey(x => x.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // ── Indexes ──────────────────────────────────────────────
-        builder.HasIndex(x => x.ApplicationId);
+        builder.HasIndex(x => x.UserId);
         builder.HasIndex(x => x.CitizenId);
 
-        // 1 CCCD chỉ xuất hiện 1 lần trong cùng 1 hồ sơ
-        builder.HasIndex(x => new { x.ApplicationId, x.CitizenId })
+        // 1 CCCD chỉ xuất hiện 1 lần trong sổ hộ khẩu của cùng 1 user
+        builder.HasIndex(x => new { x.UserId, x.CitizenId })
             .IsUnique()
             .HasFilter("[CitizenId] IS NOT NULL");
     }
