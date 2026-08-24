@@ -14,13 +14,16 @@ public class UsersController : ControllerBase
 {
     private readonly IUserService _userService;
     private readonly ICitizenProfileService _citizenProfileService;
+    private readonly IHousingApplicationService _housingApplicationService;
 
     public UsersController(
         IUserService userService,
-        ICitizenProfileService citizenProfileService)
+        ICitizenProfileService citizenProfileService,
+        IHousingApplicationService housingApplicationService)
     {
-        _userService           = userService;
-        _citizenProfileService = citizenProfileService;
+        _userService             = userService;
+        _citizenProfileService   = citizenProfileService;
+        _housingApplicationService = housingApplicationService;
     }
 
     private Guid? GetCurrentUserId()
@@ -170,6 +173,32 @@ public class UsersController : ControllerBase
         {
             success = true,
             data = prefill
+        });
+    }
+
+    /// <summary>
+    /// [Citizen] Thẩm định tự động điều kiện mua NOXH trực tiếp từ Hồ sơ cá nhân hiện tại của công dân.
+    /// Kiểm tra: Thu nhập (&lt; 15tr/người), Diện tích nhà ở (&lt; 10m²/người) và Nhóm đối tượng ưu tiên.
+    /// </summary>
+    [HttpGet("profile/eligibility-check")]
+    [ProducesResponseType(typeof(RHS.Application.DTOs.Eligibility.EligibilityResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> CheckProfileEligibility(CancellationToken ct = default)
+    {
+        var userId = GetCurrentUserId();
+        if (userId == null)
+            return Unauthorized(new { success = false, message = "Token không hợp lệ" });
+
+        var checkRequest = new RHS.Application.DTOs.Eligibility.CheckEligibilityRequestDto
+        {
+            UseProfileFallback = true
+        };
+
+        var result = await _housingApplicationService.CheckEligibilityAsync(userId.Value, checkRequest, ct);
+        return Ok(new
+        {
+            success = true,
+            data = result
         });
     }
 

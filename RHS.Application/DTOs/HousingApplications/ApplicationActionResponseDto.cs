@@ -10,6 +10,9 @@ public class CreateApplicationResponseDto
     public string ApplicationStatus { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public string Message { get; set; } = string.Empty;
+    public int InheritedMembersCount { get; set; }
+    public int InheritedDocsCount { get; set; }
+    public RHS.Application.DTOs.Eligibility.EligibilityResultDto? Eligibility { get; set; }
 }
 
 /// <summary>

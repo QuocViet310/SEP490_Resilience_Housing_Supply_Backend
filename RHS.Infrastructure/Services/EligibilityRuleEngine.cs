@@ -10,12 +10,11 @@ using RHS.Infrastructure.Data;
 namespace RHS.Infrastructure.Services;
 
 /// <summary>
-/// Rule engine Đ29 + Đ30: đánh giá điều kiện hưởng chính sách NOXH.
-/// Hỗ trợ tất cả nhóm đối tượng theo Điều 76 Luật Nhà ở 2023:
-///   - Hộ nghèo/cận nghèo: dùng chuẩn nghèo, không xét trần thu nhập (Đ30.3)
-///   - Người có công: chỉ xét điều kiện nhà ở (Đ29)
-///   - Thu nhập thấp, công nhân, quân nhân, cán bộ, trả nhà CV, bị thu hồi đất:
-///     xét trần thu nhập (Đ30.1/Đ30.2) + điều kiện nhà ở (Đ29)
+/// Rule engine Đ29 + Đ30: Đánh giá tự động điều kiện hưởng chính sách NOXH.
+/// Hỗ trợ tất cả nhóm đối tượng theo Điều 76 Luật Nhà ở 2023 &amp; Nghị định 100/2024/NĐ-CP:
+///   - Thu nhập: &lt; 15 triệu/người/tháng (Độc thân &lt;= 15 triệu/tháng; Vợ+Chồng &lt;= 30 triệu/tháng)
+///   - Diện tích: Chưa có nhà hoặc diện tích bình quân &lt; 10m²/người
+///   - Đối tượng: Hộ nghèo/cận nghèo, người có công, thu nhập thấp, công nhân, LLVT...
 /// </summary>
 public class EligibilityRuleEngine : IEligibilityRuleEngine
 {
@@ -37,159 +36,93 @@ public class EligibilityRuleEngine : IEligibilityRuleEngine
         HousingApplication application,
         CancellationToken ct = default)
     {
-        var reasons = new List<string>();
-        var score = 100m;
-        var eligible = true;
+        var result = await EvaluateRulesAsync(
+            priorityGroup:               application.PriorityGroup,
+            maritalStatus:               application.MaritalStatus,
+            monthlyIncome:               application.MonthlyIncome,
+            spouseMonthlyIncome:         application.SpouseMonthlyIncome,
+            housingStatus:               application.HousingStatus,
+            averageHousingAreaPerPerson: application.AverageHousingAreaPerPerson,
+            totalMembersCount:           application.HouseholdMembersCount,
+            ct:                          ct);
 
-        // ── Bước 1: Kiểm tra đối tượng (Đ76) ──────────────────────
-        if (!PriorityGroupConstants.IsValid(application.PriorityGroup))
-        {
-            eligible = false;
-            score -= 40;
-            reasons.Add(
-                $"Đối tượng '{application.PriorityGroup}' không hợp lệ. " +
-                "Phải thuộc một trong các nhóm theo Điều 76 Luật Nhà ở 2023.");
-        }
-        else
-        {
-            var label = PriorityGroupConstants.Labels.TryGetValue(application.PriorityGroup!, out var l)
-                ? l
-                : application.PriorityGroup;
+        result.ApplicationId = application.ApplicationId;
 
-            if (PriorityGroupConstants.IsPovertyGroup(application.PriorityGroup))
-            {
-                reasons.Add(
-                    $"Đối tượng thụ hưởng: {label} — áp dụng điều kiện chuẩn nghèo (Đ30.3), " +
-                    "không xét trần thu nhập 15/30 triệu.");
-            }
-            else if (application.PriorityGroup == PriorityGroupConstants.MeritPerson)
-            {
-                reasons.Add(
-                    $"Đối tượng thụ hưởng: {label} — " +
-                    "được hỗ trợ cải thiện nhà ở theo Pháp lệnh Ưu đãi người có công (khoản 1 Đ76).");
-            }
-            else
-            {
-                reasons.Add($"Đối tượng thụ hưởng: {label} — áp dụng trần thu nhập theo Đ30.");
-            }
-        }
-
-        // ── Bước 2: Kiểm tra trần thu nhập (Đ30) ──────────────────
-        // Chỉ áp dụng cho các nhóm cần xét thu nhập (không áp dụng hộ nghèo + người có công)
-        if (PriorityGroupConstants.RequiresIncomeCheck(application.PriorityGroup))
-        {
-            // Đ30.1: cá nhân ≤ 15 triệu/tháng; Đ30.2: hộ gia đình ≤ 30 triệu/tháng
-            var maxIncomeSingle = await _policyService.GetValueAsync(
-                PolicyKeys.IncomeSingleMaxVnd, 15_000_000m, ct);
-            var maxIncomeHousehold = await _policyService.GetValueAsync(
-                PolicyKeys.IncomeMarriedMaxVnd, 30_000_000m, ct);
-
-            if (application.MonthlyIncome.HasValue)
-            {
-                // Dùng trần hộ gia đình nếu có vợ/chồng hoặc thành viên hộ, 
-                // ngược lại dùng trần cá nhân
-                var hasHousehold = application.MaritalStatus == "MARRIED"
-                    || (application.HouseholdMembers != null && application.HouseholdMembers.Count > 0);
-                var maxIncome = hasHousehold ? maxIncomeHousehold : maxIncomeSingle;
-                var incomeLabel = hasHousehold ? "hộ gia đình" : "cá nhân";
-
-                if (application.MonthlyIncome.Value > maxIncome)
-                {
-                    eligible = false;
-                    score -= 30;
-                    reasons.Add(
-                        $"Thu nhập {application.MonthlyIncome.Value:N0} đ/tháng ({incomeLabel}) " +
-                        $"vượt trần {maxIncome:N0} đ/tháng (Đ30). Không đủ điều kiện.");
-                }
-                else
-                {
-                    reasons.Add(
-                        $"Đủ điều kiện thu nhập: {application.MonthlyIncome.Value:N0} đ/tháng ({incomeLabel}) " +
-                        $"≤ {maxIncome:N0} đ/tháng (Đ30).");
-                }
-            }
-            else
-            {
-                // Thu nhập chưa khai — cảnh báo nhưng không chặn 
-                // (giấy xác nhận thu nhập sẽ bắt buộc khi upload)
-                reasons.Add("Chưa khai thu nhập hàng tháng. Giấy xác nhận thu nhập sẽ được kiểm tra khi nộp hồ sơ.");
-            }
-        }
-
-        // ── Bước 3: Kiểm tra điều kiện nhà ở (Đ29) ────────────────
-        if (application.HousingStatus == HousingStatusConstants.NoHouse)
-        {
-            reasons.Add("Đủ điều kiện nhà ở: chưa có nhà thuộc sở hữu (Đ29.1).");
-        }
-        else if (application.HousingStatus == HousingStatusConstants.SmallHouse)
-        {
-            var maxArea = await _policyService.GetValueAsync(PolicyKeys.MaxAreaPerPersonM2, 15m, ct);
-            var area = application.AverageHousingAreaPerPerson;
-
-            if (!area.HasValue)
-            {
-                eligible = false;
-                score -= 40;
-                reasons.Add("Thiếu diện tích nhà ở bình quân đầu người khi khai SMALL_HOUSE (Đ29.2).");
-            }
-            else if (area.Value >= maxArea)
-            {
-                eligible = false;
-                score -= 40;
-                reasons.Add($"Diện tích bình quân {area.Value:0.##} m²/người ≥ {maxArea} m² — không đủ điều kiện Đ29.2.");
-            }
-            else
-            {
-                reasons.Add($"Đủ điều kiện nhà ở: diện tích bình quân {area.Value:0.##} m²/người < {maxArea} m² (Đ29.2).");
-            }
-        }
-        else
-        {
-            eligible = false;
-            score -= 50;
-            reasons.Add($"Thực trạng nhà ở '{application.HousingStatus}' không hợp lệ.");
-        }
-
-        if (score < 0) score = 0;
-
+        // Lưu bản ghi lịch sử thẩm định
         var assessment = new EligibilityAssessment
         {
-            AssessmentId = Guid.NewGuid(),
-            UserId = application.ApplicantId,
-            ApplicationId = application.ApplicationId,
-            Eligible = eligible,
-            EstimatedScore = score,
-            ReasonsJson = JsonSerializer.Serialize(reasons),
+            AssessmentId   = Guid.NewGuid(),
+            UserId         = application.ApplicantId,
+            ApplicationId  = application.ApplicationId,
+            Eligible       = result.Eligible,
+            EstimatedScore = result.EstimatedScore,
+            ReasonsJson    = JsonSerializer.Serialize(result.Reasons),
             AssessmentDate = DateTime.UtcNow
         };
 
         _db.EligibilityAssessments.Add(assessment);
 
-        // Không dùng Update(application): entity load AsNoTracking kèm Include Applicant /
-        // UploadedByUser / ChangedByUser có thể cùng 1 User → EF tracking conflict.
         var tracked = await _db.HousingApplications
-            .FirstAsync(a => a.ApplicationId == application.ApplicationId, ct);
-        tracked.LatestAssessmentId = assessment.AssessmentId;
-        tracked.PriorityScore = score;
-        await _db.SaveChangesAsync(ct);
+            .FirstOrDefaultAsync(a => a.ApplicationId == application.ApplicationId, ct);
 
-        // Đồng bộ lại trên instance gọi vào (ReviewService còn dùng tiếp)
+        if (tracked != null)
+        {
+            tracked.LatestAssessmentId = assessment.AssessmentId;
+            tracked.PriorityScore      = result.EstimatedScore;
+            await _db.SaveChangesAsync(ct);
+        }
+
         application.LatestAssessmentId = assessment.AssessmentId;
-        application.PriorityScore = score;
+        application.PriorityScore      = result.EstimatedScore;
+        result.AssessmentId            = assessment.AssessmentId;
 
         _logger.LogInformation(
-            "Eligibility assessed for App {AppId}: Eligible={Eligible}, Score={Score}, Object={Object}",
-            application.ApplicationId, eligible, score, application.PriorityGroup);
+            "Eligibility assessed for App {AppId}: Eligible={Eligible}, Score={Score}, Group={Group}",
+            application.ApplicationId, result.Eligible, result.EstimatedScore, application.PriorityGroup);
 
-        return new EligibilityResultDto
-        {
-            AssessmentId = assessment.AssessmentId,
-            ApplicationId = application.ApplicationId,
-            Eligible = eligible,
-            EstimatedScore = score,
-            Reasons = reasons,
-            AssessmentDate = assessment.AssessmentDate
-        };
+        return result;
+    }
+
+    public async Task<EligibilityResultDto> AssessCriteriaAsync(
+        string? priorityGroup,
+        string? maritalStatus,
+        decimal? monthlyIncome,
+        decimal? spouseMonthlyIncome,
+        string? housingStatus,
+        decimal? averageHousingAreaPerPerson,
+        int totalMembersCount,
+        CancellationToken ct = default)
+    {
+        return await EvaluateRulesAsync(
+            priorityGroup,
+            maritalStatus,
+            monthlyIncome,
+            spouseMonthlyIncome,
+            housingStatus,
+            averageHousingAreaPerPerson,
+            totalMembersCount,
+            ct);
+    }
+
+    public async Task<EligibilityResultDto> AssessProfileAsync(
+        User user,
+        List<UserHouseholdMember> householdMembers,
+        CancellationToken ct = default)
+    {
+        var totalMembers = 1 + (user.MaritalStatus == MaritalStatusConstants.Married ? 1 : 0) + householdMembers.Count;
+
+        var result = await EvaluateRulesAsync(
+            priorityGroup:               user.PriorityGroup,
+            maritalStatus:               user.MaritalStatus,
+            monthlyIncome:               user.MonthlyIncome,
+            spouseMonthlyIncome:         user.SpouseMonthlyIncome,
+            housingStatus:               user.HousingStatus,
+            averageHousingAreaPerPerson: user.AverageHousingAreaPerPerson,
+            totalMembersCount:           totalMembers,
+            ct:                          ct);
+
+        result.AssessmentId = Guid.NewGuid();
+        return result;
     }
 
     public async Task<EligibilityResultDto?> GetLatestForApplicationAsync(
@@ -210,12 +143,204 @@ public class EligibilityRuleEngine : IEligibilityRuleEngine
 
         return new EligibilityResultDto
         {
-            AssessmentId = latest.AssessmentId,
-            ApplicationId = latest.ApplicationId,
-            Eligible = latest.Eligible,
+            AssessmentId   = latest.AssessmentId,
+            ApplicationId  = latest.ApplicationId,
+            Eligible       = latest.Eligible,
             EstimatedScore = latest.EstimatedScore,
-            Reasons = reasons,
+            Reasons        = reasons,
             AssessmentDate = latest.AssessmentDate
+        };
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Core Rules Evaluation Engine
+    // ─────────────────────────────────────────────────────────────
+
+    private async Task<EligibilityResultDto> EvaluateRulesAsync(
+        string? priorityGroup,
+        string? maritalStatus,
+        decimal? monthlyIncome,
+        decimal? spouseMonthlyIncome,
+        string? housingStatus,
+        decimal? averageHousingAreaPerPerson,
+        int totalMembersCount,
+        CancellationToken ct)
+    {
+        var reasons = new List<string>();
+        var score = 100m;
+        var eligible = true;
+
+        bool priorityGroupCheckPassed = false;
+        bool incomeCheckPassed = false;
+        bool housingAreaCheckPassed = false;
+
+        decimal? calculatedIncome = null;
+        decimal? maxAllowedIncome = null;
+        decimal? maxAreaAllowed = null;
+
+        var normPriorityGroup = priorityGroup?.Trim().ToUpperInvariant();
+        var normMaritalStatus = maritalStatus?.Trim().ToUpperInvariant();
+        var normHousingStatus = housingStatus?.Trim().ToUpperInvariant();
+
+        // ── Bước 1: Kiểm tra đối tượng thụ hưởng (Điều 76 Luật Nhà ở 2023) ──
+        if (string.IsNullOrWhiteSpace(normPriorityGroup) || !PriorityGroupConstants.IsValid(normPriorityGroup))
+        {
+            eligible = false;
+            score -= 40;
+            priorityGroupCheckPassed = false;
+            reasons.Add(
+                $"Đối tượng '{priorityGroup}' không hợp lệ. " +
+                "Người nộp đơn phải thuộc một trong các nhóm đối tượng thụ hưởng theo Điều 76 Luật Nhà ở 2023.");
+        }
+        else
+        {
+            priorityGroupCheckPassed = true;
+            var label = PriorityGroupConstants.Labels.TryGetValue(normPriorityGroup, out var l) ? l : normPriorityGroup;
+
+            if (PriorityGroupConstants.IsPovertyGroup(normPriorityGroup))
+            {
+                reasons.Add($"Đối tượng thụ hưởng: {label} — áp dụng chuẩn nghèo theo quy định (Đ30.3), không xét trần thu nhập 15/30 triệu.");
+            }
+            else if (normPriorityGroup == PriorityGroupConstants.MeritPerson)
+            {
+                reasons.Add($"Đối tượng thụ hưởng: {label} — hưởng chính sách ưu đãi Người có công theo Pháp lệnh (Đ76.1), không xét trần thu nhập.");
+            }
+            else
+            {
+                reasons.Add($"Đối tượng thụ hưởng: {label} — áp dụng trần thu nhập theo Điều 30 Luật Nhà ở & Nghị định 100/2024/NĐ-CP.");
+            }
+        }
+
+        // ── Bước 2: Kiểm tra trần thu nhập (Điều 30: < 15 triệu/người/tháng) ──
+        var maxIncomeSingle = await _policyService.GetValueAsync(PolicyKeys.IncomeSingleMaxVnd, 15_000_000m, ct);
+        var maxIncomeMarried = await _policyService.GetValueAsync(PolicyKeys.IncomeMarriedMaxVnd, 30_000_000m, ct);
+
+        if (!PriorityGroupConstants.RequiresIncomeCheck(normPriorityGroup))
+        {
+            // Nhóm không cần xét trần thu nhập (Hộ nghèo, Người có công)
+            incomeCheckPassed = true;
+            calculatedIncome = monthlyIncome;
+            maxAllowedIncome = null;
+        }
+        else
+        {
+            var isMarried = normMaritalStatus == MaritalStatusConstants.Married;
+            maxAllowedIncome = isMarried ? maxIncomeMarried : maxIncomeSingle;
+
+            if (isMarried)
+            {
+                var p1 = monthlyIncome.GetValueOrDefault(0m);
+                var p2 = spouseMonthlyIncome.GetValueOrDefault(0m);
+                calculatedIncome = p1 + p2;
+
+                if (calculatedIncome.Value > maxIncomeMarried)
+                {
+                    eligible = false;
+                    score -= 30;
+                    incomeCheckPassed = false;
+                    reasons.Add(
+                        $"Tổng thu nhập của 2 vợ chồng ({calculatedIncome.Value:N0} đ/tháng) vượt trần {maxIncomeMarried:N0} đ/tháng (Đ30.1.a - bình quân tối đa 15 triệu/người). Không đủ điều kiện.");
+                }
+                else
+                {
+                    incomeCheckPassed = true;
+                    reasons.Add(
+                        $"Đủ điều kiện thu nhập: Tổng thu nhập 2 vợ chồng ({calculatedIncome.Value:N0} đ/tháng) ≤ trần quy định {maxIncomeMarried:N0} đ/tháng (bình quân {(calculatedIncome.Value / 2):N0} đ/người/tháng < 15 triệu/người).");
+                }
+            }
+            else
+            {
+                calculatedIncome = monthlyIncome.GetValueOrDefault(0m);
+
+                if (monthlyIncome.HasValue)
+                {
+                    if (calculatedIncome.Value > maxIncomeSingle)
+                    {
+                        eligible = false;
+                        score -= 30;
+                        incomeCheckPassed = false;
+                        reasons.Add(
+                            $"Thu nhập cá nhân ({calculatedIncome.Value:N0} đ/tháng) vượt trần quy định cho người độc thân {maxIncomeSingle:N0} đ/tháng (Đ30.1.a). Không đủ điều kiện.");
+                    }
+                    else
+                    {
+                        incomeCheckPassed = true;
+                        reasons.Add(
+                            $"Đủ điều kiện thu nhập: Thu nhập cá nhân ({calculatedIncome.Value:N0} đ/tháng) ≤ trần quy định {maxIncomeSingle:N0} đ/tháng.");
+                    }
+                }
+                else
+                {
+                    incomeCheckPassed = false;
+                    reasons.Add("Chưa khai báo thu nhập cá nhân hàng tháng. Giấy xác nhận thu nhập bắt buộc phải được cung cấp khi nộp đơn.");
+                }
+            }
+        }
+
+        // ── Bước 3: Kiểm tra điều kiện nhà ở (Điều 29: Chưa có nhà hoặc diện tích < 10m²/người) ──
+        var maxArea = await _policyService.GetValueAsync(PolicyKeys.MaxAreaPerPersonM2, 10m, ct);
+        maxAreaAllowed = maxArea;
+
+        if (normHousingStatus == HousingStatusConstants.NoHouse)
+        {
+            housingAreaCheckPassed = true;
+            reasons.Add("Đủ điều kiện nhà ở: Hiện chưa có nhà ở thuộc sở hữu của mình (Điều 29.1).");
+        }
+        else if (normHousingStatus == HousingStatusConstants.SmallHouse)
+        {
+            var area = averageHousingAreaPerPerson;
+
+            if (!area.HasValue)
+            {
+                eligible = false;
+                score -= 40;
+                housingAreaCheckPassed = false;
+                reasons.Add("Thiếu thông tin diện tích nhà ở bình quân đầu người khi khai báo nhà ở chật chội (SMALL_HOUSE).");
+            }
+            else if (area.Value >= maxArea)
+            {
+                eligible = false;
+                score -= 40;
+                housingAreaCheckPassed = false;
+                reasons.Add(
+                    $"Diện tích bình quân {area.Value:0.##} m²/người ≥ {maxArea:0.##} m²/người — vượt mức chuẩn nhà ở chật chội (quy định NOXH yêu cầu dưới {maxArea:0.##} m²/người theo Điều 29.2). Không đủ điều kiện.");
+            }
+            else
+            {
+                housingAreaCheckPassed = true;
+                reasons.Add(
+                    $"Đủ điều kiện nhà ở: Diện tích nhà ở bình quân {area.Value:0.##} m²/người < chuẩn chật chội {maxArea:0.##} m²/người (Điều 29.2).");
+            }
+        }
+        else
+        {
+            eligible = false;
+            score -= 50;
+            housingAreaCheckPassed = false;
+            reasons.Add($"Thực trạng nhà ở '{housingStatus}' không hợp lệ (Chỉ chấp nhận NO_HOUSE hoặc SMALL_HOUSE).");
+        }
+
+        if (score < 0) score = 0;
+
+        var summary = eligible
+            ? $"Hồ sơ ĐẠT ĐIỀU KIỆN mua Nhà ở Xã hội (Điểm ưu tiên ước tính: {score:0.#}/100)."
+            : "Hồ sơ CHƯA ĐỦ ĐIỀU KIỆN mua Nhà ở Xã hội do vi phạm tiêu chuẩn về thu nhập, diện tích nhà ở hoặc đối tượng thụ hưởng.";
+
+        return new EligibilityResultDto
+        {
+            AssessmentId             = Guid.NewGuid(),
+            Eligible                 = eligible,
+            EstimatedScore           = score,
+            PriorityGroupCheckPassed = priorityGroupCheckPassed,
+            IncomeCheckPassed        = incomeCheckPassed,
+            HousingAreaCheckPassed   = housingAreaCheckPassed,
+            TotalHouseholdIncome     = calculatedIncome,
+            MaxAllowedIncome         = maxAllowedIncome,
+            CalculatedAverageArea    = averageHousingAreaPerPerson,
+            MaxAllowedAreaPerPerson  = maxAreaAllowed,
+            SummaryMessage           = summary,
+            Reasons                  = reasons,
+            AssessmentDate           = DateTime.UtcNow
         };
     }
 }

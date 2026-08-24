@@ -111,4 +111,12 @@ public interface IHousingApplicationService
     /// </summary>
     Task<bool> ExecuteDeveloperDecisionAsync(
         Guid projectId, DeveloperWorkflowDecisionRequestDto request, Guid developerUserId);
+
+    /// <summary>
+    /// Kiểm tra nhanh điều kiện mua nhà ở xã hội (Thu nhập &lt; 15tr/người, Diện tích &lt; 10m²/người).
+    /// </summary>
+    Task<RHS.Application.DTOs.Eligibility.EligibilityResultDto> CheckEligibilityAsync(
+        Guid applicantId,
+        RHS.Application.DTOs.Eligibility.CheckEligibilityRequestDto request,
+        CancellationToken ct = default);
 }

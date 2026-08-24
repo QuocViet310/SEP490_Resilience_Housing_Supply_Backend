@@ -53,21 +53,29 @@ public class HousingApplicationService : IHousingApplicationService
             "Applicant {ApplicantId} đang tạo hồ sơ cho dự án {ProjectId}.",
             applicantId, request.ProjectId);
 
-        // 1. Validate: HousingStatus phải hợp lệ
-        if (!HousingStatusConstants.IsValid(request.HousingStatus))
+        var now = DateTime.UtcNow;
+
+        // 1. Kiểm tra dự án tồn tại và thời gian mở nhận hồ sơ
+        var project = await _context.HousingProjects
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == request.ProjectId);
+
+        if (project == null)
+            throw new KeyNotFoundException($"Không tìm thấy dự án với ID: {request.ProjectId}");
+
+        if (project.ApplicationOpenDate.HasValue && now < project.ApplicationOpenDate.Value)
         {
             throw new ArgumentException(
-                $"Thực trạng nhà ở '{request.HousingStatus}' không hợp lệ. " +
-                $"Giá trị cho phép: {string.Join(", ", HousingStatusConstants.AllValues)}");
+                $"Dự án chưa đến thời gian mở nhận hồ sơ (Thời gian mở: {project.ApplicationOpenDate.Value:dd/MM/yyyy HH:mm}).");
         }
 
-        if (!PriorityGroupConstants.IsValid(request.PriorityGroup))
+        if (project.ApplicationCloseDate.HasValue && now > project.ApplicationCloseDate.Value)
         {
             throw new ArgumentException(
-                "Đối tượng phải là hộ nghèo đô thị (URBAN_POOR) hoặc hộ cận nghèo đô thị (URBAN_NEAR_POOR).");
+                $"Dự án đã kết thúc thời hạn nhận hồ sơ (Hạn chót: {project.ApplicationCloseDate.Value:dd/MM/yyyy HH:mm}).");
         }
 
-        // 2. Kiểm tra trùng lặp: mỗi Applicant chỉ được 1 hồ sơ/dự án
+        // 2. Kiểm tra trùng lặp & Chống nộp nhiều nơi (Active App Check)
         var alreadyExists = await _applicationRepo.ExistsByApplicantAndProjectAsync(
             applicantId, request.ProjectId);
 
@@ -79,20 +87,51 @@ public class HousingApplicationService : IHousingApplicationService
             throw new DuplicateApplicationException(applicantId, request.ProjectId);
         }
 
-        // 2b. Active App Check: chống nộp nhiều nơi
         var hasActiveApplication = await _applicationRepo.HasActiveApplicationAsync(applicantId);
         if (hasActiveApplication)
         {
             _logger.LogWarning(
-                "Applicant {ApplicantId} đã có hồ sơ đang hoạt động ở một dự án khác. Không thể tạo đơn nháp mới.",
+                "Applicant {ApplicantId} đã có hồ sơ đang hoạt động ở một dự án khác. Không thể tạo đơn mới.",
                 applicantId);
             throw new ActiveApplicationExistsException(applicantId);
         }
 
-        // 3. Map DTO → Entity (trạng thái ban đầu = DRAFT)
-        var now = DateTime.UtcNow;
+        // 3. Tự động trích xuất thông tin từ Hồ sơ cá nhân (Profile) nếu AutoFillFromProfile = true
+        var user = await _context.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == applicantId);
 
-        // Nếu request không gửi danh sách thành viên nhưng user có sẵn trong Profile -> Tự động kế thừa
+        var fullName         = string.IsNullOrWhiteSpace(request.FullName) ? user?.FullName ?? string.Empty : request.FullName.Trim();
+        var citizenId        = string.IsNullOrWhiteSpace(request.CitizenId) ? user?.CitizenId ?? string.Empty : request.CitizenId.Trim();
+        var currentResidence = string.IsNullOrWhiteSpace(request.CurrentResidence) ? (user?.CurrentResidence ?? user?.Address ?? string.Empty) : request.CurrentResidence.Trim();
+        var permanentAddress = string.IsNullOrWhiteSpace(request.PermanentAddress) ? (user?.PermanentAddress ?? user?.Address ?? string.Empty) : request.PermanentAddress.Trim();
+        var occupation       = string.IsNullOrWhiteSpace(request.Occupation) ? user?.Occupation?.Trim() : request.Occupation?.Trim();
+        var workPlace        = string.IsNullOrWhiteSpace(request.WorkPlace) ? user?.WorkPlace?.Trim() : request.WorkPlace?.Trim();
+        var maritalStatus    = string.IsNullOrWhiteSpace(request.MaritalStatus) ? (user?.MaritalStatus ?? MaritalStatusConstants.Single) : request.MaritalStatus.Trim().ToUpperInvariant();
+        var housingStatus    = string.IsNullOrWhiteSpace(request.HousingStatus) ? (user?.HousingStatus ?? HousingStatusConstants.NoHouse) : request.HousingStatus.Trim().ToUpperInvariant();
+        var priorityGroup    = string.IsNullOrWhiteSpace(request.PriorityGroup) ? (user?.PriorityGroup ?? PriorityGroupConstants.LowIncomeUrban) : request.PriorityGroup.Trim().ToUpperInvariant();
+        var monthlyIncome    = request.MonthlyIncome ?? user?.MonthlyIncome;
+        var spouseIncome     = request.SpouseMonthlyIncome ?? user?.SpouseMonthlyIncome;
+
+        // Validate cơ bản
+        if (string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(citizenId))
+        {
+            throw new ArgumentException("Họ tên và số CCCD là bắt buộc. Vui lòng hoàn tất eKYC/Profile hoặc điền vào đơn.");
+        }
+
+        if (!HousingStatusConstants.IsValid(housingStatus))
+        {
+            throw new ArgumentException(
+                $"Thực trạng nhà ở '{housingStatus}' không hợp lệ. Cho phép: {string.Join(", ", HousingStatusConstants.AllValues)}");
+        }
+
+        if (!PriorityGroupConstants.IsValid(priorityGroup))
+        {
+            throw new ArgumentException(
+                $"Đối tượng thụ hưởng '{priorityGroup}' không hợp lệ. Vui lòng chọn nhóm theo Điều 76 Luật Nhà ở 2023.");
+        }
+
+        // 4. Kế thừa nhân khẩu hộ gia đình
         List<HouseholdMember> initialMembers;
         if (request.HouseholdMembers != null && request.HouseholdMembers.Count > 0)
         {
@@ -123,45 +162,52 @@ public class HousingApplicationService : IHousingApplicationService
             }).ToList();
         }
 
+        // 5. Tính toán diện tích bình quân đầu người
+        var totalPeople = 1 + (maritalStatus == MaritalStatusConstants.Married ? 1 : 0) + initialMembers.Count;
+        decimal? avgArea = request.AverageHousingAreaPerPerson ?? user?.AverageHousingAreaPerPerson;
+        if (request.TotalHousingArea.HasValue && request.TotalHousingArea.Value > 0)
+        {
+            avgArea = (decimal)Math.Round(request.TotalHousingArea.Value / totalPeople, 2);
+        }
+
+        // 6. Khởi tạo thực thể HousingApplication
         var application = new HousingApplication
         {
-            ApplicationId          = Guid.NewGuid(),
-            ApplicantId            = applicantId,
-            ProjectId              = request.ProjectId,
-            ApplicationStatus      = ApplicationStatusConstants.Draft,
-            CreatedAt              = now,
-            SubmittedAt            = now,       // sẽ được cập nhật khi SUBMIT thực sự
-            PriorityScore          = 0,
-            FinalDecisionDate      = null,
-            // Form fields
-            FullName               = request.FullName.Trim(),
-            CitizenId              = request.CitizenId.Trim(),
-            Occupation             = request.Occupation?.Trim(),
-            WorkPlace              = request.WorkPlace?.Trim(),
-            CurrentResidence       = request.CurrentResidence.Trim(),
-            PermanentAddress       = request.PermanentAddress.Trim(),
-            HousingStatus          = request.HousingStatus,
-            MaritalStatus          = request.MaritalStatus.Trim(),
-            HouseholdMembersCount  = 1 + initialMembers.Count,
-            PriorityGroup          = request.PriorityGroup.Trim(),
-            MonthlyIncome          = request.MonthlyIncome,
-            SpouseMonthlyIncome    = request.SpouseMonthlyIncome,
-            AverageHousingAreaPerPerson = request.AverageHousingAreaPerPerson,
-            LotteryResult          = LotteryResultConstants.Pending,
-            DesiredApartmentTypeId = await ResolveDesiredApartmentTypeIdAsync(request.DesiredApartmentTypeId, request.DesiredApartmentType),
-            HouseholdMembers       = initialMembers
+            ApplicationId               = Guid.NewGuid(),
+            ApplicantId                 = applicantId,
+            ProjectId                   = request.ProjectId,
+            ApplicationStatus           = ApplicationStatusConstants.Draft,
+            CreatedAt                   = now,
+            SubmittedAt                 = now,
+            PriorityScore               = 0,
+            FinalDecisionDate           = null,
+            FullName                    = fullName,
+            CitizenId                   = citizenId,
+            Occupation                  = occupation,
+            WorkPlace                   = workPlace,
+            CurrentResidence            = currentResidence,
+            PermanentAddress            = permanentAddress,
+            HousingStatus               = housingStatus,
+            MaritalStatus               = maritalStatus,
+            HouseholdMembersCount       = totalPeople,
+            PriorityGroup               = priorityGroup,
+            MonthlyIncome               = monthlyIncome,
+            SpouseMonthlyIncome         = spouseIncome,
+            AverageHousingAreaPerPerson = avgArea,
+            LotteryResult               = LotteryResultConstants.Pending,
+            DesiredApartmentTypeId      = await ResolveDesiredApartmentTypeIdAsync(request.DesiredApartmentTypeId, request.DesiredApartmentType),
+            HouseholdMembers            = initialMembers
         };
 
-        // Kế thừa tài liệu từ Kho hồ sơ cá nhân (Document Vault)
+        // 7. Kế thừa tài liệu từ Kho hồ sơ cá nhân (Document Vault)
+        var inheritedDocCount = 0;
         if (request.InheritDocumentsFromVault)
         {
-            // Kế thừa cả PDF và ảnh từ kho cá nhân (không chỉ .pdf)
             var vaultDocs = await _context.UserDocuments
                 .AsNoTracking()
                 .Where(d => d.UserId == applicantId)
                 .ToListAsync();
 
-            // Nhóm theo loại giấy tờ mới nhất; chỉ lấy loại được phép trên đơn đăng ký
             var docsByType = vaultDocs
                 .Where(d => DocumentTypeConstants.AllowedApplicantDocumentTypes.Contains(d.DocumentType))
                 .GroupBy(d => d.DocumentType)
@@ -183,6 +229,7 @@ public class HousingApplicationService : IHousingApplicationService
                     VerificationStatus = "PENDING"
                 });
             }
+            inheritedDocCount = application.Documents.Count;
         }
 
         try
@@ -198,18 +245,26 @@ public class HousingApplicationService : IHousingApplicationService
             throw new DuplicateApplicationException(applicantId, request.ProjectId);
         }
 
+        // 8. Đánh giá tự động sơ bộ điều kiện NOXH (Rule Engine: <15tr/người, <10m2/người)
+        var eligibility = await _eligibilityEngine.AssessAsync(application);
+
         _logger.LogInformation(
-            "Tạo hồ sơ thành công. ApplicationId={ApplicationId}, Status={Status}, InhertedDocs={DocCount}.",
-            application.ApplicationId, application.ApplicationStatus, application.Documents.Count);
+            "Tạo hồ sơ thành công. ApplicationId={ApplicationId}, Eligible={Eligible}, Score={Score}, InhertedDocs={DocCount}.",
+            application.ApplicationId, eligibility.Eligible, eligibility.EstimatedScore, inheritedDocCount);
+
+        var statusMessage = eligibility.Eligible
+            ? $"Hồ sơ tạo thành công (Trạng thái: DRAFT). {eligibility.SummaryMessage}"
+            : $"Hồ sơ tạo thành công (Trạng thái: DRAFT). CẢNH BÁO: {eligibility.SummaryMessage}";
 
         return new CreateApplicationResponseDto
         {
-            ApplicationId     = application.ApplicationId,
-            ApplicationStatus = application.ApplicationStatus,
-            CreatedAt         = application.CreatedAt,
-            Message           = application.Documents.Count > 0
-                ? $"Hồ sơ đã được tạo thành công với trạng thái DRAFT. Đã tự động kế thừa {application.Documents.Count} tài liệu từ Kho hồ sơ cá nhân của bạn."
-                : "Hồ sơ đã được tạo thành công với trạng thái DRAFT. Vui lòng upload giấy tờ và nộp hồ sơ."
+            ApplicationId         = application.ApplicationId,
+            ApplicationStatus     = application.ApplicationStatus,
+            CreatedAt             = application.CreatedAt,
+            InheritedMembersCount = initialMembers.Count,
+            InheritedDocsCount    = inheritedDocCount,
+            Eligibility           = eligibility,
+            Message               = statusMessage
         };
     }
 
@@ -1090,5 +1145,63 @@ public class HousingApplicationService : IHousingApplicationService
         }
 
         return null;
+    }
+
+    public async Task<RHS.Application.DTOs.Eligibility.EligibilityResultDto> CheckEligibilityAsync(
+        Guid applicantId,
+        RHS.Application.DTOs.Eligibility.CheckEligibilityRequestDto request,
+        CancellationToken ct = default)
+    {
+        User? user = null;
+        List<UserHouseholdMember> savedMembers = new();
+
+        if (request.UseProfileFallback && applicantId != Guid.Empty)
+        {
+            user = await _context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == applicantId, ct);
+
+            savedMembers = await _context.UserHouseholdMembers
+                .AsNoTracking()
+                .Where(m => m.UserId == applicantId)
+                .ToListAsync(ct);
+        }
+
+        var priorityGroup = !string.IsNullOrWhiteSpace(request.PriorityGroup)
+            ? request.PriorityGroup
+            : user?.PriorityGroup ?? PriorityGroupConstants.LowIncomeUrban;
+
+        var maritalStatus = !string.IsNullOrWhiteSpace(request.MaritalStatus)
+            ? request.MaritalStatus
+            : user?.MaritalStatus ?? MaritalStatusConstants.Single;
+
+        var monthlyIncome = request.MonthlyIncome ?? user?.MonthlyIncome;
+        var spouseMonthlyIncome = request.SpouseMonthlyIncome ?? user?.SpouseMonthlyIncome;
+        var housingStatus = !string.IsNullOrWhiteSpace(request.HousingStatus)
+            ? request.HousingStatus
+            : user?.HousingStatus ?? HousingStatusConstants.NoHouse;
+
+        var membersCount = request.HouseholdMembers != null && request.HouseholdMembers.Count > 0
+            ? request.HouseholdMembers.Count
+            : savedMembers.Count;
+
+        var isMarried = maritalStatus.Trim().ToUpperInvariant() == MaritalStatusConstants.Married;
+        var totalPeople = 1 + (isMarried ? 1 : 0) + membersCount;
+
+        decimal? avgArea = request.AverageHousingAreaPerPerson ?? user?.AverageHousingAreaPerPerson;
+        if (request.TotalHousingArea.HasValue && request.TotalHousingArea.Value > 0)
+        {
+            avgArea = (decimal)Math.Round(request.TotalHousingArea.Value / totalPeople, 2);
+        }
+
+        return await _eligibilityEngine.AssessCriteriaAsync(
+            priorityGroup:               priorityGroup,
+            maritalStatus:               maritalStatus,
+            monthlyIncome:               monthlyIncome,
+            spouseMonthlyIncome:         spouseMonthlyIncome,
+            housingStatus:               housingStatus,
+            averageHousingAreaPerPerson: avgArea,
+            totalMembersCount:           totalPeople,
+            ct:                          ct);
     }
 }

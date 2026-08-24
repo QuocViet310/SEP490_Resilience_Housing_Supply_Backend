@@ -1,12 +1,11 @@
 using System.ComponentModel.DataAnnotations;
 using RHS.Application.DTOs.HouseholdMember;
-using RHS.Domain.Constants;
 
 namespace RHS.Application.DTOs.HousingApplications;
 
 /// <summary>
 /// Request DTO để tạo mới hồ sơ đăng ký nhà ở xã hội.
-/// Hồ sơ được tạo với trạng thái DRAFT (chưa nộp).
+/// Hỗ trợ cơ chế Auto-fill tự động trích xuất thông tin từ Hồ sơ cá nhân (Profile / eKYC / Sổ hộ khẩu / Document Vault).
 /// </summary>
 public class CreateApplicationRequestDto
 {
@@ -14,17 +13,23 @@ public class CreateApplicationRequestDto
     [Required(ErrorMessage = "ProjectId là bắt buộc.")]
     public Guid ProjectId { get; set; }
 
-    // ── Thông tin cá nhân ──────────────────────────────────────────
+    /// <summary>
+    /// Bật chế độ tự động điền từ Hồ sơ cá nhân (Profile).
+    /// Nếu true: các thông tin để trống (Họ tên, CCCD, địa chỉ, tình trạng hôn nhân, thu nhập, nhân khẩu, giấy tờ)
+    /// sẽ được hệ thống tự động kế thừa từ Profile đã lưu của người dùng.
+    /// Mặc định: true.
+    /// </summary>
+    public bool AutoFillFromProfile { get; set; } = true;
+
+    // ── Thông tin cá nhân (Tùy chọn nếu AutoFillFromProfile = true) ──
 
     /// <summary>Họ và tên đầy đủ</summary>
-    [Required(ErrorMessage = "Họ tên là bắt buộc.")]
     [MaxLength(100, ErrorMessage = "Họ tên không được quá 100 ký tự.")]
-    public string FullName { get; set; } = string.Empty;
+    public string? FullName { get; set; }
 
     /// <summary>Số CCCD/CMND (9 hoặc 12 số)</summary>
-    [Required(ErrorMessage = "Số CCCD là bắt buộc.")]
     [RegularExpression(@"^\d{9}(\d{3})?$", ErrorMessage = "Số CCCD phải là 9 hoặc 12 chữ số.")]
-    public string CitizenId { get; set; } = string.Empty;
+    public string? CitizenId { get; set; }
 
     /// <summary>Nghề nghiệp hiện tại (không bắt buộc)</summary>
     [MaxLength(200, ErrorMessage = "Nghề nghiệp không được quá 200 ký tự.")]
@@ -37,51 +42,50 @@ public class CreateApplicationRequestDto
     // ── Thông tin địa chỉ ─────────────────────────────────────────
 
     /// <summary>Nơi ở hiện tại (địa chỉ thực tế đang sinh sống)</summary>
-    [Required(ErrorMessage = "Nơi ở hiện tại là bắt buộc.")]
     [MaxLength(500, ErrorMessage = "Địa chỉ không được quá 500 ký tự.")]
-    public string CurrentResidence { get; set; } = string.Empty;
+    public string? CurrentResidence { get; set; }
 
     /// <summary>Nơi đăng ký thường trú/tạm trú</summary>
-    [Required(ErrorMessage = "Địa chỉ thường trú/tạm trú là bắt buộc.")]
     [MaxLength(500, ErrorMessage = "Địa chỉ không được quá 500 ký tự.")]
-    public string PermanentAddress { get; set; } = string.Empty;
+    public string? PermanentAddress { get; set; }
 
     // ── Thực trạng nhà ở & Thu nhập ───────────────────────────────
 
     /// <summary>
     /// Thực trạng nhà ở. Giá trị hợp lệ:
-    /// "NO_HOUSE" (Chưa có nhà) hoặc "SMALL_HOUSE" (Diện tích &lt; 15m²).
+    /// "NO_HOUSE" (Chưa có nhà) hoặc "SMALL_HOUSE" (Diện tích &lt; 10m²/người).
     /// </summary>
-    [Required(ErrorMessage = "Thực trạng nhà ở là bắt buộc.")]
-    public string HousingStatus { get; set; } = string.Empty;
+    public string? HousingStatus { get; set; }
 
-    /// <summary>Tình trạng hôn nhân</summary>
-    [Required(ErrorMessage = "Tình trạng hôn nhân là bắt buộc.")]
+    /// <summary>Tình trạng hôn nhân (SINGLE, MARRIED, DIVORCED)</summary>
     [MaxLength(50, ErrorMessage = "Tình trạng hôn nhân không được quá 50 ký tự.")]
-    public string MaritalStatus { get; set; } = string.Empty;
+    public string? MaritalStatus { get; set; }
 
     /// <summary>
     /// Danh sách thành viên hộ gia đình (không tính người đứng đơn).
-    /// HouseholdMembersCount sẽ được tự động tính = 1 + số thành viên.
+    /// Nếu để trống và AutoFillFromProfile = true, hệ thống sẽ tự động lấy từ UserHouseholdMembers.
     /// </summary>
     public List<HouseholdMemberRequestDto>? HouseholdMembers { get; set; }
 
-    /// <summary>Thuộc đối tượng (Mẫu số 01 mục 8): hộ nghèo / cận nghèo đô thị</summary>
-    [Required(ErrorMessage = "Đối tượng thụ hưởng là bắt buộc.")]
+    /// <summary>Thuộc đối tượng thụ hưởng (Điều 76): URBAN_POOR, LOW_INCOME, INDUSTRIAL_WORKER, MERIT_PERSON...</summary>
     [MaxLength(100, ErrorMessage = "Đối tượng không được quá 100 ký tự.")]
-    public string PriorityGroup { get; set; } = string.Empty;
+    public string? PriorityGroup { get; set; }
 
-    /// <summary>Thu nhập (không bắt buộc — hộ nghèo/cận nghèo dùng chuẩn nghèo Đ30.3).</summary>
+    /// <summary>Thu nhập hàng tháng của người đứng đơn (VND/tháng, tối đa 15 triệu nếu độc thân).</summary>
     [Range(0, 1_000_000_000, ErrorMessage = "Thu nhập không hợp lệ.")]
     public decimal? MonthlyIncome { get; set; }
 
-    /// <summary>Thu nhập tháng của vợ/chồng (nếu có)</summary>
+    /// <summary>Thu nhập tháng của vợ/chồng nếu đã kết hôn (VND/tháng, tổng vợ+chồng tối đa 30 triệu).</summary>
     [Range(0, 1_000_000_000, ErrorMessage = "Thu nhập vợ/chồng không hợp lệ.")]
     public decimal? SpouseMonthlyIncome { get; set; }
 
-    /// <summary>Diện tích nhà ở bình quân đầu người (m²) — bắt buộc khi SMALL_HOUSE</summary>
+    /// <summary>Diện tích nhà ở bình quân đầu người (m²/người) — bắt buộc &lt; 10m² khi SMALL_HOUSE</summary>
     [Range(0, 1000, ErrorMessage = "Diện tích bình quân không hợp lệ.")]
     public decimal? AverageHousingAreaPerPerson { get; set; }
+
+    /// <summary>Tổng diện tích nhà ở hiện có (m²) nếu muốn hệ thống tự tính diện tích bình quân đầu người</summary>
+    [Range(0, 10000, ErrorMessage = "Tổng diện tích nhà không hợp lệ.")]
+    public double? TotalHousingArea { get; set; }
 
     /// <summary>ID của Loại căn hộ mong muốn mua (ApartmentType Entity)</summary>
     public Guid? DesiredApartmentTypeId { get; set; }

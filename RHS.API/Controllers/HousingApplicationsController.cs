@@ -94,6 +94,35 @@ public class HousingApplicationsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// [Applicant] Kiểm tra nhanh điều kiện mua nhà ở xã hội (Thu nhập &lt; 15tr/người, Diện tích &lt; 10m²/người).
+    /// Có thể dùng dữ liệu từ Profile hoặc truyền dữ liệu tùy chỉnh để thẩm định trước khi nộp đơn.
+    /// </summary>
+    [HttpPost("check-eligibility")]
+    [Authorize(Roles = RoleConstants.Applicant)]
+    [ProducesResponseType(typeof(RHS.Application.DTOs.Eligibility.EligibilityResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> CheckEligibility(
+        [FromBody] RHS.Application.DTOs.Eligibility.CheckEligibilityRequestDto request,
+        CancellationToken ct = default)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var applicantId = GetCurrentUserId();
+        try
+        {
+            var result = await _applicationService.CheckEligibilityAsync(applicantId, request, ct);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi kiểm tra điều kiện mua nhà cho user {ApplicantId}", applicantId);
+            return StatusCode(500, new { message = "Đã xảy ra lỗi khi kiểm tra điều kiện hồ sơ." });
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────
     // APPLICANT: Cập nhật hồ sơ (DRAFT / NEED_MORE_DOCUMENTS)
     // ──────────────────────────────────────────────────────────────
