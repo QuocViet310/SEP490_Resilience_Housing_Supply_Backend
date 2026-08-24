@@ -53,8 +53,19 @@ public class CitizenFullProfileDto
 
     // ── Collections ──────────────────────────────────────────────
     public int HouseholdMembersCount { get; set; }
+    /// <summary>Số người phụ thuộc trong hộ (không gồm chủ hộ).</summary>
+    public int DependentMembersCount { get; set; }
+    /// <summary>
+    /// Tổng thu nhập được tính vào hộ:
+    /// chủ hộ + vợ/chồng (nếu MARRIED) + thành viên không phụ thuộc.
+    /// </summary>
+    public decimal CountableHouseholdIncome { get; set; }
     public List<UserHouseholdMemberResponseDto> HouseholdMembers { get; set; } = new();
     public List<UserDocumentResponseDto> Documents { get; set; } = new();
+    /// <summary>Giấy tờ bắt buộc theo hôn nhân / nhà ở / người phụ thuộc.</summary>
+    public List<string> RequiredDocumentTypes { get; set; } = new();
+    /// <summary>Giấy tờ bắt buộc còn thiếu trong kho.</summary>
+    public List<string> MissingDocumentTypes { get; set; } = new();
 
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

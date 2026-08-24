@@ -138,6 +138,10 @@ public class UsersController : ControllerBase
                 data = updated
             });
         }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { success = false, message = ex.Message });
+        }
         catch (InvalidOperationException ex)
         {
             return BadRequest(new { success = false, message = ex.Message });
@@ -220,6 +224,10 @@ public class UsersController : ControllerBase
                 message = "Thêm thành viên vào hộ gia đình thành công.",
                 data = created
             });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { success = false, message = ex.Message });
         }
         catch (InvalidOperationException ex)
         {

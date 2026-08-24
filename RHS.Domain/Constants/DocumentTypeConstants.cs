@@ -240,6 +240,37 @@ public static class DocumentTypeConstants
     }
 
     /// <summary>
+    /// Giấy tờ bắt buộc trong Kho hồ sơ cá nhân theo hôn nhân + thực trạng nhà ở.
+    /// Không thay thế giấy tờ theo nhóm đối tượng khi nộp đơn dự án.
+    /// </summary>
+    public static List<string> GetRequiredTypesForCitizenProfile(
+        string? maritalStatus,
+        string? housingStatus,
+        bool hasDependentMembers = false)
+    {
+        var required = new List<string>();
+
+        var marital = maritalStatus?.Trim().ToUpperInvariant();
+        if (marital == MaritalStatusConstants.Married)
+            required.Add(MarriageCertificate);
+        else if (marital == MaritalStatusConstants.Single)
+            required.Add(SingleStatusCertificate);
+        else if (marital == MaritalStatusConstants.Divorced)
+            required.Add(DivorceCertificate);
+
+        if (!string.IsNullOrWhiteSpace(housingStatus)
+            && HousingStatusConstants.IsValid(housingStatus))
+        {
+            required.Add(HousingConditionProof);
+        }
+
+        if (hasDependentMembers)
+            required.Add(DependentProof);
+
+        return required.Distinct().ToList();
+    }
+
+    /// <summary>
     /// Lấy label tiếng Việt cho loại giấy tờ.
     /// Trả về chính documentType nếu không tìm thấy label.
     /// </summary>

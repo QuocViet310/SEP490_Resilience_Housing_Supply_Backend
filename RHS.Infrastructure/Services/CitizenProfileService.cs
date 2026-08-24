@@ -42,67 +42,7 @@ public class CitizenProfileService : ICitizenProfileService
         if (user == null)
             return null;
 
-        var householdMembers = user.UserHouseholdMembers
-            .OrderBy(m => m.CreatedAt)
-            .Select(m => MapToHouseholdMemberResponse(m))
-            .ToList();
-
-        var documents = user.UserDocuments
-            .OrderByDescending(d => d.UploadedAt)
-            .Select(d => MapToUserDocumentResponse(d))
-            .ToList();
-
-        return new CitizenFullProfileDto
-        {
-            UserId = user.Id,
-            Email = user.Email,
-            FullName = user.FullName,
-            PhoneNumber = user.PhoneNumber,
-            CitizenId = user.CitizenId,
-            DateOfBirth = user.DateOfBirth,
-            Address = user.Address,
-            Role = user.Role?.RoleName ?? "Applicant",
-            ProfileImageUrl = user.ProfileImageUrl,
-
-            // eKYC
-            IsEkycVerified = user.IsEkycVerified,
-            EkycVerifiedAt = user.EkycVerifiedAt,
-            Gender = user.Gender,
-            Nationality = user.Nationality,
-            PlaceOfOrigin = user.PlaceOfOrigin,
-            IdIssueDate = user.IdIssueDate,
-            IdIssuePlace = user.IdIssuePlace,
-
-            // Hôn nhân & Vợ chồng
-            MaritalStatus = user.MaritalStatus,
-            MaritalStatusLabel = MaritalStatusConstants.GetLabel(user.MaritalStatus),
-            SpouseFullName = user.SpouseFullName,
-            SpouseCitizenId = user.SpouseCitizenId,
-            SpouseDateOfBirth = user.SpouseDateOfBirth,
-            SpouseMonthlyIncome = user.SpouseMonthlyIncome,
-
-            // Việc làm, Nơi ở & Thu nhập
-            Occupation = user.Occupation,
-            WorkPlace = user.WorkPlace,
-            CurrentResidence = user.CurrentResidence ?? user.Address,
-            PermanentAddress = user.PermanentAddress,
-            MonthlyIncome = user.MonthlyIncome,
-
-            // Thực trạng nhà ở & Ưu tiên
-            HousingStatus = user.HousingStatus,
-            AverageHousingAreaPerPerson = user.AverageHousingAreaPerPerson,
-            PriorityGroup = user.PriorityGroup,
-            PriorityGroupLabel = !string.IsNullOrWhiteSpace(user.PriorityGroup) && PriorityGroupConstants.Labels.TryGetValue(user.PriorityGroup, out var pLabel)
-                ? pLabel
-                : user.PriorityGroup,
-
-            // Collections
-            HouseholdMembersCount = 1 + householdMembers.Count,
-            HouseholdMembers = householdMembers,
-            Documents = documents,
-            CreatedAt = user.CreatedAt,
-            UpdatedAt = user.UpdatedAt
-        };
+        return MapFullProfile(user);
     }
 
     public async Task<CitizenFullProfileDto> UpdateCitizenProfileAsync(
@@ -119,17 +59,38 @@ public class CitizenProfileService : ICitizenProfileService
         if (user == null)
             throw new KeyNotFoundException("Không tìm thấy thông tin tài khoản người dùng.");
 
-        // Kiểm tra eKYC: Nếu đã eKYC, không cho phép sửa đổi tùy tiện Họ tên, CCCD, Ngày sinh
-        if (user.IsEkycVerified)
+        // Khóa định danh khi đã có CCCD (đồng bộ rule với UpdateProfile — không phụ thuộc cờ IsEkycVerified)
+        var identityLocked = !string.IsNullOrWhiteSpace(user.CitizenId);
+        if (identityLocked)
         {
+            if (!string.IsNullOrWhiteSpace(dto.FullName) && dto.FullName.Trim() != user.FullName)
+                throw new InvalidOperationException("Tài khoản đã xác thực CCCD. Không thể thay đổi họ tên.");
+
+            if (dto.DateOfBirth.HasValue
+                && user.DateOfBirth.HasValue
+                && dto.DateOfBirth.Value.Date != user.DateOfBirth.Value.Date)
+                throw new InvalidOperationException("Tài khoản đã xác thực CCCD. Không thể thay đổi ngày sinh.");
+
             if (!string.IsNullOrWhiteSpace(dto.CitizenId) && dto.CitizenId.Trim() != user.CitizenId)
-            {
-                throw new InvalidOperationException("Tài khoản đã hoàn tất xác thực eKYC. Không thể thay đổi số CCCD.");
-            }
+                throw new InvalidOperationException("Tài khoản đã xác thực CCCD. Không thể thay đổi số CCCD.");
+
+            if (!string.IsNullOrWhiteSpace(dto.Gender)
+                && !string.IsNullOrWhiteSpace(user.Gender)
+                && !string.Equals(dto.Gender.Trim(), user.Gender, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Tài khoản đã xác thực CCCD. Không thể thay đổi giới tính.");
+
+            if (!string.IsNullOrWhiteSpace(dto.Nationality)
+                && !string.IsNullOrWhiteSpace(user.Nationality)
+                && !string.Equals(dto.Nationality.Trim(), user.Nationality, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Tài khoản đã xác thực CCCD. Không thể thay đổi quốc tịch.");
+
+            if (!string.IsNullOrWhiteSpace(dto.PlaceOfOrigin)
+                && !string.IsNullOrWhiteSpace(user.PlaceOfOrigin)
+                && !string.Equals(dto.PlaceOfOrigin.Trim(), user.PlaceOfOrigin, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Tài khoản đã xác thực CCCD. Không thể thay đổi quê quán.");
         }
         else
         {
-            // Chưa eKYC thì có thể điền thông tin ban đầu
             if (!string.IsNullOrWhiteSpace(dto.FullName))
                 user.FullName = dto.FullName.Trim();
 
@@ -139,7 +100,8 @@ public class CitizenProfileService : ICitizenProfileService
             if (!string.IsNullOrWhiteSpace(dto.CitizenId))
             {
                 var trimmedCid = dto.CitizenId.Trim();
-                var exists = await _db.Users.AnyAsync(u => u.CitizenId == trimmedCid && u.Id != userId && u.Status != "Deleted", ct);
+                var exists = await _db.Users.AnyAsync(
+                    u => u.CitizenId == trimmedCid && u.Id != userId && u.Status == "Active", ct);
                 if (exists)
                     throw new InvalidOperationException("Số CCCD này đã được sử dụng bởi tài khoản khác trong hệ thống.");
                 user.CitizenId = trimmedCid;
@@ -155,22 +117,22 @@ public class CitizenProfileService : ICitizenProfileService
                 user.PlaceOfOrigin = dto.PlaceOfOrigin.Trim();
         }
 
-        // Cập nhật số điện thoại & liên hệ
         if (!string.IsNullOrWhiteSpace(dto.PhoneNumber))
             user.PhoneNumber = dto.PhoneNumber.Trim();
 
-        // Cập nhật Hôn nhân & Vợ chồng
+        // Hôn nhân
         if (!string.IsNullOrWhiteSpace(dto.MaritalStatus))
         {
-            user.MaritalStatus = dto.MaritalStatus.Trim().ToUpperInvariant();
+            var marital = dto.MaritalStatus.Trim().ToUpperInvariant();
+            if (!MaritalStatusConstants.IsValid(marital))
+                throw new InvalidOperationException(
+                    $"Tình trạng hôn nhân '{dto.MaritalStatus}' không hợp lệ. " +
+                    $"Giá trị cho phép: {string.Join(", ", MaritalStatusConstants.AllValues)}");
+            user.MaritalStatus = marital;
         }
 
-        user.SpouseFullName = dto.SpouseFullName?.Trim();
-        user.SpouseCitizenId = dto.SpouseCitizenId?.Trim();
-        user.SpouseDateOfBirth = dto.SpouseDateOfBirth;
-        user.SpouseMonthlyIncome = dto.SpouseMonthlyIncome;
+        ApplySpouseFields(user, dto);
 
-        // Cập nhật Việc làm, Nơi ở & Thu nhập
         if (dto.Occupation != null) user.Occupation = dto.Occupation.Trim();
         if (dto.WorkPlace != null) user.WorkPlace = dto.WorkPlace.Trim();
         if (dto.CurrentResidence != null)
@@ -181,18 +143,37 @@ public class CitizenProfileService : ICitizenProfileService
         if (dto.PermanentAddress != null) user.PermanentAddress = dto.PermanentAddress.Trim();
         if (dto.MonthlyIncome.HasValue) user.MonthlyIncome = dto.MonthlyIncome.Value;
 
-        // Cập nhật Thực trạng nhà ở & Đối tượng ưu tiên
         if (!string.IsNullOrWhiteSpace(dto.HousingStatus))
-            user.HousingStatus = dto.HousingStatus.Trim().ToUpperInvariant();
+        {
+            var housing = dto.HousingStatus.Trim().ToUpperInvariant();
+            if (!HousingStatusConstants.IsValid(housing))
+                throw new InvalidOperationException(
+                    $"Thực trạng nhà ở '{dto.HousingStatus}' không hợp lệ. " +
+                    $"Giá trị cho phép: {string.Join(", ", HousingStatusConstants.AllValues)}");
+            user.HousingStatus = housing;
+        }
 
         if (dto.AverageHousingAreaPerPerson.HasValue)
             user.AverageHousingAreaPerPerson = dto.AverageHousingAreaPerPerson.Value;
 
+        if (user.HousingStatus == HousingStatusConstants.SmallHouse
+            && !user.AverageHousingAreaPerPerson.HasValue)
+        {
+            throw new InvalidOperationException(
+                "Khi khai nhà chật hẹp (SMALL_HOUSE) bắt buộc nhập diện tích bình quân đầu người (m²).");
+        }
+
         if (!string.IsNullOrWhiteSpace(dto.PriorityGroup))
-            user.PriorityGroup = dto.PriorityGroup.Trim().ToUpperInvariant();
+        {
+            var pg = dto.PriorityGroup.Trim().ToUpperInvariant();
+            if (!PriorityGroupConstants.IsValid(pg))
+                throw new InvalidOperationException($"Nhóm đối tượng '{dto.PriorityGroup}' không hợp lệ.");
+            user.PriorityGroup = pg;
+        }
+
+        await SyncSpouseHouseholdMemberAsync(user, ct);
 
         user.UpdatedAt = DateTime.UtcNow;
-
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("Updated citizen profile for user {UserId}", userId);
 
@@ -250,7 +231,7 @@ public class CitizenProfileService : ICitizenProfileService
             PhoneNumber = user.PhoneNumber,
             Email = user.Email,
             DateOfBirth = user.DateOfBirth,
-            IsEkycVerified = user.IsEkycVerified,
+            IsEkycVerified = IsEffectivelyEkycVerified(user),
 
             Occupation = user.Occupation,
             WorkPlace = user.WorkPlace,
@@ -291,33 +272,41 @@ public class CitizenProfileService : ICitizenProfileService
         UserHouseholdMemberRequestDto dto,
         CancellationToken ct = default)
     {
-        var userExists = await _db.Users.AnyAsync(u => u.Id == userId, ct);
-        if (!userExists)
-            throw new KeyNotFoundException("Không tìm thấy thông tin tài khoản người dùng.");
+        var user = await _db.Users
+            .Include(u => u.UserHouseholdMembers)
+            .FirstOrDefaultAsync(u => u.Id == userId, ct)
+            ?? throw new KeyNotFoundException("Không tìm thấy thông tin tài khoản người dùng.");
 
-        // Kiểm tra CCCD trùng trong cùng sổ hộ khẩu của user
+        NormalizeAndValidateMember(dto, user);
+
+        if (dto.Relationship.Equals(HouseholdRelationshipConstants.Spouse, StringComparison.OrdinalIgnoreCase)
+            && user.UserHouseholdMembers.Any(m =>
+                m.Relationship.Equals(HouseholdRelationshipConstants.Spouse, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Hộ gia đình đã có vợ/chồng. Không thể thêm thêm thành viên SPOUSE.");
+        }
+
         if (!string.IsNullOrWhiteSpace(dto.CitizenId))
         {
             var trimmedCid = dto.CitizenId.Trim();
-            var duplicate = await _db.UserHouseholdMembers
-                .AnyAsync(m => m.UserId == userId && m.CitizenId == trimmedCid, ct);
-
-            if (duplicate)
+            if (user.UserHouseholdMembers.Any(m => m.CitizenId == trimmedCid))
                 throw new InvalidOperationException($"Số CCCD {trimmedCid} đã tồn tại trong danh sách hộ gia đình của bạn.");
         }
+
+        ApplyDependentRules(dto);
 
         var member = new UserHouseholdMember
         {
             MemberId = Guid.NewGuid(),
             UserId = userId,
             FullName = dto.FullName.Trim(),
-            CitizenId = dto.CitizenId?.Trim(),
+            CitizenId = string.IsNullOrWhiteSpace(dto.CitizenId) ? null : dto.CitizenId.Trim(),
             DateOfBirth = dto.DateOfBirth,
             Relationship = dto.Relationship.Trim().ToUpperInvariant(),
             Occupation = dto.Occupation?.Trim(),
-            MonthlyIncome = dto.MonthlyIncome,
+            MonthlyIncome = dto.IsDependent ? null : dto.MonthlyIncome,
             IsDependent = dto.IsDependent,
-            DependentReason = dto.DependentReason?.Trim().ToUpperInvariant(),
+            DependentReason = dto.IsDependent ? dto.DependentReason?.Trim().ToUpperInvariant() : null,
             HasMeritService = dto.HasMeritService,
             MeritDetails = dto.MeritDetails?.Trim(),
             Note = dto.Note?.Trim(),
@@ -325,6 +314,17 @@ public class CitizenProfileService : ICitizenProfileService
         };
 
         _db.UserHouseholdMembers.Add(member);
+
+        if (member.Relationship == HouseholdRelationshipConstants.Spouse)
+        {
+            user.MaritalStatus = MaritalStatusConstants.Married;
+            user.SpouseFullName = member.FullName;
+            user.SpouseCitizenId = member.CitizenId;
+            user.SpouseDateOfBirth = member.DateOfBirth;
+            user.SpouseMonthlyIncome = member.MonthlyIncome;
+            user.UpdatedAt = DateTime.UtcNow;
+        }
+
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("Added household member {MemberId} for user {UserId}", member.MemberId, userId);
@@ -337,19 +337,28 @@ public class CitizenProfileService : ICitizenProfileService
         UserHouseholdMemberRequestDto dto,
         CancellationToken ct = default)
     {
-        var member = await _db.UserHouseholdMembers
-            .FirstOrDefaultAsync(m => m.MemberId == memberId && m.UserId == userId, ct);
+        var user = await _db.Users
+            .Include(u => u.UserHouseholdMembers)
+            .FirstOrDefaultAsync(u => u.Id == userId, ct)
+            ?? throw new KeyNotFoundException("Không tìm thấy thông tin tài khoản người dùng.");
 
-        if (member == null)
-            throw new KeyNotFoundException("Không tìm thấy thành viên trong sổ hộ khẩu.");
+        var member = user.UserHouseholdMembers.FirstOrDefault(m => m.MemberId == memberId)
+            ?? throw new KeyNotFoundException("Không tìm thấy thành viên trong sổ hộ khẩu.");
+
+        NormalizeAndValidateMember(dto, user);
+
+        if (dto.Relationship.Equals(HouseholdRelationshipConstants.Spouse, StringComparison.OrdinalIgnoreCase)
+            && user.UserHouseholdMembers.Any(m =>
+                m.MemberId != memberId
+                && m.Relationship.Equals(HouseholdRelationshipConstants.Spouse, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Hộ gia đình đã có vợ/chồng. Không thể chuyển thành viên khác thành SPOUSE.");
+        }
 
         if (!string.IsNullOrWhiteSpace(dto.CitizenId))
         {
             var trimmedCid = dto.CitizenId.Trim();
-            var duplicate = await _db.UserHouseholdMembers
-                .AnyAsync(m => m.UserId == userId && m.MemberId != memberId && m.CitizenId == trimmedCid, ct);
-
-            if (duplicate)
+            if (user.UserHouseholdMembers.Any(m => m.MemberId != memberId && m.CitizenId == trimmedCid))
                 throw new InvalidOperationException($"Số CCCD {trimmedCid} đã được sử dụng bởi thành viên khác trong hộ gia đình.");
             member.CitizenId = trimmedCid;
         }
@@ -358,17 +367,29 @@ public class CitizenProfileService : ICitizenProfileService
             member.CitizenId = null;
         }
 
+        ApplyDependentRules(dto);
+
         member.FullName = dto.FullName.Trim();
         member.DateOfBirth = dto.DateOfBirth;
         member.Relationship = dto.Relationship.Trim().ToUpperInvariant();
         member.Occupation = dto.Occupation?.Trim();
-        member.MonthlyIncome = dto.MonthlyIncome;
+        member.MonthlyIncome = dto.IsDependent ? null : dto.MonthlyIncome;
         member.IsDependent = dto.IsDependent;
-        member.DependentReason = dto.DependentReason?.Trim().ToUpperInvariant();
+        member.DependentReason = dto.IsDependent ? dto.DependentReason?.Trim().ToUpperInvariant() : null;
         member.HasMeritService = dto.HasMeritService;
         member.MeritDetails = dto.MeritDetails?.Trim();
         member.Note = dto.Note?.Trim();
         member.UpdatedAt = DateTime.UtcNow;
+
+        if (member.Relationship == HouseholdRelationshipConstants.Spouse)
+        {
+            user.MaritalStatus = MaritalStatusConstants.Married;
+            user.SpouseFullName = member.FullName;
+            user.SpouseCitizenId = member.CitizenId;
+            user.SpouseDateOfBirth = member.DateOfBirth;
+            user.SpouseMonthlyIncome = member.MonthlyIncome;
+            user.UpdatedAt = DateTime.UtcNow;
+        }
 
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("Updated household member {MemberId} for user {UserId}", memberId, userId);
@@ -378,13 +399,31 @@ public class CitizenProfileService : ICitizenProfileService
 
     public async Task<bool> DeleteHouseholdMemberAsync(Guid userId, Guid memberId, CancellationToken ct = default)
     {
-        var member = await _db.UserHouseholdMembers
-            .FirstOrDefaultAsync(m => m.MemberId == memberId && m.UserId == userId, ct);
+        var user = await _db.Users
+            .Include(u => u.UserHouseholdMembers)
+            .FirstOrDefaultAsync(u => u.Id == userId, ct);
 
+        if (user == null)
+            return false;
+
+        var member = user.UserHouseholdMembers.FirstOrDefault(m => m.MemberId == memberId);
         if (member == null)
             return false;
 
+        var wasSpouse = member.Relationship.Equals(
+            HouseholdRelationshipConstants.Spouse, StringComparison.OrdinalIgnoreCase);
+
         _db.UserHouseholdMembers.Remove(member);
+
+        if (wasSpouse)
+        {
+            user.SpouseFullName = null;
+            user.SpouseCitizenId = null;
+            user.SpouseDateOfBirth = null;
+            user.SpouseMonthlyIncome = null;
+            user.UpdatedAt = DateTime.UtcNow;
+        }
+
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("Deleted household member {MemberId} for user {UserId}", memberId, userId);
@@ -417,38 +456,24 @@ public class CitizenProfileService : ICitizenProfileService
 
         var docType = dto.DocumentType.Trim().ToUpperInvariant();
         if (!DocumentTypeConstants.IsAllowedProfileDocumentType(docType))
-        {
             throw new ArgumentException($"Loại giấy tờ '{dto.DocumentType}' không hợp lệ hoặc không được hỗ trợ.");
-        }
 
         if (dto.File == null || dto.File.Length == 0)
-        {
             throw new ArgumentException("File tài liệu không được để trống.");
-        }
 
         if (dto.File.Length > 10 * 1024 * 1024)
-        {
             throw new ArgumentException("Dung lượng file tối đa là 10MB.");
-        }
 
         var ext = Path.GetExtension(dto.File.FileName).ToLowerInvariant();
         string fileUrl;
 
-        // Hỗ trợ cả file PDF và file ảnh (JPG/PNG) cho hồ sơ cá nhân
         if (ext == ".pdf")
-        {
             fileUrl = await _fileStorageService.UploadPdfAsync(dto.File, "citizen-vault");
-        }
         else if (new[] { ".jpg", ".jpeg", ".png", ".webp" }.Contains(ext))
-        {
             fileUrl = await _fileStorageService.UploadImageAsync(dto.File, "citizen-vault");
-        }
         else
-        {
             throw new ArgumentException("Hệ thống chỉ chấp nhận file định dạng PDF hoặc hình ảnh (JPG, PNG, WEBP).");
-        }
 
-        // Kiểm tra xem đã có document cùng loại trong kho chưa -> nếu có thì cập nhật URL mới
         var existingDoc = await _db.UserDocuments
             .FirstOrDefaultAsync(d => d.UserId == userId && d.DocumentType == docType, ct);
 
@@ -495,13 +520,10 @@ public class CitizenProfileService : ICitizenProfileService
         if (doc == null)
             return false;
 
-        // Thử xóa file vật lý trên Cloudinary nếu là ảnh
         try
         {
             if (!doc.FileUrl.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-            {
                 await _fileStorageService.DeleteImageAsync(doc.FileUrl);
-            }
         }
         catch (Exception ex)
         {
@@ -516,8 +538,250 @@ public class CitizenProfileService : ICitizenProfileService
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Helper mapping methods
+    // Helpers
     // ─────────────────────────────────────────────────────────────
+
+    private static bool IsEffectivelyEkycVerified(User user) =>
+        user.IsEkycVerified || !string.IsNullOrWhiteSpace(user.CitizenId);
+
+    private static CitizenFullProfileDto MapFullProfile(User user)
+    {
+        var householdMembers = user.UserHouseholdMembers
+            .OrderBy(m => m.CreatedAt)
+            .Select(MapToHouseholdMemberResponse)
+            .ToList();
+
+        var documents = user.UserDocuments
+            .OrderByDescending(d => d.UploadedAt)
+            .Select(MapToUserDocumentResponse)
+            .ToList();
+
+        var dependentCount = householdMembers.Count(m => m.IsDependent);
+        var countableIncome = ComputeCountableIncome(user, user.UserHouseholdMembers);
+        var requiredDocs = DocumentTypeConstants.GetRequiredTypesForCitizenProfile(
+            user.MaritalStatus,
+            user.HousingStatus,
+            dependentCount > 0);
+        var uploadedTypes = documents.Select(d => d.DocumentType).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missingDocs = requiredDocs.Where(t => !uploadedTypes.Contains(t)).ToList();
+
+        return new CitizenFullProfileDto
+        {
+            UserId = user.Id,
+            Email = user.Email,
+            FullName = user.FullName,
+            PhoneNumber = user.PhoneNumber,
+            CitizenId = user.CitizenId,
+            DateOfBirth = user.DateOfBirth,
+            Address = user.Address,
+            Role = user.Role?.RoleName ?? "Applicant",
+            ProfileImageUrl = user.ProfileImageUrl,
+
+            IsEkycVerified = IsEffectivelyEkycVerified(user),
+            EkycVerifiedAt = user.EkycVerifiedAt,
+            Gender = user.Gender,
+            Nationality = user.Nationality,
+            PlaceOfOrigin = user.PlaceOfOrigin,
+            IdIssueDate = user.IdIssueDate,
+            IdIssuePlace = user.IdIssuePlace,
+
+            MaritalStatus = user.MaritalStatus,
+            MaritalStatusLabel = MaritalStatusConstants.GetLabel(user.MaritalStatus),
+            SpouseFullName = user.SpouseFullName,
+            SpouseCitizenId = user.SpouseCitizenId,
+            SpouseDateOfBirth = user.SpouseDateOfBirth,
+            SpouseMonthlyIncome = user.SpouseMonthlyIncome,
+
+            Occupation = user.Occupation,
+            WorkPlace = user.WorkPlace,
+            CurrentResidence = user.CurrentResidence ?? user.Address,
+            PermanentAddress = user.PermanentAddress,
+            MonthlyIncome = user.MonthlyIncome,
+
+            HousingStatus = user.HousingStatus,
+            AverageHousingAreaPerPerson = user.AverageHousingAreaPerPerson,
+            PriorityGroup = user.PriorityGroup,
+            PriorityGroupLabel = !string.IsNullOrWhiteSpace(user.PriorityGroup)
+                && PriorityGroupConstants.Labels.TryGetValue(user.PriorityGroup, out var pLabel)
+                    ? pLabel
+                    : user.PriorityGroup,
+
+            HouseholdMembersCount = 1 + householdMembers.Count,
+            DependentMembersCount = dependentCount,
+            CountableHouseholdIncome = countableIncome,
+            HouseholdMembers = householdMembers,
+            Documents = documents,
+            RequiredDocumentTypes = requiredDocs,
+            MissingDocumentTypes = missingDocs,
+            CreatedAt = user.CreatedAt,
+            UpdatedAt = user.UpdatedAt
+        };
+    }
+
+    private static decimal ComputeCountableIncome(User user, IEnumerable<UserHouseholdMember> members)
+    {
+        decimal total = user.MonthlyIncome ?? 0m;
+
+        var hasSpouseMember = members.Any(m =>
+            m.Relationship.Equals(HouseholdRelationshipConstants.Spouse, StringComparison.OrdinalIgnoreCase));
+
+        if (user.MaritalStatus == MaritalStatusConstants.Married && !hasSpouseMember)
+            total += user.SpouseMonthlyIncome ?? 0m;
+
+        foreach (var m in members)
+        {
+            if (m.IsDependent) continue;
+            total += m.MonthlyIncome ?? 0m;
+        }
+
+        return total;
+    }
+
+    private static void ApplySpouseFields(User user, UpdateCitizenProfileDto dto)
+    {
+        var marital = user.MaritalStatus?.ToUpperInvariant();
+
+        if (marital == MaritalStatusConstants.Married)
+        {
+            if (dto.SpouseFullName != null) user.SpouseFullName = dto.SpouseFullName.Trim();
+            if (dto.SpouseCitizenId != null) user.SpouseCitizenId = dto.SpouseCitizenId.Trim();
+            if (dto.SpouseDateOfBirth.HasValue) user.SpouseDateOfBirth = dto.SpouseDateOfBirth;
+            if (dto.SpouseMonthlyIncome.HasValue) user.SpouseMonthlyIncome = dto.SpouseMonthlyIncome;
+
+            if (string.IsNullOrWhiteSpace(user.SpouseFullName))
+                throw new InvalidOperationException("Khi đã kết hôn bắt buộc khai họ tên vợ/chồng.");
+        }
+        else if (marital is MaritalStatusConstants.Single or MaritalStatusConstants.Divorced)
+        {
+            user.SpouseFullName = null;
+            user.SpouseCitizenId = null;
+            user.SpouseDateOfBirth = null;
+            user.SpouseMonthlyIncome = null;
+        }
+        else
+        {
+            // Chưa đổi marital — vẫn cho cập nhật spouse nếu gửi
+            if (dto.SpouseFullName != null) user.SpouseFullName = dto.SpouseFullName.Trim();
+            if (dto.SpouseCitizenId != null) user.SpouseCitizenId = dto.SpouseCitizenId.Trim();
+            if (dto.SpouseDateOfBirth.HasValue) user.SpouseDateOfBirth = dto.SpouseDateOfBirth;
+            if (dto.SpouseMonthlyIncome.HasValue) user.SpouseMonthlyIncome = dto.SpouseMonthlyIncome;
+        }
+    }
+
+    private async Task SyncSpouseHouseholdMemberAsync(User user, CancellationToken ct)
+    {
+        var spouses = user.UserHouseholdMembers
+            .Where(m => m.Relationship.Equals(HouseholdRelationshipConstants.Spouse, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (user.MaritalStatus == MaritalStatusConstants.Married)
+        {
+            if (string.IsNullOrWhiteSpace(user.SpouseFullName))
+                return;
+
+            var spouse = spouses.FirstOrDefault();
+            if (spouse == null)
+            {
+                spouse = new UserHouseholdMember
+                {
+                    MemberId = Guid.NewGuid(),
+                    UserId = user.Id,
+                    Relationship = HouseholdRelationshipConstants.Spouse,
+                    CreatedAt = DateTime.UtcNow
+                };
+                user.UserHouseholdMembers.Add(spouse);
+                _db.UserHouseholdMembers.Add(spouse);
+            }
+            else
+            {
+                // Chỉ giữ 1 SPOUSE
+                foreach (var extra in spouses.Skip(1))
+                    _db.UserHouseholdMembers.Remove(extra);
+            }
+
+            spouse.FullName = user.SpouseFullName!;
+            spouse.CitizenId = user.SpouseCitizenId;
+            spouse.DateOfBirth = user.SpouseDateOfBirth;
+            spouse.MonthlyIncome = user.SpouseMonthlyIncome;
+            spouse.IsDependent = false;
+            spouse.DependentReason = null;
+            spouse.UpdatedAt = DateTime.UtcNow;
+        }
+        else if (user.MaritalStatus is MaritalStatusConstants.Single or MaritalStatusConstants.Divorced)
+        {
+            foreach (var spouse in spouses)
+                _db.UserHouseholdMembers.Remove(spouse);
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private static void NormalizeAndValidateMember(UserHouseholdMemberRequestDto dto, User user)
+    {
+        if (!HouseholdRelationshipConstants.IsValid(dto.Relationship))
+        {
+            throw new InvalidOperationException(
+                $"Quan hệ '{dto.Relationship}' không hợp lệ. " +
+                $"Giá trị cho phép: {string.Join(", ", HouseholdRelationshipConstants.AllValues)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.CitizenId)
+            && !string.IsNullOrWhiteSpace(user.CitizenId)
+            && dto.CitizenId.Trim() == user.CitizenId.Trim())
+        {
+            throw new InvalidOperationException("Số CCCD thành viên không được trùng với CCCD chủ tài khoản.");
+        }
+
+        if (dto.DateOfBirth.HasValue)
+        {
+            var age = GetAge(dto.DateOfBirth.Value);
+            if (age >= 14 && string.IsNullOrWhiteSpace(dto.CitizenId))
+            {
+                throw new InvalidOperationException(
+                    $"Thành viên '{dto.FullName}' từ 14 tuổi trở lên bắt buộc phải có số CCCD.");
+            }
+        }
+    }
+
+    private static void ApplyDependentRules(UserHouseholdMemberRequestDto dto)
+    {
+        if (dto.DateOfBirth.HasValue)
+        {
+            var age = GetAge(dto.DateOfBirth.Value);
+            if (age < 18)
+            {
+                dto.IsDependent = true;
+                dto.DependentReason = DependentReasonConstants.Under18;
+                dto.MonthlyIncome = null;
+            }
+        }
+
+        if (dto.IsDependent)
+        {
+            if (string.IsNullOrWhiteSpace(dto.DependentReason)
+                || !DependentReasonConstants.IsValid(dto.DependentReason))
+            {
+                throw new InvalidOperationException(
+                    "Người phụ thuộc bắt buộc có lý do hợp lệ: UNDER_18, STUDENT, DISABLED, ELDERLY, OTHER.");
+            }
+
+            dto.DependentReason = dto.DependentReason.Trim().ToUpperInvariant();
+            dto.MonthlyIncome = null;
+        }
+        else
+        {
+            dto.DependentReason = null;
+        }
+    }
+
+    private static int GetAge(DateTime dateOfBirth)
+    {
+        var today = DateTime.UtcNow.Date;
+        var age = today.Year - dateOfBirth.Date.Year;
+        if (dateOfBirth.Date > today.AddYears(-age))
+            age--;
+        return age;
+    }
 
     private static UserHouseholdMemberResponseDto MapToHouseholdMemberResponse(UserHouseholdMember m)
     {

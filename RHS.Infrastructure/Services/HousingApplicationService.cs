@@ -155,12 +155,13 @@ public class HousingApplicationService : IHousingApplicationService
         // Kế thừa tài liệu từ Kho hồ sơ cá nhân (Document Vault)
         if (request.InheritDocumentsFromVault)
         {
+            // Kế thừa cả PDF và ảnh từ kho cá nhân (không chỉ .pdf)
             var vaultDocs = await _context.UserDocuments
                 .AsNoTracking()
-                .Where(d => d.UserId == applicantId && d.FileUrl.EndsWith(".pdf"))
+                .Where(d => d.UserId == applicantId)
                 .ToListAsync();
 
-            // Nhóm theo loại giấy tờ mới nhất
+            // Nhóm theo loại giấy tờ mới nhất; chỉ lấy loại được phép trên đơn đăng ký
             var docsByType = vaultDocs
                 .Where(d => DocumentTypeConstants.AllowedApplicantDocumentTypes.Contains(d.DocumentType))
                 .GroupBy(d => d.DocumentType)

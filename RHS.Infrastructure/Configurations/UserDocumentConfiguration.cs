@@ -50,6 +50,8 @@ public class UserDocumentConfiguration : IEntityTypeConfiguration<UserDocument>
 
         // ── Indexes ──────────────────────────────────────────────
         builder.HasIndex(x => x.UserId);
-        builder.HasIndex(x => new { x.UserId, x.DocumentType });
+        // Mỗi loại giấy tờ chỉ 1 file trong kho của 1 user
+        builder.HasIndex(x => new { x.UserId, x.DocumentType })
+            .IsUnique();
     }
 }

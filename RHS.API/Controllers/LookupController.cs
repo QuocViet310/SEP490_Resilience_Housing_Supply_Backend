@@ -87,6 +87,126 @@ public class LookupController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────
+    // GET /api/lookup/marital-statuses
+    // ──────────────────────────────────────────────────────────────
+
+    [HttpGet("marital-statuses")]
+    public IActionResult GetMaritalStatuses()
+    {
+        var items = MaritalStatusConstants.AllValues
+            .Select(code => new
+            {
+                code,
+                label = MaritalStatusConstants.GetLabel(code)
+            })
+            .ToList();
+
+        return Ok(items);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // GET /api/lookup/housing-statuses
+    // ──────────────────────────────────────────────────────────────
+
+    [HttpGet("housing-statuses")]
+    public IActionResult GetHousingStatuses()
+    {
+        var items = HousingStatusConstants.AllValues
+            .Select(code => new
+            {
+                code,
+                label = HousingStatusConstants.GetLabel(code)
+            })
+            .ToList();
+
+        return Ok(items);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // GET /api/lookup/household-relationships
+    // ──────────────────────────────────────────────────────────────
+
+    [HttpGet("household-relationships")]
+    public IActionResult GetHouseholdRelationships()
+    {
+        var items = HouseholdRelationshipConstants.AllValues
+            .Select(code => new
+            {
+                code,
+                label = HouseholdRelationshipConstants.GetLabel(code)
+            })
+            .ToList();
+
+        return Ok(items);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // GET /api/lookup/dependent-reasons
+    // ──────────────────────────────────────────────────────────────
+
+    [HttpGet("dependent-reasons")]
+    public IActionResult GetDependentReasons()
+    {
+        var items = DependentReasonConstants.AllValues
+            .Select(code => new
+            {
+                code,
+                label = DependentReasonConstants.GetLabel(code)
+            })
+            .ToList();
+
+        return Ok(items);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // GET /api/lookup/profile-document-types
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Loại giấy tờ được phép lưu trong Kho hồ sơ cá nhân (Document Vault).
+    /// </summary>
+    [HttpGet("profile-document-types")]
+    public IActionResult GetProfileDocumentTypes()
+    {
+        var items = DocumentTypeConstants.AllowedProfileDocumentTypes
+            .Select(code => new
+            {
+                code,
+                label = DocumentTypeConstants.GetLabel(code)
+            })
+            .ToList();
+
+        return Ok(items);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // GET /api/lookup/profile-document-types/required
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Giấy tờ bắt buộc trong Kho hồ sơ theo hôn nhân + thực trạng nhà ở + có người phụ thuộc.
+    /// </summary>
+    [HttpGet("profile-document-types/required")]
+    public IActionResult GetRequiredProfileDocumentTypes(
+        [FromQuery] string? maritalStatus,
+        [FromQuery] string? housingStatus,
+        [FromQuery] bool hasDependentMembers = false)
+    {
+        var requiredCodes = DocumentTypeConstants.GetRequiredTypesForCitizenProfile(
+            maritalStatus, housingStatus, hasDependentMembers);
+
+        var items = requiredCodes
+            .Select(code => new
+            {
+                code,
+                label = DocumentTypeConstants.GetLabel(code)
+            })
+            .ToList();
+
+        return Ok(items);
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // GET /api/lookup/apartment-types
     // ──────────────────────────────────────────────────────────────
 

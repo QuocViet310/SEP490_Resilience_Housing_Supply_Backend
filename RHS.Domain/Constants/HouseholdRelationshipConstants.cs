@@ -18,6 +18,23 @@ public static class HouseholdRelationshipConstants
         Spouse, Child, Parent, Sibling, Grandparent, Grandchild, Other
     };
 
-    public static bool IsValid(string value)
-        => AllValues.Contains(value, StringComparer.OrdinalIgnoreCase);
+    public static bool IsValid(string? value)
+        => !string.IsNullOrWhiteSpace(value)
+           && AllValues.Contains(value.Trim(), StringComparer.OrdinalIgnoreCase);
+
+    public static readonly IReadOnlyDictionary<string, string> Labels = new Dictionary<string, string>
+    {
+        [Spouse]      = "Vợ / Chồng",
+        [Child]       = "Con",
+        [Parent]      = "Cha / Mẹ",
+        [Sibling]     = "Anh / Chị / Em",
+        [Grandparent] = "Ông / Bà",
+        [Grandchild]  = "Cháu",
+        [Other]       = "Khác"
+    };
+
+    public static string GetLabel(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && Labels.TryGetValue(value.Trim().ToUpperInvariant(), out var label)
+            ? label
+            : value ?? string.Empty;
 }
