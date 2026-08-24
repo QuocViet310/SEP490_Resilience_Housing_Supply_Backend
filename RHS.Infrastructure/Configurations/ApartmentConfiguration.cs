@@ -17,6 +17,49 @@ public class ApartmentConfiguration : IEntityTypeConfiguration<Apartment>
             .IsRequired()
             .HasMaxLength(100);
 
+        builder.Property(x => x.FloorNumber)
+            .IsRequired()
+            .HasDefaultValue(1);
+
+        builder.Property(x => x.BuildingBlock)
+            .HasMaxLength(50);
+
+        builder.Property(x => x.NumberOfBedrooms)
+            .IsRequired()
+            .HasDefaultValue(1);
+
+        builder.Property(x => x.NumberOfBathrooms)
+            .IsRequired()
+            .HasDefaultValue(1);
+
+        builder.Property(x => x.MainDoorDirection)
+            .HasMaxLength(20);
+
+        builder.Property(x => x.BalconyDirection)
+            .HasMaxLength(20);
+
+        builder.Property(x => x.ViewDescription)
+            .HasMaxLength(255);
+
+        builder.Property(x => x.MinSuitableIncome)
+            .HasPrecision(18, 2);
+
+        builder.Property(x => x.MaxSuitableIncome)
+            .HasPrecision(18, 2);
+
+        builder.Property(x => x.UnitGroup)
+            .IsRequired()
+            .HasMaxLength(20)
+            .HasDefaultValue(UnitGroupConstants.Standard);
+
+        builder.Property(x => x.SaleType)
+            .IsRequired()
+            .HasMaxLength(20)
+            .HasDefaultValue(SaleTypeConstants.FullOwnership);
+
+        builder.Property(x => x.CoOwnershipRatio)
+            .HasPrecision(5, 2);
+
         builder.Property(x => x.Price)
             .HasPrecision(18, 2);
 
@@ -46,5 +89,9 @@ public class ApartmentConfiguration : IEntityTypeConfiguration<Apartment>
 
         builder.HasIndex(x => x.ProjectId);
         builder.HasIndex(x => new { x.ProjectId, x.Status });
+        builder.HasIndex(x => new { x.ProjectId, x.FloorNumber });
+        builder.HasIndex(x => new { x.ProjectId, x.BuildingBlock });
+        builder.HasIndex(x => new { x.ProjectId, x.UnitGroup });
+        builder.HasIndex(x => new { x.ProjectId, x.SaleType });
     }
 }

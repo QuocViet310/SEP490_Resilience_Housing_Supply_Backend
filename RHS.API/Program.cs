@@ -94,6 +94,8 @@ builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ICitizenProfileService, CitizenProfileService>();
 builder.Services.AddScoped<IHousingProjectService, HousingProjectService>();
+builder.Services.AddScoped<IApartmentService, ApartmentService>();
+builder.Services.AddScoped<IProjectMilestoneService, ProjectMilestoneService>();
 builder.Services.AddScoped<IHousingProjectStatusService, HousingProjectStatusService>();
 builder.Services.AddScoped<IFileStorageService, FileStorageService>();
 builder.Services.AddScoped<IAdminService, AdminService>();

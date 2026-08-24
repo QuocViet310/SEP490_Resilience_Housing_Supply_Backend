@@ -562,33 +562,58 @@ public class HousingProjectService : IHousingProjectService
                 .OrderBy(a => a.UnitName)
                 .Select(a => new ApartmentDto
                 {
-                    Id          = a.Id,
-                    UnitName    = a.UnitName,
-                    Area        = a.Area,
-                    Price       = a.Price,
-                    Status      = a.Status,
-                    ApartmentTypeId = a.ApartmentTypeId,
-                    ApartmentType = a.ApartmentType?.TypeCode ?? string.Empty,
-                    ApartmentTypeLabel = a.ApartmentType?.TypeName ?? string.Empty,
-                    Description = a.Description,
-                    Model3DUrl  = a.Model3DUrl,
-                    VirtualTourUrl = a.VirtualTourUrl
+                    Id                     = a.Id,
+                    ProjectId              = a.ProjectId,
+                    UnitName               = a.UnitName,
+                    FloorNumber            = a.FloorNumber,
+                    BuildingBlock          = a.BuildingBlock,
+                    NumberOfBedrooms       = a.NumberOfBedrooms,
+                    NumberOfBathrooms      = a.NumberOfBathrooms,
+                    Area                   = a.Area,
+                    GrossArea              = a.GrossArea,
+                    MainDoorDirection      = a.MainDoorDirection,
+                    MainDoorDirectionLabel = DirectionConstants.GetDisplayName(a.MainDoorDirection),
+                    BalconyDirection       = a.BalconyDirection,
+                    BalconyDirectionLabel  = DirectionConstants.GetDisplayName(a.BalconyDirection),
+                    ViewDescription        = a.ViewDescription,
+                    MaxOccupants           = a.MaxOccupants,
+                    MinSuitableIncome      = a.MinSuitableIncome,
+                    MaxSuitableIncome      = a.MaxSuitableIncome,
+                    UnitGroup              = a.UnitGroup,
+                    UnitGroupLabel         = UnitGroupConstants.GetDisplayName(a.UnitGroup),
+                    SaleType               = a.SaleType,
+                    SaleTypeLabel          = SaleTypeConstants.GetDisplayName(a.SaleType),
+                    CoOwnershipRatio       = a.CoOwnershipRatio,
+                    Price                  = a.Price,
+                    Status                 = a.Status,
+                    ApartmentTypeId        = a.ApartmentTypeId,
+                    ApartmentType          = a.ApartmentType?.TypeCode ?? string.Empty,
+                    ApartmentTypeLabel     = a.ApartmentType?.TypeName ?? string.Empty,
+                    Description            = a.Description,
+                    Model3DUrl             = a.Model3DUrl,
+                    VirtualTourUrl         = a.VirtualTourUrl,
+                    CreatedAt              = a.CreatedAt,
+                    UpdatedAt              = a.UpdatedAt
                 })
                 .ToList(),
             Milestones = project.PaymentMilestones
                 .OrderBy(m => m.PhaseOrder)
                 .Select(m => new MilestoneDto
                 {
-                    Id              = m.Id,
-                    PhaseOrder      = m.PhaseOrder,
-                    PhaseName       = m.PhaseName,
-                    CalculationType = m.CalculationType,
-                    FixedAmount     = m.FixedAmount,
-                    Percentage      = m.Percentage,
-                    TriggerEvent    = m.TriggerEvent,
-                    DueDays         = m.DueDays,
-                    Description     = m.Description,
-                    IsActive        = m.IsActive
+                    Id                = m.Id,
+                    ProjectId         = m.ProjectId,
+                    PhaseOrder        = m.PhaseOrder,
+                    PhaseName         = m.PhaseName,
+                    CalculationType   = m.CalculationType,
+                    FixedAmount       = m.FixedAmount,
+                    Percentage        = m.Percentage,
+                    TriggerEvent      = m.TriggerEvent,
+                    TriggerEventLabel = TriggerEventConstants.GetDisplayName(m.TriggerEvent),
+                    DueDays           = m.DueDays,
+                    Description       = m.Description,
+                    IsActive          = m.IsActive,
+                    CreatedAt         = m.CreatedAt,
+                    UpdatedAt         = m.UpdatedAt
                 })
                 .ToList()
         };
@@ -596,36 +621,85 @@ public class HousingProjectService : IHousingProjectService
 
     private static void AddDefaultPercentMilestones(HousingProject project, decimal phase1Pct = 20m)
     {
-        var p1 = Math.Clamp(phase1Pct, 1m, 30m);
-        var p2 = 100m - p1;
+        var p1 = Math.Clamp(phase1Pct, 10m, 30m);
         var now = DateTime.UtcNow;
+
+        // Seed 5 đợt chuẩn theo tiến độ thi công NOXH:
+        // Đợt 1 (Cọc/Ký HĐ): 20%, Đợt 2 (Xây thô): 20%, Đợt 3 (Cất nóc): 20%, Đợt 4 (Bàn giao): 35%, Đợt 5 (Sổ hồng): 5%
         project.PaymentMilestones.Add(new PaymentMilestone
         {
-            Id = Guid.NewGuid(),
-            ProjectId = project.Id,
-            PhaseOrder = 1,
-            PhaseName = "Đợt 1",
+            Id              = Guid.NewGuid(),
+            ProjectId       = project.Id,
+            PhaseOrder      = 1,
+            PhaseName       = "Đợt 1 — Đặt cọc & Ký Hợp đồng",
             CalculationType = CalculationTypeConstants.Percentage,
-            Percentage = p1,
-            TriggerEvent = TriggerEventConstants.OnContractSigned,
-            DueDays = 7,
-            Description = $"Đợt 1 — {p1:0.##}% giá căn sau khi ký hợp đồng mua bán nhà ở xã hội (≤ 30%)",
-            IsActive = true,
-            CreatedAt = now
+            Percentage      = p1,
+            TriggerEvent    = TriggerEventConstants.OnContractSigned,
+            DueDays         = 15,
+            Description     = $"Đợt 1 — {p1:0.##}% giá trị căn hộ khi ký Hợp đồng mua bán chính thức",
+            IsActive        = true,
+            CreatedAt       = now
         });
+
         project.PaymentMilestones.Add(new PaymentMilestone
         {
-            Id = Guid.NewGuid(),
-            ProjectId = project.Id,
-            PhaseOrder = 2,
-            PhaseName = "Đợt 2",
+            Id              = Guid.NewGuid(),
+            ProjectId       = project.Id,
+            PhaseOrder      = 2,
+            PhaseName       = "Đợt 2 — Hoàn thành sàn thô",
             CalculationType = CalculationTypeConstants.Percentage,
-            Percentage = p2,
-            TriggerEvent = TriggerEventConstants.OnLotteryWon,
-            DueDays = 30,
-            Description = $"Đợt 2 — phần còn lại ({p2:0.##}% giá căn); đợt cuối nhận phần dư làm tròn",
-            IsActive = true,
-            CreatedAt = now
+            Percentage      = 20m,
+            TriggerEvent    = TriggerEventConstants.ConstructionRoughFloor,
+            DueDays         = 30,
+            Description     = "Đợt 2 — 20% giá trị căn hộ khi hoàn thành phần khung bê tông cốt thép",
+            IsActive        = true,
+            CreatedAt       = now
+        });
+
+        project.PaymentMilestones.Add(new PaymentMilestone
+        {
+            Id              = Guid.NewGuid(),
+            ProjectId       = project.Id,
+            PhaseOrder      = 3,
+            PhaseName       = "Đợt 3 — Cất nóc tòa nhà",
+            CalculationType = CalculationTypeConstants.Percentage,
+            Percentage      = 20m,
+            TriggerEvent    = TriggerEventConstants.RoofingCompleted,
+            DueDays         = 30,
+            Description     = "Đợt 3 — 20% giá trị căn hộ khi hoàn thành cất nóc toàn bộ công trình",
+            IsActive        = true,
+            CreatedAt       = now
+        });
+
+        var p4 = 100m - (p1 + 20m + 20m + 5m); // 35% nếu p1=20
+        project.PaymentMilestones.Add(new PaymentMilestone
+        {
+            Id              = Guid.NewGuid(),
+            ProjectId       = project.Id,
+            PhaseOrder      = 4,
+            PhaseName       = "Đợt 4 — Bàn giao nhà & Chìa khóa",
+            CalculationType = CalculationTypeConstants.Percentage,
+            Percentage      = p4,
+            TriggerEvent    = TriggerEventConstants.Handover,
+            DueDays         = 30,
+            Description     = $"Đợt 4 — {p4:0.##}% giá trị căn hộ khi nhận bàn giao thực tế và chìa khóa nhà",
+            IsActive        = true,
+            CreatedAt       = now
+        });
+
+        project.PaymentMilestones.Add(new PaymentMilestone
+        {
+            Id              = Guid.NewGuid(),
+            ProjectId       = project.Id,
+            PhaseOrder      = 5,
+            PhaseName       = "Đợt 5 — Nhận Giấy chứng nhận (Sổ hồng)",
+            CalculationType = CalculationTypeConstants.Percentage,
+            Percentage      = 5m,
+            TriggerEvent    = TriggerEventConstants.RedBookIssued,
+            DueDays         = 30,
+            Description     = "Đợt 5 — 5% giá trị còn lại khi cơ quan nhà nước bàn giao Giấy chứng nhận quyền sở hữu",
+            IsActive        = true,
+            CreatedAt       = now
         });
     }
 
