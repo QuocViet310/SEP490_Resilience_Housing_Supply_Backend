@@ -36,6 +36,9 @@ public static class ApplicationStatusConstants
     /// <summary>Đã hết hạn thanh toán</summary>
     public const string Expired = "EXPIRED";
 
+    /// <summary>Người dân đã gửi đơn xin ngừng thanh toán / rút hồ sơ - Chờ CĐT phê duyệt</summary>
+    public const string CancellationRequested = "CANCELLATION_REQUESTED";
+
     /// <summary>Chờ thanh toán đặt cọc Đợt 1 (trúng bốc thăm / cấp suất)</summary>
     public const string DepositPending = "DEPOSIT_PENDING";
 
@@ -84,7 +87,8 @@ public static class ApplicationStatusConstants
         ContractSigned,
         ContractPending,
         LotteryLost,
-        Waitlist
+        Waitlist,
+        CancellationRequested
     };
 
     /// <summary>

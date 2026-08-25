@@ -170,34 +170,63 @@ public class InstallmentService : IInstallmentService
 
         var now = DateTime.UtcNow;
 
-        var phases = installments.Select(i => new InstallmentDto
+        const decimal dailyRate = 0.0005m; // 0.05% / ngày
+
+        var phases = installments.Select(i =>
         {
-            Id            = i.Id,
-            PhaseOrder    = i.Milestone?.PhaseOrder ?? 0,
-            PhaseName     = i.Milestone?.PhaseName ?? $"Đợt",
-            Amount        = i.Amount,
-            StartDate     = i.StartDate,
-            DueDate       = i.DueDate,
-            Status        = i.Status,
-            PaidAt        = i.PaidAt,
-            RemainingDays = (int)(i.DueDate - now).TotalDays,
-            Note          = i.Note
+            int overdueDays = 0;
+            decimal penaltyAmount = 0m;
+
+            if ((i.Status == InstallmentStatusConstants.Pending || i.Status == InstallmentStatusConstants.Overdue) && now > i.DueDate)
+            {
+                overdueDays = (int)Math.Floor((now - i.DueDate).TotalDays);
+                if (overdueDays > 0)
+                {
+                    penaltyAmount = Math.Round(i.Amount * dailyRate * overdueDays, 0, MidpointRounding.AwayFromZero);
+                }
+            }
+
+            return new InstallmentDto
+            {
+                Id                 = i.Id,
+                PhaseOrder         = i.Milestone?.PhaseOrder ?? 0,
+                PhaseName          = i.Milestone?.PhaseName ?? $"Đợt",
+                Amount             = i.Amount,
+                StartDate          = i.StartDate,
+                DueDate            = i.DueDate,
+                Status             = i.Status,
+                PaidAt             = i.PaidAt,
+                RemainingDays      = (int)(i.DueDate - now).TotalDays,
+                OverdueDays        = overdueDays,
+                DailyPenaltyRate   = dailyRate,
+                PenaltyAmount      = penaltyAmount,
+                TotalPayableAmount = i.Amount + penaltyAmount,
+                Note               = i.Note
+            };
         }).ToList();
+
+        var totalUnpaidPenalties = phases
+            .Where(p => p.Status != InstallmentStatusConstants.Paid && p.Status != InstallmentStatusConstants.Cancelled)
+            .Sum(p => p.PenaltyAmount);
+
+        var totalRemainingPrincipal = phases
+            .Where(p => p.Status != InstallmentStatusConstants.Paid && p.Status != InstallmentStatusConstants.Cancelled)
+            .Sum(p => p.Amount);
 
         return new InstallmentSummaryDto
         {
-            ApplicationId     = applicationId,
-            ApartmentTypeName = apartment?.UnitName,
-            ApartmentArea     = apartment?.Area,
-            ApartmentPrice    = apartment?.Price,
-            TotalAmount       = phases.Sum(p => p.Amount),
-            TotalPaid         = phases.Where(p => p.Status == InstallmentStatusConstants.Paid).Sum(p => p.Amount),
-            TotalRemaining    = phases.Where(p => p.Status != InstallmentStatusConstants.Paid
-                                                && p.Status != InstallmentStatusConstants.Cancelled)
-                                      .Sum(p => p.Amount),
-            TotalPhases       = phases.Count,
-            PaidPhases        = phases.Count(p => p.Status == InstallmentStatusConstants.Paid),
-            Phases            = phases
+            ApplicationId          = applicationId,
+            ApartmentTypeName      = apartment?.UnitName,
+            ApartmentArea          = apartment?.Area,
+            ApartmentPrice         = apartment?.Price,
+            TotalAmount            = phases.Sum(p => p.Amount),
+            TotalPaid              = phases.Where(p => p.Status == InstallmentStatusConstants.Paid).Sum(p => p.Amount),
+            TotalRemaining         = totalRemainingPrincipal,
+            TotalPenalty           = totalUnpaidPenalties,
+            TotalAmountWithPenalty = totalRemainingPrincipal + totalUnpaidPenalties,
+            TotalPhases            = phases.Count,
+            PaidPhases             = phases.Count(p => p.Status == InstallmentStatusConstants.Paid),
+            Phases                 = phases
         };
     }
 
@@ -310,11 +339,27 @@ public class InstallmentService : IInstallmentService
             await _paymentRepository.UpdateAsync(pending);
         }
 
+        // Tính tiền lãi phạt trễ hạn (0.05%/ngày) nếu đợt đã quá hạn
+        var now = DateTime.UtcNow;
+        decimal penaltyAmount = 0m;
+        if ((installment.Status == InstallmentStatusConstants.Pending || installment.Status == InstallmentStatusConstants.Overdue) && now > installment.DueDate)
+        {
+            var overdueDays = (int)Math.Floor((now - installment.DueDate).TotalDays);
+            if (overdueDays > 0)
+            {
+                penaltyAmount = Math.Round(installment.Amount * 0.0005m * overdueDays, 0, MidpointRounding.AwayFromZero);
+            }
+        }
+
+        var totalPayableAmount = installment.Amount + penaltyAmount;
+
         // Tạo Payment record
         var orderId = GenerateOrderId();
         var projectName = RemoveDiacritics(
             installment.HousingApplication.HousingProject.ProjectName);
-        var orderInfo = $"TT {installment.Milestone.PhaseName} - {orderId} - {projectName} - InstId:{installmentId}";
+        var orderInfo = penaltyAmount > 0
+            ? $"TT {installment.Milestone.PhaseName} (Goc:{installment.Amount:N0} + LaiPhat:{penaltyAmount:N0}) - {orderId} - {projectName} - InstId:{installmentId}"
+            : $"TT {installment.Milestone.PhaseName} - {orderId} - {projectName} - InstId:{installmentId}";
 
         var payment = new Payment
         {
@@ -324,7 +369,7 @@ public class InstallmentService : IInstallmentService
             HousingProjectId = installment.HousingApplication.ProjectId,
             OrderId          = orderId,
             OrderInfo        = orderInfo,
-            Amount           = installment.Amount,
+            Amount           = totalPayableAmount,
             Status           = "Pending",
             CreatedAt        = DateTime.UtcNow
         };
@@ -337,7 +382,7 @@ public class InstallmentService : IInstallmentService
             OrderId     = orderId,
             OrderInfo   = orderInfo,
             OrderType   = "installment",
-            Amount      = installment.Amount,
+            Amount      = totalPayableAmount,
             CreatedDate = DateTime.UtcNow
         };
 
@@ -528,6 +573,687 @@ public class InstallmentService : IInstallmentService
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // 6. Xử lý Hủy hợp đồng, Phạt cọc & Hoàn tiền (Luồng xấu)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <inheritdoc />
+    public async Task<ContractCancellationPreviewDto> PreviewContractCancellationAsync(Guid applicationId)
+    {
+        var app = await _db.HousingApplications
+            .AsNoTracking()
+            .Include(a => a.Applicant)
+            .Include(a => a.Apartment)
+            .Include(a => a.HousingProject)
+            .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
+
+        if (app == null)
+        {
+            return new ContractCancellationPreviewDto
+            {
+                ApplicationId = applicationId,
+                CanCancel = false,
+                Message = "Hồ sơ không tồn tại."
+            };
+        }
+
+        var summary = await GetSummaryAsync(applicationId);
+        var phases = summary?.Phases ?? new List<InstallmentDto>();
+
+        int overdueCount = phases.Count(p => p.OverdueDays > 0 || p.Status == InstallmentStatusConstants.Overdue);
+        bool isEligibleForForced = overdueCount >= 2;
+
+        var d1 = phases.FirstOrDefault(p => p.PhaseOrder == 1);
+        decimal phase1Amount = d1?.Amount ?? 0m;
+        decimal phase1PaidAmount = d1?.Status == InstallmentStatusConstants.Paid ? d1.Amount : 0m;
+        decimal depositForfeited = phase1PaidAmount; // Phạt cọc = Toàn bộ tiền cọc Đợt 1 đã đóng
+
+        decimal phase2PlusPaid = phases
+            .Where(p => p.PhaseOrder > 1 && p.Status == InstallmentStatusConstants.Paid)
+            .Sum(p => p.Amount);
+
+        decimal totalUnpaidPenalty = phases
+            .Where(p => p.Status != InstallmentStatusConstants.Paid && p.Status != InstallmentStatusConstants.Cancelled)
+            .Sum(p => p.PenaltyAmount);
+
+        decimal refundAmount = Math.Max(0m, phase2PlusPaid - totalUnpaidPenalty);
+
+        bool canCancel = app.ApplicationStatus != ApplicationStatusConstants.Canceled
+                      && app.ApplicationStatus != ApplicationStatusConstants.Rejected;
+
+        // Tìm ứng viên tiếp theo trong Waitlist (nếu có)
+        var nextWaitlistCandidate = await _db.HousingApplications
+            .AsNoTracking()
+            .Include(a => a.Applicant)
+            .Where(a => a.ProjectId == app.ProjectId
+                     && a.WaitlistNumber.HasValue
+                     && a.WaitlistNumber > 0
+                     && a.ApplicationStatus != ApplicationStatusConstants.Canceled
+                     && a.ApplicationStatus != ApplicationStatusConstants.Rejected)
+            .OrderBy(a => a.WaitlistNumber)
+            .FirstOrDefaultAsync();
+
+        var message = !canCancel
+            ? $"Hồ sơ đang ở trạng thái {app.ApplicationStatus}, không thể hủy hợp đồng."
+            : isEligibleForForced
+                ? $"Đủ điều kiện cưỡng chế thu hồi căn ({overdueCount} đợt quá hạn). Phạt cọc Đợt 1: {depositForfeited:N0} VND. Tiền thực hoàn: {refundAmount:N0} VND."
+                : $"Tự nguyện hủy HĐ. Phạt cọc Đợt 1: {depositForfeited:N0} VND. Tiền thực hoàn: {refundAmount:N0} VND.";
+
+        return new ContractCancellationPreviewDto
+        {
+            ApplicationId = applicationId,
+            ApplicantName = app.FullName,
+            ApartmentUnitName = app.Apartment?.UnitName,
+            ApartmentPrice = app.Apartment?.Price,
+            CurrentApplicationStatus = app.ApplicationStatus,
+            CanCancel = canCancel,
+            Message = message,
+            OverduePhasesCount = overdueCount,
+            IsEligibleForForcedRevocation = isEligibleForForced,
+            Phase1Amount = phase1Amount,
+            Phase1PaidAmount = phase1PaidAmount,
+            DepositForfeited = depositForfeited,
+            Phase2PlusPaidAmount = phase2PlusPaid,
+            TotalUnpaidPenalty = totalUnpaidPenalty,
+            RefundAmount = refundAmount,
+            PromotedWaitlistApplicantName = nextWaitlistCandidate?.FullName ?? nextWaitlistCandidate?.Applicant?.FullName,
+            Installments = phases
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<ContractCancellationResultDto> SubmitCancellationRequestAsync(
+        Guid userId, Guid applicationId, CancelContractRequestDto dto)
+    {
+        var app = await _db.HousingApplications
+            .Include(a => a.Apartment)
+            .Include(a => a.HousingProject)
+            .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
+
+        if (app == null)
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = "Hồ sơ không tồn tại.",
+                ApplicationId = applicationId
+            };
+        }
+
+        if (app.ApplicantId != userId)
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = "Bạn không phải chủ hồ sơ này.",
+                ApplicationId = applicationId
+            };
+        }
+
+        if (app.ApplicationStatus == ApplicationStatusConstants.CancellationRequested)
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = "Bạn đã nộp đơn xin ngừng thanh toán trước đó. Đơn đang chờ Chủ đầu tư phê duyệt.",
+                ApplicationId = applicationId
+            };
+        }
+
+        var invalidStatuses = new[]
+        {
+            ApplicationStatusConstants.Draft,
+            ApplicationStatusConstants.Canceled,
+            ApplicationStatusConstants.Rejected,
+            ApplicationStatusConstants.Expired
+        };
+
+        if (invalidStatuses.Contains(app.ApplicationStatus))
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = $"Hồ sơ đang ở trạng thái {app.ApplicationStatus}, không thể nộp đơn xin ngừng thanh toán.",
+                ApplicationId = applicationId
+            };
+        }
+
+        var oldStatus = app.ApplicationStatus;
+        app.ApplicationStatus = ApplicationStatusConstants.CancellationRequested;
+        app.UpdatedAt = DateTime.UtcNow;
+
+        var noteInfo = $"Nộp đơn xin ngừng thanh toán / rút hồ sơ. Lý do: {dto.Reason}. STK: {dto.BankAccountNumber} - Ngân hàng: {dto.BankName} - Chủ TK: {dto.AccountHolderName}";
+
+        _db.Set<ApplicationStatusHistory>().Add(new ApplicationStatusHistory
+        {
+            HistoryId = Guid.NewGuid(),
+            ApplicationId = applicationId,
+            ChangedBy = userId,
+            OldStatus = oldStatus,
+            NewStatus = ApplicationStatusConstants.CancellationRequested,
+            Action = "SUBMIT_CANCELLATION_REQUEST",
+            Note = noteInfo,
+            ChangedAt = DateTime.UtcNow
+        });
+
+        await _db.SaveChangesAsync();
+
+        try
+        {
+            var developerId = app.HousingProject?.DeveloperId;
+            if (developerId.HasValue && developerId.Value != Guid.Empty)
+            {
+                await _notificationService.SendAsync(
+                    developerId.Value,
+                    "📩 Đơn xin ngừng thanh toán mới",
+                    $"Người dân {app.FullName} (Mã căn: {app.Apartment?.UnitName ?? "Chưa gán"}) đã gửi đơn xin ngừng thanh toán / rút hồ sơ. Vui lòng thẩm định & duyệt.",
+                    NotificationTypeConstants.ApplicationNeedMoreDocs);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send notification to Developer for cancellation request on app {AppId}", applicationId);
+        }
+
+        var preview = await PreviewContractCancellationAsync(applicationId);
+
+        return new ContractCancellationResultDto
+        {
+            Success = true,
+            Message = "Đã gửi đơn xin ngừng thanh toán thành công. Đơn đang chờ Chủ đầu tư thẩm định & phê duyệt.",
+            ApplicationId = applicationId,
+            DepositForfeited = preview.DepositForfeited,
+            RefundAmount = preview.RefundAmount,
+            TotalPenaltyDeducted = preview.TotalUnpaidPenalty,
+            CancelledAt = DateTime.UtcNow
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<List<CancellationRequestItemDto>> GetPendingCancellationRequestsAsync(Guid projectId)
+    {
+        var pendingApps = await _db.HousingApplications
+            .AsNoTracking()
+            .Include(a => a.Applicant)
+            .Include(a => a.Apartment)
+            .Where(a => a.ProjectId == projectId && a.ApplicationStatus == ApplicationStatusConstants.CancellationRequested)
+            .ToListAsync();
+
+        var result = new List<CancellationRequestItemDto>();
+
+        foreach (var app in pendingApps)
+        {
+            var preview = await PreviewContractCancellationAsync(app.ApplicationId);
+
+            var lastRequestHistory = await _db.ApplicationStatusHistories
+                .AsNoTracking()
+                .Where(h => h.ApplicationId == app.ApplicationId && h.NewStatus == ApplicationStatusConstants.CancellationRequested)
+                .OrderByDescending(h => h.ChangedAt)
+                .FirstOrDefaultAsync();
+
+            result.Add(new CancellationRequestItemDto
+            {
+                ApplicationId = app.ApplicationId,
+                ApplicantName = app.FullName,
+                CitizenId = app.CitizenId,
+                PhoneNumber = app.Applicant?.PhoneNumber,
+                ApartmentUnitName = app.Apartment?.UnitName,
+                Reason = lastRequestHistory?.Note ?? "Xin ngừng thanh toán / rút hồ sơ",
+                Phase1DepositForfeited = preview.DepositForfeited,
+                Phase2PlusPaidAmount = preview.Phase2PlusPaidAmount,
+                UnpaidPenaltyAmount = preview.TotalUnpaidPenalty,
+                NetRefundAmount = preview.RefundAmount,
+                RequestedAt = lastRequestHistory?.ChangedAt ?? app.UpdatedAt ?? DateTime.UtcNow
+            });
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<ContractCancellationResultDto> ApproveCancellationRequestAsync(
+        Guid userId, Guid applicationId)
+    {
+        var app = await _db.HousingApplications
+            .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
+
+        if (app == null)
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = "Hồ sơ không tồn tại.",
+                ApplicationId = applicationId
+            };
+        }
+
+        if (app.ApplicationStatus != ApplicationStatusConstants.CancellationRequested)
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = $"Hồ sơ đang ở trạng thái {app.ApplicationStatus}, không thể phê duyệt đơn xin ngừng thanh toán.",
+                ApplicationId = applicationId
+            };
+        }
+
+        var requestDto = new CancelContractRequestDto
+        {
+            Reason = "Chủ đầu tư chấp thuận đơn xin ngừng thanh toán / rút hồ sơ",
+            IsForcedRevocation = false
+        };
+
+        return await CancelContractAndProcessRefundAsync(userId, applicationId, requestDto);
+    }
+
+    /// <inheritdoc />
+    public async Task<ContractCancellationResultDto> RejectCancellationRequestAsync(
+        Guid userId, Guid applicationId, RejectCancellationRequestDto dto)
+    {
+        var app = await _db.HousingApplications
+            .Include(a => a.Applicant)
+            .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
+
+        if (app == null)
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = "Hồ sơ không tồn tại.",
+                ApplicationId = applicationId
+            };
+        }
+
+        if (app.ApplicationStatus != ApplicationStatusConstants.CancellationRequested)
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = $"Hồ sơ đang ở trạng thái {app.ApplicationStatus}, không thể từ chối đơn xin ngừng thanh toán.",
+                ApplicationId = applicationId
+            };
+        }
+
+        var lastReqHistory = await _db.ApplicationStatusHistories
+            .AsNoTracking()
+            .Where(h => h.ApplicationId == applicationId && h.NewStatus == ApplicationStatusConstants.CancellationRequested)
+            .OrderByDescending(h => h.ChangedAt)
+            .FirstOrDefaultAsync();
+
+        var previousStatus = lastReqHistory?.OldStatus ?? ApplicationStatusConstants.DepositPaid;
+
+        app.ApplicationStatus = previousStatus;
+        app.UpdatedAt = DateTime.UtcNow;
+
+        _db.Set<ApplicationStatusHistory>().Add(new ApplicationStatusHistory
+        {
+            HistoryId = Guid.NewGuid(),
+            ApplicationId = applicationId,
+            ChangedBy = userId,
+            OldStatus = ApplicationStatusConstants.CancellationRequested,
+            NewStatus = previousStatus,
+            Action = "REJECT_CANCELLATION_REQUEST",
+            Note = $"Từ chối đơn xin ngừng thanh toán. Lý do từ chối: {dto.Reason}",
+            ChangedAt = DateTime.UtcNow
+        });
+
+        await _db.SaveChangesAsync();
+
+        try
+        {
+            await _notificationService.SendAsync(
+                app.ApplicantId,
+                "❌ Đơn xin ngừng thanh toán bị từ chối",
+                $"Đơn xin ngừng thanh toán / rút hồ sơ của bạn đã bị Chủ đầu tư từ chối. Lý do: {dto.Reason}.",
+                NotificationTypeConstants.ApplicationNeedMoreDocs);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send rejection notification for app {AppId}", applicationId);
+        }
+
+        return new ContractCancellationResultDto
+        {
+            Success = true,
+            Message = $"Đã từ chối đơn xin ngừng thanh toán của người dân. Hồ sơ được khôi phục về trạng thái {previousStatus}.",
+            ApplicationId = applicationId,
+            CancelledAt = DateTime.UtcNow
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<ContractCancellationResultDto> CancelContractAndProcessRefundAsync(
+        Guid userId, Guid applicationId, CancelContractRequestDto dto)
+    {
+        var app = await _db.HousingApplications
+            .Include(a => a.Apartment)
+            .Include(a => a.HousingProject)
+            .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
+
+        if (app == null)
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = "Hồ sơ không tồn tại.",
+                ApplicationId = applicationId
+            };
+        }
+
+        if (app.ApplicationStatus == ApplicationStatusConstants.Canceled)
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = "Hồ sơ đã được hủy trước đó.",
+                ApplicationId = applicationId
+            };
+        }
+
+        // Kiểm tra quyền: Chủ sở hữu hồ sơ (tự nguyện làm đơn) hoặc CĐT/Staff (cưỡng chế/duyệt)
+        var caller = await _db.Users
+            .AsNoTracking()
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
+        var isOwner = app.ApplicantId == userId;
+        var isStaff = caller?.Role != null && (
+            caller.Role.RoleName == RoleConstants.HousingDeveloper ||
+            caller.Role.RoleName == RoleConstants.DepartmentOfConstruction ||
+            caller.Role.RoleName == RoleConstants.SystemAdministrator
+        );
+
+        if (!isOwner && !isStaff)
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = "Bạn không có quyền thực hiện hủy hợp đồng cho hồ sơ này.",
+                ApplicationId = applicationId
+            };
+        }
+
+        var preview = await PreviewContractCancellationAsync(applicationId);
+        if (!preview.CanCancel)
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = preview.Message ?? "Hồ sơ không ở trạng thái hợp lệ để hủy.",
+                ApplicationId = applicationId
+            };
+        }
+
+        var isForced = dto.IsForcedRevocation || preview.IsEligibleForForcedRevocation;
+        var oldStatus = app.ApplicationStatus;
+        var releasedApartmentId = app.ApartmentId ?? app.Apartment?.Id;
+
+        app.ApplicationStatus = ApplicationStatusConstants.Canceled;
+        app.UpdatedAt = DateTime.UtcNow;
+
+        // Giải phóng căn hộ
+        if (app.Apartment != null || (app.ApartmentId.HasValue && app.ApartmentId.Value != Guid.Empty))
+        {
+            var apartmentId = app.ApartmentId ?? app.Apartment?.Id;
+            var apartment = app.Apartment ?? (apartmentId.HasValue ? await _db.Apartments.FirstOrDefaultAsync(a => a.Id == apartmentId.Value) : null);
+            if (apartment != null)
+            {
+                apartment.Status = "AVAILABLE";
+                apartment.UpdatedAt = DateTime.UtcNow;
+            }
+            app.ApartmentId = null;
+        }
+
+        // Hoàn trả suất khả dụng dự án
+        if (app.HousingProject != null)
+        {
+            app.HousingProject.AvailableUnits += 1;
+            app.HousingProject.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // Hủy tất cả đợt thu chưa đóng
+        var unpaidInstallments = await _db.PaymentInstallments
+            .Where(i => i.ApplicationId == applicationId && i.Status != InstallmentStatusConstants.Paid)
+            .ToListAsync();
+
+        foreach (var inst in unpaidInstallments)
+        {
+            inst.Status = InstallmentStatusConstants.Cancelled;
+            inst.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // Ghi Lịch sử Status History
+        var actionName = isForced ? "FORCED_CONTRACT_REVOCATION" : "VOLUNTARY_CONTRACT_CANCELLATION";
+        _db.Set<ApplicationStatusHistory>().Add(new ApplicationStatusHistory
+        {
+            HistoryId = Guid.NewGuid(),
+            ApplicationId = applicationId,
+            ChangedBy = userId,
+            OldStatus = oldStatus,
+            NewStatus = ApplicationStatusConstants.Canceled,
+            Action = actionName,
+            Note = $"{(isForced ? "Cưỡng chế thu hồi căn (quá đợt trễ hạn)" : "Tự nguyện hủy HĐ")}. Lý do: {dto.Reason}. Cọc Đợt 1 phạt tịch thu: {preview.DepositForfeited:N0} VND. Đợt 2+ đã đóng: {preview.Phase2PlusPaidAmount:N0} VND. Lãi phạt trễ hạn đã trừ: {preview.TotalUnpaidPenalty:N0} VND. Tiền thực hoàn: {preview.RefundAmount:N0} VND.",
+            ChangedAt = DateTime.UtcNow
+        });
+
+        // Tự động đôn ứng viên tiếp theo từ Danh sách chờ (Waitlist) nếu có
+        Guid? promotedApplicantId = null;
+        string? promotedApplicantName = null;
+
+        var nextWaitlistCandidate = await _db.HousingApplications
+            .Include(a => a.Applicant)
+            .Where(a => a.ProjectId == app.ProjectId
+                     && a.WaitlistNumber.HasValue
+                     && a.WaitlistNumber > 0
+                     && a.ApplicationStatus != ApplicationStatusConstants.Canceled
+                     && a.ApplicationStatus != ApplicationStatusConstants.Rejected)
+            .OrderBy(a => a.WaitlistNumber)
+            .FirstOrDefaultAsync();
+
+        if (nextWaitlistCandidate != null)
+        {
+            promotedApplicantId = nextWaitlistCandidate.ApplicantId;
+            promotedApplicantName = nextWaitlistCandidate.FullName ?? nextWaitlistCandidate.Applicant?.FullName;
+
+            nextWaitlistCandidate.ApplicationStatus = ApplicationStatusConstants.Approved;
+            nextWaitlistCandidate.WaitlistPromotedAt = DateTime.UtcNow;
+            nextWaitlistCandidate.DepositDeadline = DateTime.UtcNow.AddHours(48); // 48 giờ để xác nhận nộp cọc
+            nextWaitlistCandidate.LotteryResult = LotteryResultConstants.Won;
+            nextWaitlistCandidate.UpdatedAt = DateTime.UtcNow;
+
+            if (releasedApartmentId.HasValue && releasedApartmentId.Value != Guid.Empty)
+            {
+                nextWaitlistCandidate.ApartmentId = releasedApartmentId.Value;
+                var ap = await _db.Apartments.FirstOrDefaultAsync(a => a.Id == releasedApartmentId.Value);
+                if (ap != null)
+                {
+                    ap.Status = "ASSIGNED";
+                    ap.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            if (app.HousingProject != null && app.HousingProject.AvailableUnits > 0)
+            {
+                app.HousingProject.AvailableUnits -= 1;
+            }
+
+            _db.Set<ApplicationStatusHistory>().Add(new ApplicationStatusHistory
+            {
+                HistoryId = Guid.NewGuid(),
+                ApplicationId = nextWaitlistCandidate.ApplicationId,
+                ChangedBy = userId,
+                OldStatus = "WAITLIST",
+                NewStatus = ApplicationStatusConstants.Approved,
+                Action = "PROMOTED_FROM_WAITLIST",
+                Note = $"Được đôn từ Danh sách chờ (Waitlist #{nextWaitlistCandidate.WaitlistNumber}) lên trúng tuyển do căn hộ bị thu hồi từ hồ sơ {applicationId}.",
+                ChangedAt = DateTime.UtcNow
+            });
+
+            try
+            {
+                await _notificationService.SendAsync(
+                    nextWaitlistCandidate.ApplicantId,
+                    "🎉 Chúc mừng! Được đôn từ Danh sách chờ (Waitlist)",
+                    $"Bạn đã được đôn từ Danh sách chờ lên trúng tuyển căn hộ do có căn bị thu hồi. Vui lòng hoàn tất thanh toán cọc trong vòng 48 giờ (trước {nextWaitlistCandidate.DepositDeadline:dd/MM/yyyy HH:mm}).",
+                    NotificationTypeConstants.ApplicationApproved);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to send waitlist promotion notification for app {AppId}", nextWaitlistCandidate.ApplicationId);
+            }
+        }
+
+        await _db.SaveChangesAsync();
+
+        try
+        {
+            await _notificationService.SendAsync(
+                app.ApplicantId,
+                isForced ? "⚠️ Thu hồi căn hộ & Hủy hợp đồng" : "❌ Hợp đồng đã bị hủy / Phạt cọc",
+                $"Hợp đồng mua bán căn hộ của bạn đã bị hủy. Tiền cọc Đợt 1 ({preview.DepositForfeited:N0} VND) bị tịch thu theo quy định. Tiền thực hoàn: {preview.RefundAmount:N0} VND.",
+                NotificationTypeConstants.ApplicationCanceled);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send cancellation notification for app {AppId}", applicationId);
+        }
+
+        _logger.LogInformation(
+            "Contract CANCELLED for App={AppId}. Forced={Forced}, Deposit Forfeited={Forfeited}, Refund={Refund}, PromotedWaitlist={Promoted}.",
+            applicationId, isForced, preview.DepositForfeited, preview.RefundAmount, promotedApplicantName);
+
+        return new ContractCancellationResultDto
+        {
+            Success = true,
+            Message = $"{(isForced ? "Cưỡng chế thu hồi căn" : "Hủy hợp đồng")} thành công. Số tiền cọc bị tịch thu: {preview.DepositForfeited:N0} VND. Số tiền thực hoàn: {preview.RefundAmount:N0} VND."
+                + (!string.IsNullOrEmpty(promotedApplicantName) ? $" Đã tự động đôn ứng viên {promotedApplicantName} từ Waitlist lên nhận căn." : ""),
+            ApplicationId = applicationId,
+            IsForcedRevocation = isForced,
+            DepositForfeited = preview.DepositForfeited,
+            RefundAmount = preview.RefundAmount,
+            TotalPenaltyDeducted = preview.TotalUnpaidPenalty,
+            PromotedWaitlistApplicantId = promotedApplicantId,
+            PromotedWaitlistApplicantName = promotedApplicantName,
+            CancelledAt = DateTime.UtcNow
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 7. Báo cáo tiến độ thu tiền & nợ phạt cho Chủ đầu tư / SXD
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <inheritdoc />
+    public async Task<ProjectPaymentProgressDto> GetProjectPaymentProgressAsync(Guid projectId)
+    {
+        var project = await _db.HousingProjects
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == projectId)
+            ?? throw new InvalidOperationException($"Dự án {projectId} không tồn tại.");
+
+        var applications = await _db.HousingApplications
+            .AsNoTracking()
+            .Include(a => a.Apartment)
+            .Where(a => a.ProjectId == projectId && a.ApplicationStatus != ApplicationStatusConstants.Draft)
+            .ToListAsync();
+
+        var appIds = applications.Select(a => a.ApplicationId).ToList();
+
+        var allInstallments = await _db.PaymentInstallments
+            .AsNoTracking()
+            .Include(i => i.Milestone)
+            .Where(i => appIds.Contains(i.ApplicationId))
+            .ToListAsync();
+
+        var installmentsByApp = allInstallments
+            .GroupBy(i => i.ApplicationId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var now = DateTime.UtcNow;
+        const decimal dailyRate = 0.0005m;
+        var items = new List<ApplicationProgressItemDto>();
+
+        decimal totalExpected = 0m;
+        decimal totalCollected = 0m;
+        decimal totalOverdue = 0m;
+        decimal totalPenalties = 0m;
+
+        foreach (var app in applications)
+        {
+            var insts = installmentsByApp.TryGetValue(app.ApplicationId, out var list) ? list : new List<PaymentInstallment>();
+
+            decimal appPaid = 0m;
+            decimal appRemaining = 0m;
+            decimal appPenalty = 0m;
+            decimal appOverdue = 0m;
+            decimal appTotalContract = app.Apartment?.Price ?? insts.Sum(i => i.Amount);
+
+            int paidCount = 0;
+            int overdueCount = 0;
+
+            foreach (var i in insts)
+            {
+                if (i.Status == InstallmentStatusConstants.Paid)
+                {
+                    appPaid += i.Amount;
+                    paidCount++;
+                }
+                else if (i.Status != InstallmentStatusConstants.Cancelled)
+                {
+                    appRemaining += i.Amount;
+
+                    if (i.Status == InstallmentStatusConstants.Overdue || (i.Status == InstallmentStatusConstants.Pending && now > i.DueDate))
+                    {
+                        overdueCount++;
+                        appOverdue += i.Amount;
+
+                        var days = (int)Math.Floor((now - i.DueDate).TotalDays);
+                        if (days > 0)
+                        {
+                            var pen = Math.Round(i.Amount * dailyRate * days, 0, MidpointRounding.AwayFromZero);
+                            appPenalty += pen;
+                        }
+                    }
+                }
+            }
+
+            totalExpected += appTotalContract;
+            totalCollected += appPaid;
+            totalOverdue += appOverdue;
+            totalPenalties += appPenalty;
+
+            items.Add(new ApplicationProgressItemDto
+            {
+                ApplicationId = app.ApplicationId,
+                ApplicantName = app.FullName,
+                CitizenId = app.CitizenId,
+                SlotCode = app.SlotCode,
+                ApartmentUnitName = app.Apartment?.UnitName,
+                TotalContractAmount = appTotalContract,
+                PaidAmount = appPaid,
+                RemainingAmount = appRemaining,
+                AccruedPenalty = appPenalty,
+                PaidPhasesCount = paidCount,
+                OverduePhasesCount = overdueCount,
+                ApplicationStatus = app.ApplicationStatus
+            });
+        }
+
+        double collectionRate = totalExpected > 0 ? Math.Round((double)(totalCollected / totalExpected * 100m), 2) : 0;
+
+        return new ProjectPaymentProgressDto
+        {
+            ProjectId = projectId,
+            ProjectName = project.ProjectName,
+            TotalApplications = applications.Count,
+            TotalExpectedAmount = totalExpected,
+            TotalCollectedAmount = totalCollected,
+            TotalOverdueAmount = totalOverdue,
+            TotalAccruedPenalties = totalPenalties,
+            CollectionRatePercentage = collectionRate,
+            Items = items
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // Private helpers
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -593,7 +1319,7 @@ public class InstallmentService : IInstallmentService
     }
 
     /// <summary>
-    /// Đảm bảo một hồ sơ đã được cấp căn có đầy đủ 6 đợt đóng tiền.
+    /// Đảm bảo một hồ sơ đã được cấp căn có đầy đủ các đợt đóng tiền (từ 3 đến 6 đợt theo cấu hình dự án của CĐT).
     /// Tự động đồng bộ Đợt 1 sang PAID nếu đã cọc, và Đợt 2 sang PENDING nếu đã ký hợp đồng.
     /// </summary>
     private async Task EnsureInstallmentsForApplicationAsync(Guid applicationId)
@@ -625,7 +1351,7 @@ public class InstallmentService : IInstallmentService
             .OrderBy(m => m.PhaseOrder)
             .ToListAsync();
 
-        if (milestones.Count < 6)
+        if (milestones.Count < 3)
             return;
 
         var existingInstallments = await _db.PaymentInstallments
@@ -635,16 +1361,6 @@ public class InstallmentService : IInstallmentService
             .ToListAsync();
 
         var now = DateTime.UtcNow;
-        var (a1, a2, a3, a4, a5, a6) = Calculate6PhaseAmounts(apartment.Price);
-        var amountsByPhase = new Dictionary<int, decimal>
-        {
-            [1] = a1,
-            [2] = a2,
-            [3] = a3,
-            [4] = a4,
-            [5] = a5,
-            [6] = a6
-        };
 
         // Đã thanh toán Đợt 1 (cọc) nếu status từ CONTRACT_PENDING trở đi hoặc có Payment Success
         var isD1Paid = app.ApplicationStatus == ApplicationStatusConstants.ContractPending
@@ -664,11 +1380,23 @@ public class InstallmentService : IInstallmentService
         if (existingInstallments.Count == 0)
         {
             var newInstallments = new List<PaymentInstallment>();
-            foreach (var m in milestones)
+            decimal runningTotal = 0m;
+
+            for (int idx = 0; idx < milestones.Count; idx++)
             {
-                var amount = amountsByPhase.TryGetValue(m.PhaseOrder, out var amt)
-                    ? amt
-                    : CalculateAmount(m, apartment);
+                var m = milestones[idx];
+                decimal amount;
+
+                if (idx == milestones.Count - 1)
+                {
+                    amount = Math.Max(0m, apartment.Price - runningTotal);
+                }
+                else
+                {
+                    var pct = m.Percentage ?? 0m;
+                    amount = Math.Round(apartment.Price * pct / 100m, 0, MidpointRounding.AwayFromZero);
+                    runningTotal += amount;
+                }
 
                 string status;
                 DateTime? paidAt = null;
@@ -705,7 +1433,7 @@ public class InstallmentService : IInstallmentService
 
             _db.PaymentInstallments.AddRange(newInstallments);
             await _db.SaveChangesAsync();
-            _logger.LogInformation("Generated missing 6 installments for Application={AppId}.", applicationId);
+            _logger.LogInformation("Generated {Count} installments matching project milestones for Application={AppId}.", milestones.Count, applicationId);
         }
         else
         {
@@ -759,16 +1487,20 @@ public class InstallmentService : IInstallmentService
     }
 
     /// <summary>
-    /// Đảm bảo dự án có đủ 6 milestones template chuẩn:
-    /// Đợt 1 (10% - ON_LOTTERY_WON), Đợt 2 (20% - ON_CONTRACT_SIGNED),
-    /// Đợt 3 (20% - CONSTRUCTION_ROUGH_FLOOR), Đợt 4 (20% - ROOFING_COMPLETED),
-    /// Đợt 5 (25% - HANDOVER), Đợt 6 (5% - RED_BOOK_ISSUED).
+    /// Đảm bảo dự án có ít nhất các đợt đóng tiền mặc định nếu CĐT chưa cấu hình.
+    /// Nếu CĐT đã cấu hình từ 3 đến 6 đợt -> giữ nguyên cấu hình của CĐT.
     /// </summary>
     private async Task EnsureDefaultMilestonesAsync(Guid projectId)
     {
         var allMilestones = await _db.PaymentMilestones
-            .Where(m => m.ProjectId == projectId)
+            .Where(m => m.ProjectId == projectId && m.IsActive)
             .ToListAsync();
+
+        if (allMilestones.Count > 0)
+        {
+            // Dự án đã được CĐT cấu hình từ 3 đến 6 đợt -> Giữ nguyên cấu hình CĐT
+            return;
+        }
 
         var standardConfigs = new (int PhaseOrder, string PhaseName, decimal Pct, string Trigger, int DueDays, string Desc)[]
         {
@@ -781,64 +1513,24 @@ public class InstallmentService : IInstallmentService
         };
 
         var now = DateTime.UtcNow;
-        bool changed = false;
-
-        foreach (var (order, name, pct, trigger, dueDays, desc) in standardConfigs)
+        var newMilestones = standardConfigs.Select(c => new PaymentMilestone
         {
-            var existing = allMilestones.FirstOrDefault(m => m.PhaseOrder == order);
-            if (existing != null)
-            {
-                // Cập nhật lại milestone hiện có để đảm bảo chuẩn 6 đợt và không vi phạm Unique Index (ProjectId, PhaseOrder)
-                if (existing.PhaseName != name
-                    || existing.Percentage != pct
-                    || existing.TriggerEvent != trigger
-                    || existing.DueDays != dueDays
-                    || !existing.IsActive
-                    || existing.CalculationType != CalculationTypeConstants.Percentage)
-                {
-                    existing.PhaseName = name;
-                    existing.CalculationType = CalculationTypeConstants.Percentage;
-                    existing.Percentage = pct;
-                    existing.TriggerEvent = trigger;
-                    existing.DueDays = dueDays;
-                    existing.Description = desc;
-                    existing.IsActive = true;
-                    existing.FixedAmount = null;
-                    changed = true;
-                }
-            }
-            else
-            {
-                _db.PaymentMilestones.Add(new PaymentMilestone
-                {
-                    Id = Guid.NewGuid(),
-                    ProjectId = projectId,
-                    PhaseOrder = order,
-                    PhaseName = name,
-                    CalculationType = CalculationTypeConstants.Percentage,
-                    Percentage = pct,
-                    TriggerEvent = trigger,
-                    DueDays = dueDays,
-                    Description = desc,
-                    IsActive = true,
-                    CreatedAt = now
-                });
-                changed = true;
-            }
-        }
+            Id = Guid.NewGuid(),
+            ProjectId = projectId,
+            PhaseOrder = c.PhaseOrder,
+            PhaseName = c.PhaseName,
+            CalculationType = CalculationTypeConstants.Percentage,
+            Percentage = c.Pct,
+            TriggerEvent = c.Trigger,
+            DueDays = c.DueDays,
+            Description = c.Desc,
+            IsActive = true,
+            CreatedAt = now
+        }).ToList();
 
-        // Vô hiệu hóa các đợt cũ > 6 nếu có
-        foreach (var extra in allMilestones.Where(m => m.PhaseOrder > 6 && m.IsActive))
-        {
-            extra.IsActive = false;
-            changed = true;
-        }
-
-        if (changed)
-        {
-            await _db.SaveChangesAsync();
-            _logger.LogInformation("Ensured and synced default 6-phase payment milestones for Project={ProjectId}.", projectId);
-        }
+        _db.PaymentMilestones.AddRange(newMilestones);
+        await _db.SaveChangesAsync();
+        _logger.LogInformation("Seeded default 6-phase payment milestones for Project={ProjectId}.", projectId);
     }
 
     /// <summary>

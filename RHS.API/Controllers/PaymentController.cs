@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using RHS.Application.DTOs.Installment;
 using RHS.Application.DTOs.Payment;
 using RHS.Application.Interfaces;
 using RHS.Domain.Constants;
@@ -476,6 +477,232 @@ public class PaymentController : ControllerBase
             {
                 success = false,
                 message = "Không thể tạo URL thanh toán.",
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Xem trước bảng kê phạt cọc Đợt 1, tổng tiền Đợt 2+ đã đóng, khấu trừ phạt và số tiền thực hoàn khi hủy căn.
+    /// </summary>
+    [HttpGet("applications/{applicationId}/cancellation-preview")]
+    [Authorize]
+    public async Task<IActionResult> PreviewContractCancellation(Guid applicationId)
+    {
+        try
+        {
+            var result = await _installmentService.PreviewContractCancellationAsync(applicationId);
+            return Ok(new { success = true, data = result });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Lỗi khi tính toán bảng kê hủy hợp đồng.",
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Thực hiện hủy hợp đồng & phạt cọc: Tịch thu cọc Đợt 1, tính hoàn trả Đợt 2+ (sau khấu trừ phạt trễ hạn 0.05%/ngày), giải phóng căn hộ.
+    /// Dành cho cả Người dân (Nộp đơn xin ngừng thanh toán/rút hồ sơ) và Chủ đầu tư (Cưỡng chế thu hồi).
+    /// </summary>
+    [HttpPost("applications/{applicationId}/cancel-contract")]
+    [Authorize]
+    public async Task<IActionResult> CancelContract(Guid applicationId, [FromBody] CancelContractRequestDto dto)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
+            return Unauthorized(new { success = false, message = "Token không hợp lệ" });
+
+        try
+        {
+            var result = await _installmentService.CancelContractAndProcessRefundAsync(userId, applicationId, dto);
+            if (!result.Success)
+                return BadRequest(new { success = false, message = result.Message });
+
+            return Ok(new { success = true, data = result });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Lỗi khi thực hiện hủy hợp đồng.",
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// [Dành cho Người dân] Nộp đơn xin ngừng thanh toán / tự nguyện rút hồ sơ.
+    /// Trạng thái hồ sơ chuyển sang CANCELLATION_REQUESTED và gửi thông báo chờ CĐT phê duyệt.
+    /// </summary>
+    [HttpPost("applications/{applicationId}/request-cancellation")]
+    [Authorize]
+    public async Task<IActionResult> RequestCancellation(Guid applicationId, [FromBody] CancelContractRequestDto dto)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
+            return Unauthorized(new { success = false, message = "Token không hợp lệ" });
+
+        try
+        {
+            var result = await _installmentService.SubmitCancellationRequestAsync(userId, applicationId, dto);
+            if (!result.Success)
+                return BadRequest(new { success = false, message = result.Message });
+
+            return Ok(new { success = true, data = result });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Lỗi khi nộp đơn xin ngừng thanh toán.",
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// [Dành cho Chủ đầu tư] Lấy danh sách các đơn xin ngừng thanh toán đang chờ duyệt theo dự án.
+    /// </summary>
+    [HttpGet("projects/{projectId}/cancellation-requests")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    public async Task<IActionResult> GetPendingCancellationRequests(Guid projectId)
+    {
+        try
+        {
+            var requests = await _installmentService.GetPendingCancellationRequestsAsync(projectId);
+            return Ok(new { success = true, data = requests });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Lỗi khi lấy danh sách đơn xin ngừng thanh toán.",
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// [Dành cho Chủ đầu tư] Phê duyệt đơn xin ngừng thanh toán của người dân.
+    /// Hệ thống tịch thu cọc Đợt 1 (100%), tính hoàn tiền Đợt 2+ (sau khấu trừ nợ phạt), chuyển hồ sơ sang CANCELED, giải phóng căn và đôn Waitlist nếu có.
+    /// </summary>
+    [HttpPost("applications/{applicationId}/approve-cancellation")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    public async Task<IActionResult> ApproveCancellationRequest(Guid applicationId)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
+            return Unauthorized(new { success = false, message = "Token không hợp lệ" });
+
+        try
+        {
+            var result = await _installmentService.ApproveCancellationRequestAsync(userId, applicationId);
+            if (!result.Success)
+                return BadRequest(new { success = false, message = result.Message });
+
+            return Ok(new { success = true, data = result });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Lỗi khi phê duyệt đơn xin ngừng thanh toán.",
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// [Dành cho Chủ đầu tư] Từ chối đơn xin ngừng thanh toán của người dân.
+    /// Hồ sơ được khôi phục về trạng thái hoạt động trước đó.
+    /// </summary>
+    [HttpPost("applications/{applicationId}/reject-cancellation")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    public async Task<IActionResult> RejectCancellationRequest(Guid applicationId, [FromBody] RejectCancellationRequestDto dto)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
+            return Unauthorized(new { success = false, message = "Token không hợp lệ" });
+
+        try
+        {
+            var result = await _installmentService.RejectCancellationRequestAsync(userId, applicationId, dto);
+            if (!result.Success)
+                return BadRequest(new { success = false, message = result.Message });
+
+            return Ok(new { success = true, data = result });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Lỗi khi từ chối đơn xin ngừng thanh toán.",
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Thống kê báo cáo tiến độ thu tiền & nợ phạt trễ hạn (0.05%/ngày) của dự án.
+    /// Dành cho Chủ đầu tư, Sở Xây dựng, Admin.
+    /// </summary>
+    [HttpGet("projects/{projectId}/payment-progress")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    public async Task<IActionResult> GetProjectPaymentProgress(Guid projectId)
+    {
+        try
+        {
+            var progress = await _installmentService.GetProjectPaymentProgressAsync(projectId);
+            return Ok(new { success = true, data = progress });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Lỗi khi lấy tiến độ thu tiền dự án.",
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Kích hoạt / mở đợt thanh toán tiếp theo theo sự kiện tiến độ cho toàn bộ dự án.
+    /// Dành cho Chủ đầu tư và Admin.
+    /// </summary>
+    [HttpPatch("projects/{projectId}/unlock-phase")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator}")]
+    public async Task<IActionResult> UnlockProjectPhase(Guid projectId, [FromQuery] string triggerEvent)
+    {
+        if (string.IsNullOrWhiteSpace(triggerEvent))
+            return BadRequest(new { success = false, message = "Vui lòng cung cấp triggerEvent." });
+
+        try
+        {
+            var unlockedCount = await _installmentService.UnlockPhaseByEventAsync(projectId, triggerEvent);
+            return Ok(new
+            {
+                success = true,
+                message = $"Đã kích hoạt đợt thu tiền ({triggerEvent}) cho {unlockedCount} hồ sơ hợp lệ.",
+                unlockedCount
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Lỗi khi kích hoạt đợt thanh toán.",
                 error = ex.Message
             });
         }
