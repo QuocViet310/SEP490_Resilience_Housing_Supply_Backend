@@ -131,21 +131,20 @@ public class HousingProjectsController : ControllerBase
     }
 
     /// <summary>
-    /// Create a new housing project (CĐT / Admin / SXD).
-    /// CĐT: DeveloperId luôn lấy từ JWT. Admin/SXD: có thể truyền DeveloperId trên form.
+    /// Create a new housing project (Nhận chuỗi JSON thuần [FromBody])
+    /// CĐT: DeveloperId luôn lấy từ JWT. Admin/SXD: có thể truyền DeveloperId trong payload.
     /// </summary>
-    /// <param name="request">Create housing project request</param>
+    /// <param name="request">Create housing project request (JSON)</param>
     /// <returns>Created housing project</returns>
     [HttpPost]
     [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.DepartmentOfConstruction}")]
-    [Consumes("multipart/form-data")]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<HousingProjectResponseDto>> CreateHousingProject(
-        [FromForm] CreateHousingProjectRequestDto request)
+        [FromBody] CreateHousingProjectRequestDto request)
     {
         try
         {
@@ -178,14 +177,13 @@ public class HousingProjectsController : ControllerBase
     }
 
     /// <summary>
-    /// Update a housing project (Chỉ chỉnh sửa khi trạng thái dự án là PENDING)
+    /// Update a housing project (Chỉ chỉnh sửa khi trạng thái dự án là PENDING, nhận JSON [FromBody])
     /// </summary>
     /// <param name="id">Housing project ID</param>
-    /// <param name="request">Update housing project request</param>
+    /// <param name="request">Update housing project request (JSON)</param>
     /// <returns>Updated housing project</returns>
     [HttpPut("{id}")]
     [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.DepartmentOfConstruction}")]
-    [Consumes("multipart/form-data")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -194,7 +192,7 @@ public class HousingProjectsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<HousingProjectResponseDto>> UpdateHousingProject(
         Guid id,
-        [FromForm] UpdateHousingProjectRequestDto request)
+        [FromBody] UpdateHousingProjectRequestDto request)
     {
         try
         {
@@ -429,6 +427,40 @@ public class HousingProjectsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Lỗi khi upload file 3D .glb");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Upload hình ảnh dự án (Thumbnail / Ảnh phối cảnh) lên Cloudinary trả về URL để điền vào JSON tạo dự án.
+    /// </summary>
+    [HttpPost("upload-image")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UploadImage(
+        IFormFile file,
+        [FromServices] IFileStorageService fileStorageService)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest(new { message = "Vui lòng chọn file hình ảnh để upload." });
+        }
+
+        if (!fileStorageService.IsValidImageFile(file))
+        {
+            return BadRequest(new { message = "File không hợp lệ. Chỉ chấp nhận các định dạng ảnh (.jpg, .jpeg, .png, .webp) và dung lượng không quá 10MB." });
+        }
+
+        try
+        {
+            var secureUrl = await fileStorageService.UploadImageAsync(file, "housing-projects");
+            return Ok(new { url = secureUrl, message = "Upload hình ảnh dự án thành công." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi upload hình ảnh dự án");
             return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
         }
     }

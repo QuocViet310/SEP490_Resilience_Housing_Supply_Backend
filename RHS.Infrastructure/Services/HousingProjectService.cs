@@ -48,7 +48,6 @@ public class HousingProjectService : IHousingProjectService
         ValidateHousingProjectRequest(request);
 
         // Kiểm tra dự án trùng tên đang hoạt động (PENDING / UPCOMING / OPEN / FULL)
-        // Nếu dự án cũ đã CLOSED, REJECTED hoặc bị xóa thì vẫn cho phép tạo mới
         var existingActive = await _repository.GetActiveProjectByNameAsync(request.ProjectName, developerId);
         if (existingActive != null)
         {
@@ -68,36 +67,28 @@ public class HousingProjectService : IHousingProjectService
         }
         var statusId = pendingStatus.Id;
 
-        // Upload Thumbnail if provided
-        var thumbnailUrl = request.ThumbnailUrl;
-        if (request.ThumbnailFile != null)
-        {
-            thumbnailUrl = await _fileStorageService.UploadImageAsync(request.ThumbnailFile, "housing-projects");
-        }
-
         // Create entity
         var housingProject = new HousingProject
         {
             Id = Guid.NewGuid(),
-            ProjectName = request.ProjectName,
-            Description = request.Description,
-            Province = request.Province,
-            District = request.District,
-            Street = request.Street,
-            Ward = request.Ward,
+            ProjectName = request.ProjectName.Trim(),
+            Description = request.Description?.Trim() ?? string.Empty,
+            Province = request.Province.Trim(),
+            District = request.District.Trim(),
+            Street = request.Street.Trim(),
+            Ward = request.Ward.Trim(),
             LotteryDate = request.LotteryDate,
-            LotteryLocation = request.LotteryLocation,
+            LotteryLocation = request.LotteryLocation?.Trim(),
             MinPrice = request.MinPrice,
             MaxPrice = request.MaxPrice,
             MinArea = request.MinArea,
             MaxArea = request.MaxArea,
             AvailableUnits = request.AvailableUnits,
-            ThumbnailUrl = thumbnailUrl,
+            ThumbnailUrl = request.ThumbnailUrl?.Trim(),
             HousingProjectStatusId = statusId,
             IsDeleted = false,
             
-            // New legal & developer fields — duyệt/công bố chỉ SXD set khi APPROVE
-            DecisionNumber = request.DecisionNumber,
+            DecisionNumber = request.DecisionNumber.Trim(),
             ApprovalDate = null,
             ApplicationOpenDate = request.ApplicationOpenDate,
             ApplicationCloseDate = request.ApplicationCloseDate,
@@ -105,88 +96,31 @@ public class HousingProjectService : IHousingProjectService
             DeveloperId = developerId
         };
 
-        // Upload/Process multiple images
-        var imageUrls = new List<string>();
-        if (request.ImageFiles != null && request.ImageFiles.Count > 0)
+        // Add Project Images from URL list
+        if (request.Images != null && request.Images.Count > 0)
         {
-            foreach (var file in request.ImageFiles)
+            var order = 1;
+            foreach (var url in request.Images.Where(u => !string.IsNullOrWhiteSpace(u)))
             {
-                var uploadedUrl = await _fileStorageService.UploadImageAsync(file, "housing-projects");
-                imageUrls.Add(uploadedUrl);
-            }
-        }
-        else if (request.Images != null)
-        {
-            imageUrls.AddRange(request.Images);
-        }
-
-        var order = 1;
-        foreach (var url in imageUrls)
-        {
-            housingProject.ProjectImages.Add(new ProjectImage
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = housingProject.Id,
-                ImageUrl = url,
-                DisplayOrder = order++,
-                CreatedAt = DateTime.UtcNow
-            });
-        }
-
-        // Add individual apartments if provided
-        if (request.Apartments != null && request.Apartments.Count > 0)
-        {
-            foreach (var apt in request.Apartments)
-            {
-                housingProject.Apartments.Add(new Domain.Entities.Apartment
+                housingProject.ProjectImages.Add(new ProjectImage
                 {
-                    Id          = Guid.NewGuid(),
-                    ProjectId   = housingProject.Id,
-                    UnitName    = apt.UnitName,
-                    Area        = apt.Area,
-                    Price       = apt.Price,
-                    Status      = ApartmentStatusConstants.Available,
-                    ApartmentTypeId = apt.ApartmentTypeId,
-                    Description = apt.Description,
-                    Model3DUrl  = apt.Model3DUrl,
-                    VirtualTourUrl = apt.VirtualTourUrl,
-                    CreatedAt   = DateTime.UtcNow
+                    Id = Guid.NewGuid(),
+                    ProjectId = housingProject.Id,
+                    ImageUrl = url.Trim(),
+                    DisplayOrder = order++,
+                    CreatedAt = DateTime.UtcNow
                 });
             }
-
-            ApplyApartmentAggregates(housingProject, housingProject.Apartments);
         }
 
-        // Add PaymentMilestones if provided; otherwise seed mặc định 3 đợt
+        // Cấu hình 3 đến 6 đợt đóng tiền (nếu CĐT gửi lên) hoặc Seed mặc định 5 đợt chuẩn theo tiến độ thi công NOXH
         if (request.Milestones != null && request.Milestones.Count > 0)
         {
-            foreach (var ms in request.Milestones)
-            {
-                if (!CalculationTypeConstants.IsValid(ms.CalculationType))
-                    throw new ArgumentException($"CalculationType không hợp lệ: {ms.CalculationType}");
-                if (!TriggerEventConstants.IsValid(ms.TriggerEvent))
-                    throw new ArgumentException($"TriggerEvent không hợp lệ: {ms.TriggerEvent}");
-
-                housingProject.PaymentMilestones.Add(new PaymentMilestone
-                {
-                    Id              = Guid.NewGuid(),
-                    ProjectId       = housingProject.Id,
-                    PhaseOrder      = ms.PhaseOrder,
-                    PhaseName       = ms.PhaseName,
-                    CalculationType = ms.CalculationType,
-                    FixedAmount     = ms.FixedAmount,
-                    Percentage      = ms.Percentage,
-                    TriggerEvent    = ms.TriggerEvent,
-                    DueDays         = ms.DueDays,
-                    Description     = ms.Description,
-                    IsActive        = true,
-                    CreatedAt       = DateTime.UtcNow
-                });
-            }
+            ValidateAndBuildPaymentMilestones(housingProject.Id, request.Milestones, housingProject.PaymentMilestones);
         }
         else
         {
-            // Seed mặc định 2 đợt (20% và 80%)
+            // Seed mặc định 5 đợt chuẩn (Đợt 1: 20%, Đợt 2: 20%, Đợt 3: 20%, Đợt 4: 35%, Đợt 5: 5%)
             AddDefaultPercentMilestones(housingProject, 20m);
         }
 
@@ -201,7 +135,7 @@ public class HousingProjectService : IHousingProjectService
                 ex.InnerException?.Message.Contains("FOREIGN KEY") == true)
             {
                 throw new InvalidOperationException(
-                    $"Housing project status with ID {request.HousingProjectStatusId} does not exist.", ex);
+                    "Không thể lưu dự án do lỗi khóa ngoại dữ liệu.", ex);
             }
             throw;
         }
@@ -257,125 +191,51 @@ public class HousingProjectService : IHousingProjectService
                 $"Tên dự án '{request.ProjectName.Trim()}' đã trùng với một dự án khác đang hoạt động trên hệ thống.");
         }
 
-        // Upload Thumbnail if provided
-        var thumbnailUrl = request.ThumbnailUrl;
-        if (request.ThumbnailFile != null)
-        {
-            thumbnailUrl = await _fileStorageService.UploadImageAsync(request.ThumbnailFile, "housing-projects");
-        }
-
         // Update entity
-        existingProject.ProjectName = request.ProjectName;
-        existingProject.Description = request.Description;
-        existingProject.Province = request.Province;
-        existingProject.District = request.District;
-        existingProject.Street = request.Street;
-        existingProject.Ward = request.Ward;
+        existingProject.ProjectName = request.ProjectName.Trim();
+        existingProject.Description = request.Description?.Trim() ?? string.Empty;
+        existingProject.Province = request.Province.Trim();
+        existingProject.District = request.District.Trim();
+        existingProject.Street = request.Street.Trim();
+        existingProject.Ward = request.Ward.Trim();
         existingProject.LotteryDate = request.LotteryDate;
-        existingProject.LotteryLocation = request.LotteryLocation;
+        existingProject.LotteryLocation = request.LotteryLocation?.Trim();
         existingProject.MinPrice = request.MinPrice;
         existingProject.MaxPrice = request.MaxPrice;
         existingProject.MinArea = request.MinArea;
         existingProject.MaxArea = request.MaxArea;
         existingProject.AvailableUnits = request.AvailableUnits;
-        existingProject.ThumbnailUrl = thumbnailUrl;
+        existingProject.ThumbnailUrl = request.ThumbnailUrl?.Trim();
+        existingProject.UpdatedAt = DateTime.UtcNow;
         // Giữ nguyên trạng thái PENDING, không thay đổi trạng thái qua API PUT
 
         // Update legal fields
-        existingProject.DecisionNumber = request.DecisionNumber;
-        existingProject.ApprovalDate = request.ApprovalDate;
+        existingProject.DecisionNumber = request.DecisionNumber.Trim();
         existingProject.ApplicationOpenDate = request.ApplicationOpenDate;
         existingProject.ApplicationCloseDate = request.ApplicationCloseDate;
 
         // Update images
-        existingProject.ProjectImages.Clear();
-        var imageUrls = new List<string>();
-        if (request.ImageFiles != null && request.ImageFiles.Count > 0)
+        if (request.Images != null)
         {
-            foreach (var file in request.ImageFiles)
+            existingProject.ProjectImages.Clear();
+            var order = 1;
+            foreach (var url in request.Images.Where(u => !string.IsNullOrWhiteSpace(u)))
             {
-                var uploadedUrl = await _fileStorageService.UploadImageAsync(file, "housing-projects");
-                imageUrls.Add(uploadedUrl);
-            }
-        }
-        else if (request.Images != null)
-        {
-            imageUrls.AddRange(request.Images);
-        }
-
-        var order = 1;
-        foreach (var url in imageUrls)
-        {
-            existingProject.ProjectImages.Add(new ProjectImage
-            {
-                Id = Guid.NewGuid(),
-                ProjectId = existingProject.Id,
-                ImageUrl = url,
-                DisplayOrder = order++,
-                CreatedAt = DateTime.UtcNow
-            });
-        }
-
-        // Sync apartments: keep ASSIGNED; replace AVAILABLE with request list
-        if (request.Apartments != null)
-        {
-            var keptAssigned = existingProject.Apartments
-                .Where(a => a.Status == ApartmentStatusConstants.Assigned)
-                .ToList();
-
-            existingProject.Apartments = keptAssigned;
-            foreach (var apt in request.Apartments)
-            {
-                existingProject.Apartments.Add(new Domain.Entities.Apartment
+                existingProject.ProjectImages.Add(new ProjectImage
                 {
-                    Id          = Guid.NewGuid(),
-                    ProjectId   = existingProject.Id,
-                    UnitName    = apt.UnitName,
-                    Area        = apt.Area,
-                    Price       = apt.Price,
-                    Status      = ApartmentStatusConstants.Available,
-                    ApartmentTypeId = apt.ApartmentTypeId,
-                    Description = apt.Description,
-                    Model3DUrl  = apt.Model3DUrl,
-                    VirtualTourUrl = apt.VirtualTourUrl,
-                    CreatedAt   = DateTime.UtcNow
-                });
-            }
-
-            ApplyApartmentAggregates(existingProject, existingProject.Apartments);
-        }
-
-        // Sync PaymentMilestones (replace all nếu client gửi; không thì giữ nguyên / seed nếu chưa có)
-        if (request.Milestones != null)
-        {
-            existingProject.PaymentMilestones.Clear();
-            foreach (var ms in request.Milestones)
-            {
-                if (!CalculationTypeConstants.IsValid(ms.CalculationType))
-                    throw new ArgumentException($"CalculationType không hợp lệ: {ms.CalculationType}");
-                if (!TriggerEventConstants.IsValid(ms.TriggerEvent))
-                    throw new ArgumentException($"TriggerEvent không hợp lệ: {ms.TriggerEvent}");
-
-                existingProject.PaymentMilestones.Add(new PaymentMilestone
-                {
-                    Id              = Guid.NewGuid(),
-                    ProjectId       = existingProject.Id,
-                    PhaseOrder      = ms.PhaseOrder,
-                    PhaseName       = ms.PhaseName,
-                    CalculationType = ms.CalculationType,
-                    FixedAmount     = ms.FixedAmount,
-                    Percentage      = ms.Percentage,
-                    TriggerEvent    = ms.TriggerEvent,
-                    DueDays         = ms.DueDays,
-                    Description     = ms.Description,
-                    IsActive        = true,
-                    CreatedAt       = DateTime.UtcNow
+                    Id = Guid.NewGuid(),
+                    ProjectId = existingProject.Id,
+                    ImageUrl = url.Trim(),
+                    DisplayOrder = order++,
+                    CreatedAt = DateTime.UtcNow
                 });
             }
         }
-        else if (!existingProject.PaymentMilestones.Any(m => m.IsActive))
+
+        // Sync PaymentMilestones (nếu client gửi danh sách đợt)
+        if (request.Milestones != null && request.Milestones.Count > 0)
         {
-            AddDefaultPercentMilestones(existingProject, 20m);
+            ValidateAndBuildPaymentMilestones(existingProject.Id, request.Milestones, existingProject.PaymentMilestones);
         }
 
         // Save to repository
@@ -388,8 +248,7 @@ public class HousingProjectService : IHousingProjectService
             if (ex.InnerException?.Message.Contains("FK_") == true ||
                 ex.InnerException?.Message.Contains("FOREIGN KEY") == true)
             {
-                throw new InvalidOperationException(
-                    $"Housing project status with ID {request.HousingProjectStatusId} does not exist.", ex);
+                throw new InvalidOperationException("Không thể cập nhật dự án do lỗi khóa ngoại dữ liệu.", ex);
             }
             throw;
         }
@@ -431,93 +290,123 @@ public class HousingProjectService : IHousingProjectService
         return MapToResponseDto(project);
     }
 
-    private void ValidateHousingProjectRequest(dynamic request)
+    private static void ValidateHousingProjectRequest(dynamic request)
     {
-        // ProjectName is required
         if (string.IsNullOrWhiteSpace(request.ProjectName))
-        {
-            throw new ArgumentException("ProjectName is required.");
-        }
+            throw new ArgumentException("Tên dự án là bắt buộc (ProjectName).");
 
-        // Province is required
         if (string.IsNullOrWhiteSpace(request.Province))
-        {
-            throw new ArgumentException("Province is required.");
-        }
+            throw new ArgumentException("Tỉnh/Thành phố là bắt buộc (Province).");
 
-        // District is required
         if (string.IsNullOrWhiteSpace(request.District))
-        {
-            throw new ArgumentException("District is required.");
-        }
+            throw new ArgumentException("Quận/Huyện là bắt buộc (District).");
 
-        // Street is required
-        if (string.IsNullOrWhiteSpace(request.Street))
-        {
-            throw new ArgumentException("Street is required.");
-        }
-
-        // Ward is required
         if (string.IsNullOrWhiteSpace(request.Ward))
-        {
-            throw new ArgumentException("Ward is required.");
-        }
+            throw new ArgumentException("Phường/Xã là bắt buộc (Ward).");
 
-        // MinPrice >= 0
-        if (request.MinPrice < 0)
-        {
-            throw new ArgumentException("MinPrice must be greater than or equal to 0.");
-        }
+        if (string.IsNullOrWhiteSpace(request.Street))
+            throw new ArgumentException("Đường/Phố là bắt buộc (Street).");
 
-        // MaxPrice >= MinPrice
-        if (request.MaxPrice < request.MinPrice)
-        {
-            throw new ArgumentException("MaxPrice must be greater than or equal to MinPrice.");
-        }
-
-        var hasApartments = request.Apartments != null && request.Apartments.Count > 0;
-
-        // Khi có danh sách căn: Min/Max area + AvailableUnits được suy ra từ căn — bỏ qua validate cứng.
-        if (!hasApartments)
-        {
-            if (request.MinArea <= 0)
-                throw new ArgumentException("MinArea must be greater than 0.");
-
-            if (request.MaxArea < request.MinArea)
-                throw new ArgumentException("MaxArea must be greater than or equal to MinArea.");
-        }
-        else
-        {
-            foreach (var apt in request.Apartments!)
-            {
-                if (string.IsNullOrWhiteSpace(apt.UnitName))
-                    throw new ArgumentException("Mỗi căn phải có tên (UnitName).");
-                if (apt.Area <= 0)
-                    throw new ArgumentException($"Căn '{apt.UnitName}': diện tích phải > 0.");
-                if (apt.Price <= 0)
-                    throw new ArgumentException($"Căn '{apt.UnitName}': giá phải > 0.");
-            }
-        }
-
-        // AvailableUnits >= 0
-        if (request.AvailableUnits < 0)
-        {
-            throw new ArgumentException("AvailableUnits must be greater than or equal to 0.");
-        }
-
-        // DecisionNumber cannot be blank
         if (string.IsNullOrWhiteSpace(request.DecisionNumber))
-        {
-            throw new ArgumentException("DecisionNumber is required and cannot be blank.");
-        }
+            throw new ArgumentException("Số quyết định phê duyệt là bắt buộc (DecisionNumber).");
 
-        // ApplicationOpenDate must be less than ApplicationCloseDate
+        if (request.MinPrice < 0)
+            throw new ArgumentException("Giá bán tối thiểu không được âm.");
+
+        if (request.MaxPrice < request.MinPrice)
+            throw new ArgumentException("Giá bán tối đa phải lớn hơn hoặc bằng giá tối thiểu.");
+
+        if (request.MinArea < 0)
+            throw new ArgumentException("Diện tích tối thiểu không được âm.");
+
+        if (request.MaxArea < request.MinArea)
+            throw new ArgumentException("Diện tích tối đa phải lớn hơn hoặc bằng diện tích tối thiểu.");
+
+        if (request.AvailableUnits < 0)
+            throw new ArgumentException("Số lượng căn hộ không được âm.");
+
         if (request.ApplicationOpenDate != null && request.ApplicationCloseDate != null)
         {
             if (request.ApplicationOpenDate >= request.ApplicationCloseDate)
             {
-                throw new ArgumentException("ApplicationOpenDate must be earlier than ApplicationCloseDate.");
+                throw new ArgumentException("Thời gian mở nhận hồ sơ phải diễn ra trước thời gian đóng nhận hồ sơ.");
             }
+        }
+    }
+
+    private static void ValidateAndBuildPaymentMilestones(
+        Guid projectId,
+        List<RHS.Application.DTOs.Milestone.MilestoneSetupItemDto> milestoneDtos,
+        ICollection<PaymentMilestone> targetCollection)
+    {
+        if (milestoneDtos.Count < 3 || milestoneDtos.Count > 6)
+        {
+            throw new ArgumentException($"Dự án NOXH phải có từ 3 đến 6 đợt đóng tiền (Hiện tại có {milestoneDtos.Count} đợt).");
+        }
+
+        var sortedItems = milestoneDtos.OrderBy(m => m.PhaseOrder).ToList();
+
+        for (int i = 0; i < sortedItems.Count; i++)
+        {
+            var expectedOrder = i + 1;
+            if (sortedItems[i].PhaseOrder != expectedOrder)
+            {
+                throw new ArgumentException($"Thứ tự các đợt thanh toán phải liên tục từ 1 đến {sortedItems.Count} (Đợt thứ {i + 1} đang có PhaseOrder = {sortedItems[i].PhaseOrder}).");
+            }
+        }
+
+        decimal totalPercentage = 0m;
+        var now = DateTime.UtcNow;
+
+        foreach (var item in sortedItems)
+        {
+            if (string.IsNullOrWhiteSpace(item.PhaseName))
+                throw new ArgumentException($"Tên đợt thanh toán thứ {item.PhaseOrder} không được để trống.");
+
+            if (!CalculationTypeConstants.IsValid(item.CalculationType))
+                throw new ArgumentException($"Hình thức tính tiền của Đợt {item.PhaseOrder} '{item.CalculationType}' không hợp lệ.");
+
+            if (!TriggerEventConstants.IsValid(item.TriggerEvent))
+                throw new ArgumentException($"Sự kiện kích hoạt của Đợt {item.PhaseOrder} '{item.TriggerEvent}' không hợp lệ.");
+
+            if (item.DueDays <= 0)
+                throw new ArgumentException($"Thời hạn thanh toán của Đợt {item.PhaseOrder} phải lớn hơn 0 ngày.");
+
+            if (!item.Percentage.HasValue || item.Percentage.Value <= 0 || item.Percentage.Value > 100)
+                throw new ArgumentException($"Tỷ lệ phần trăm Đợt {item.PhaseOrder} ({item.Percentage}%) không hợp lệ. Phải lớn hơn 0% và không quá 100%.");
+
+            totalPercentage += item.Percentage.Value;
+        }
+
+        if (Math.Abs(totalPercentage - 100.0m) > 0.001m)
+        {
+            throw new ArgumentException($"Tổng tỷ lệ phần trăm thanh toán của các đợt phải chính xác bằng 100% (Hiện tại tổng = {totalPercentage:F2}%).");
+        }
+
+        var p1 = sortedItems[0].Percentage.GetValueOrDefault();
+        if (p1 > 30.0m)
+        {
+            throw new ArgumentException($"Tỷ lệ thanh toán Đợt 1 ({p1}%) vượt quá mức trần quy định cho NOXH (tối đa 30% giá trị hợp đồng).");
+        }
+
+        targetCollection.Clear();
+        foreach (var item in sortedItems)
+        {
+            targetCollection.Add(new PaymentMilestone
+            {
+                Id              = Guid.NewGuid(),
+                ProjectId       = projectId,
+                PhaseOrder      = item.PhaseOrder,
+                PhaseName       = item.PhaseName.Trim(),
+                CalculationType = item.CalculationType.Trim().ToUpperInvariant(),
+                FixedAmount     = item.FixedAmount,
+                Percentage      = item.Percentage,
+                TriggerEvent    = item.TriggerEvent.Trim().ToUpperInvariant(),
+                DueDays         = item.DueDays,
+                Description     = item.Description?.Trim(),
+                IsActive        = true,
+                CreatedAt       = now
+            });
         }
     }
 
