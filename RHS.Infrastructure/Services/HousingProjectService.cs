@@ -77,8 +77,8 @@ public class HousingProjectService : IHousingProjectService
             District = request.District.Trim(),
             Street = request.Street.Trim(),
             Ward = request.Ward.Trim(),
-            LotteryDate = request.LotteryDate,
-            LotteryLocation = request.LotteryLocation?.Trim(),
+            LotteryDate = null,
+            LotteryLocation = null,
             MinPrice = request.MinPrice,
             MaxPrice = request.MaxPrice,
             MinArea = request.MinArea,
@@ -198,8 +198,6 @@ public class HousingProjectService : IHousingProjectService
         existingProject.District = request.District.Trim();
         existingProject.Street = request.Street.Trim();
         existingProject.Ward = request.Ward.Trim();
-        existingProject.LotteryDate = request.LotteryDate;
-        existingProject.LotteryLocation = request.LotteryLocation?.Trim();
         existingProject.MinPrice = request.MinPrice;
         existingProject.MaxPrice = request.MaxPrice;
         existingProject.MinArea = request.MinArea;

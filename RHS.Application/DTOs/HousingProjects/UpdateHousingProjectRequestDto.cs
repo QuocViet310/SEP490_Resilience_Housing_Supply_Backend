@@ -36,12 +36,6 @@ public class UpdateHousingProjectRequestDto
     /// <summary>Thời hạn kết thúc tiếp nhận hồ sơ đăng ký mua nhà</summary>
     public DateTime? ApplicationCloseDate { get; set; }
 
-    /// <summary>Thời gian tổ chức bốc thăm quyền mua căn hộ</summary>
-    public DateTime? LotteryDate { get; set; }
-
-    /// <summary>Địa điểm tổ chức bốc thăm</summary>
-    public string? LotteryLocation { get; set; }
-
     /// <summary>URL ảnh đại diện (Thumbnail) của dự án</summary>
     public string? ThumbnailUrl { get; set; }
 
