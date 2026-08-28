@@ -161,6 +161,83 @@ public class ApartmentsController : ControllerBase
     }
 
     /// <summary>
+    /// [HousingDeveloper / Admin] Tải file Excel mẫu (.xlsx) chuẩn để nhập danh sách căn hộ.
+    /// </summary>
+    [HttpGet("excel-template")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.DepartmentOfConstruction}")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DownloadExcelTemplate(
+        Guid projectId,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var fileBytes = await _apartmentService.GenerateApartmentExcelTemplateAsync(projectId, ct);
+            return File(
+                fileBytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                $"Template_DanhSachCanHo_DuAn_{projectId:N}.xlsx");
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi tạo file Excel mẫu cho dự án {ProjectId}", projectId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "Lỗi khi tạo file Excel mẫu." });
+        }
+    }
+
+    /// <summary>
+    /// [HousingDeveloper / Admin] Nhập danh sách căn hộ tự động từ file Excel (.xlsx).
+    /// </summary>
+    [HttpPost("import-excel")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.DepartmentOfConstruction}")]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(typeof(ApartmentExcelImportResultDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApartmentExcelImportResultDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ImportApartmentsFromExcel(
+        Guid projectId,
+        IFormFile file,
+        CancellationToken ct = default)
+    {
+        var userId = GetCurrentUserId();
+        try
+        {
+            var result = await _apartmentService.ImportApartmentsFromExcelAsync(projectId, userId, file, ct);
+
+            if (result.FailedCount > 0)
+            {
+                return BadRequest(result);
+            }
+
+            return StatusCode(StatusCodes.Status201Created, result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi import file Excel danh sách căn hộ cho dự án {ProjectId}", projectId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// [HousingDeveloper / Admin] Cập nhật thông tin căn hộ (chỉ khi căn hộ chưa bị ASSIGNED).
     /// </summary>
     [HttpPut("{apartmentId:guid}")]

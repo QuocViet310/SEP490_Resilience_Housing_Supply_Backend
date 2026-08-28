@@ -74,4 +74,20 @@ public interface IApartmentService
     Task<ApartmentStatisticsResponseDto> GetApartmentStatisticsAsync(
         Guid projectId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Xuất file mẫu Excel (.xlsx) để CĐT tải về điền danh sách căn hộ.
+    /// </summary>
+    Task<byte[]> GenerateApartmentExcelTemplateAsync(
+        Guid projectId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Nhập danh sách căn hộ tự động từ file Excel (.xlsx).
+    /// </summary>
+    Task<ApartmentExcelImportResultDto> ImportApartmentsFromExcelAsync(
+        Guid projectId,
+        Guid userId,
+        Microsoft.AspNetCore.Http.IFormFile file,
+        CancellationToken ct = default);
 }
