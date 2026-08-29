@@ -99,6 +99,8 @@ builder.Services.AddScoped<IProjectMilestoneService, ProjectMilestoneService>();
 builder.Services.AddScoped<IHousingProjectStatusService, HousingProjectStatusService>();
 builder.Services.AddScoped<IFileStorageService, FileStorageService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IAuditLogService, AuditLogService>();
+builder.Services.AddScoped<ISuperAdminDashboardService, SuperAdminDashboardService>();
 builder.Services.AddScoped<IHousingApplicationService, HousingApplicationService>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();

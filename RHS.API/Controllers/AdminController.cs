@@ -2,35 +2,44 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using RHS.Application.DTOs.Admin;
 using RHS.Application.Interfaces;
+using RHS.Domain.Constants;
 using System.Security.Claims;
 
 namespace RHS.API.Controllers;
 
 /// <summary>
-/// Controller để quản lý cán bộ (Department Of Construction & Housing Developer)
-/// Chỉ System Administrator mới có thể truy cập các endpoint này
+/// Controller cho Super Admin quản lý hệ thống cấp cao:
+/// 1. Cấp quyền & Quản lý tài khoản CĐT / Sở Xây dựng
+/// 2. Nhật ký kiểm toán (Audit Trail)
+/// 3. Báo cáo thống kê toàn sàn (Overview, Hấp thụ, Giải ngân, Tỷ lệ hồ sơ)
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Roles = RoleConstants.SystemAdministrator)]
 public class AdminController : ControllerBase
 {
     private readonly IAdminService _adminService;
+    private readonly IAuditLogService _auditLogService;
+    private readonly ISuperAdminDashboardService _dashboardService;
 
-    public AdminController(IAdminService adminService)
+    public AdminController(
+        IAdminService adminService,
+        IAuditLogService auditLogService,
+        ISuperAdminDashboardService dashboardService)
     {
         _adminService = adminService;
+        _auditLogService = auditLogService;
+        _dashboardService = dashboardService;
     }
 
-    /// <summary>
-    /// Admin tạo tài khoản cán bộ mới (Department Of Construction hoặc Housing Developer)
-    /// </summary>
-    /// <param name="createStaffDto">Thông tin cán bộ cần tạo</param>
-    /// <returns>Thông tin cán bộ vừa được tạo</returns>
+    // ═══════════════════════════════════════════════════════════════════════
+    // 1. Quản lý cán bộ & Cấp quyền (Housing Developer & SXD)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>Admin tạo tài khoản cán bộ mới (Department Of Construction hoặc Housing Developer)</summary>
     [HttpPost("create-staff")]
     [ProducesResponseType(typeof(StaffResponseDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> CreateStaff([FromBody] CreateStaffDto createStaffDto)
     {
         if (!ModelState.IsValid)
@@ -52,14 +61,9 @@ public class AdminController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Lấy danh sách cán bộ với phân trang và bộ lọc
-    /// </summary>
-    /// <param name="queryDto">Tham số truy vấn (phân trang, bộ lọc, tìm kiếm)</param>
-    /// <returns>Danh sách cán bộ</returns>
+    /// <summary>Lấy danh sách cán bộ với phân trang và bộ lọc</summary>
     [HttpGet("staff-list")]
     [ProducesResponseType(typeof(StaffListResponseDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetStaffList([FromQuery] GetStaffListDto queryDto)
     {
         try
@@ -73,15 +77,10 @@ public class AdminController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Lấy thông tin chi tiết một cán bộ
-    /// </summary>
-    /// <param name="id">ID của cán bộ</param>
-    /// <returns>Thông tin chi tiết cán bộ</returns>
+    /// <summary>Lấy thông tin chi tiết một cán bộ</summary>
     [HttpGet("staff/{id:guid}")]
     [ProducesResponseType(typeof(StaffResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetStaffById(Guid id)
     {
         try
@@ -98,17 +97,10 @@ public class AdminController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Admin cập nhật thông tin cán bộ
-    /// </summary>
-    /// <param name="id">ID của cán bộ</param>
-    /// <param name="updateStaffDto">Thông tin cập nhật</param>
-    /// <returns>Thông tin cán bộ sau cập nhật</returns>
+    /// <summary>Admin cập nhật thông tin cán bộ</summary>
     [HttpPut("staff/{id:guid}")]
     [ProducesResponseType(typeof(StaffResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> UpdateStaff(Guid id, [FromBody] UpdateStaffDto updateStaffDto)
     {
         if (!ModelState.IsValid)
@@ -134,15 +126,9 @@ public class AdminController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Admin phân quyền cho cán bộ (thay đổi vai trò/trạng thái)
-    /// </summary>
-    /// <param name="assignPermissionDto">Thông tin phân quyền</param>
-    /// <returns>Thông tin cán bộ sau khi phân quyền</returns>
+    /// <summary>Admin phân quyền cho cán bộ (thay đổi vai trò/trạng thái)</summary>
     [HttpPost("assign-permission")]
     [ProducesResponseType(typeof(StaffResponseDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> AssignPermission([FromBody] AssignPermissionDto assignPermissionDto)
     {
         if (!ModelState.IsValid)
@@ -168,16 +154,9 @@ public class AdminController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Admin khóa tài khoản cán bộ
-    /// </summary>
-    /// <param name="id">ID của cán bộ</param>
-    /// <param name="reason">Lý do khóa tài khoản</param>
-    /// <returns>Kết quả thao tác</returns>
+    /// <summary>Admin khóa tài khoản cán bộ</summary>
     [HttpPost("staff/{id:guid}/deactivate")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> DeactivateStaff(Guid id, [FromBody] string? reason = null)
     {
         try
@@ -197,15 +176,9 @@ public class AdminController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Admin kích hoạt lại tài khoản cán bộ
-    /// </summary>
-    /// <param name="id">ID của cán bộ</param>
-    /// <returns>Kết quả thao tác</returns>
+    /// <summary>Admin kích hoạt lại tài khoản cán bộ</summary>
     [HttpPost("staff/{id:guid}/activate")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> ActivateStaff(Guid id)
     {
         try
@@ -225,16 +198,9 @@ public class AdminController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Admin đặt lại mật khẩu cho cán bộ
-    /// </summary>
-    /// <param name="id">ID của cán bộ</param>
-    /// <param name="resetPasswordDto">Mật khẩu mới</param>
-    /// <returns>Kết quả thao tác</returns>
+    /// <summary>Admin đặt lại mật khẩu cho cán bộ</summary>
     [HttpPost("staff/{id:guid}/reset-password")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> ResetPassword(Guid id, [FromBody] ResetPasswordRequestDto resetPasswordDto)
     {
         if (!ModelState.IsValid)
@@ -255,6 +221,72 @@ public class AdminController : ControllerBase
         {
             return StatusCode(500, new { success = false, message = ex.Message });
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 2. Nhật ký kiểm toán (Audit Trail)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>Truy vấn danh sách Nhật ký kiểm toán (Audit Trail) có phân trang & bộ lọc</summary>
+    [HttpGet("audit-logs")]
+    [ProducesResponseType(typeof(AuditLogListResponseDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAuditLogs([FromQuery] AuditLogQueryDto queryDto, CancellationToken ct)
+    {
+        var result = await _auditLogService.GetAuditLogsAsync(queryDto, ct);
+        return Ok(result);
+    }
+
+    /// <summary>Xem chi tiết 1 bản ghi Nhật ký kiểm toán kèm giá trị cũ/mới (OldValues/NewValues)</summary>
+    [HttpGet("audit-logs/{id:guid}")]
+    [ProducesResponseType(typeof(AuditLogDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetAuditLogById(Guid id, CancellationToken ct)
+    {
+        var result = await _auditLogService.GetAuditLogByIdAsync(id, ct);
+        if (result is null)
+            return NotFound(new { message = $"Không tìm thấy bản ghi Audit Log với ID {id}" });
+
+        return Ok(result);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 3. Báo cáo thống kê toàn sàn (Super Admin Analytics)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>Thống kê tổng quan các chỉ số hoạt động toàn sàn</summary>
+    [HttpGet("dashboard/overview")]
+    [ProducesResponseType(typeof(PlatformOverviewStatDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetDashboardOverview(CancellationToken ct)
+    {
+        var result = await _dashboardService.GetOverviewStatsAsync(ct);
+        return Ok(result);
+    }
+
+    /// <summary>Thống kê mức độ hấp thụ căn hộ NOXH theo dự án</summary>
+    [HttpGet("dashboard/absorption")]
+    [ProducesResponseType(typeof(List<PlatformAbsorptionStatDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetDashboardAbsorption(CancellationToken ct)
+    {
+        var result = await _dashboardService.GetAbsorptionStatsAsync(ct);
+        return Ok(result);
+    }
+
+    /// <summary>Thống kê giải ngân & thu tiền thanh toán + nợ quá hạn + lãi phạt</summary>
+    [HttpGet("dashboard/disbursement")]
+    [ProducesResponseType(typeof(PlatformDisbursementStatDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetDashboardDisbursement(CancellationToken ct)
+    {
+        var result = await _dashboardService.GetDisbursementStatsAsync(ct);
+        return Ok(result);
+    }
+
+    /// <summary>Thống kê tỷ lệ hồ sơ hợp lệ / không hợp lệ / vi phạm phục vụ báo cáo nhà nước</summary>
+    [HttpGet("dashboard/applications-ratio")]
+    [ProducesResponseType(typeof(PlatformApplicationRatioDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetDashboardApplicationsRatio(CancellationToken ct)
+    {
+        var result = await _dashboardService.GetApplicationValidityRatiosAsync(ct);
+        return Ok(result);
     }
 }
 

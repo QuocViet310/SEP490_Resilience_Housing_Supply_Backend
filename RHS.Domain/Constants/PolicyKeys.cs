@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace RHS.Domain.Constants;
 
 /// <summary>
@@ -14,6 +16,8 @@ public static class PolicyKeys
     public const string PublicAnnounceMinDays = "PUBLIC_ANNOUNCE_MIN_DAYS";
     public const string SxdCrosscheckSilenceDays = "SXD_CROSSCHECK_SILENCE_DAYS";
     public const string ContractSigningDeadlineDays = "CONTRACT_SIGNING_DEADLINE_DAYS";
+    public const string LatePaymentPenaltyDailyRate = "LATE_PAYMENT_PENALTY_DAILY_RATE";
+    public const string PriorityPointsTableJson = "PRIORITY_POINTS_TABLE_JSON";
 
     public static readonly IReadOnlyList<(string Key, string Value, string Category, string Description)> Defaults =
         new[]
@@ -36,5 +40,9 @@ public static class PolicyKeys
                 "Số ngày SXD không phản hồi sau khi nhận danh sách (đồng bộ tacit approval) — Đ38.1.đ."),
             (ContractSigningDeadlineDays, "15", "Sales",
                 "Số ngày hạn chót để người dân ký hợp đồng nguyên tắc kể từ khi vào CONTRACT_PENDING (ưu tiên / trúng bốc thăm)."),
+            (LatePaymentPenaltyDailyRate, "0.0005", "Finance",
+                "Tỷ lệ lãi suất phạt chậm nộp tiền đợt thanh toán (VND/ngày). Mặc định 0.0005 = 0.05%/ngày."),
+            (PriorityPointsTableJson, "[{\"GroupCode\":\"MERIT_PERSON\",\"GroupName\":\"Người có công với cách mạng\",\"Points\":10,\"Description\":\"Điểm cộng ưu tiên người có công\"},{\"GroupCode\":\"URBAN_POOR\",\"GroupName\":\"Hộ nghèo, cận nghèo đô thị\",\"Points\":8,\"Description\":\"Điểm cộng ưu tiên hộ nghèo/cận nghèo\"},{\"GroupCode\":\"LOW_INCOME\",\"GroupName\":\"Người thu nhập thấp đô thị\",\"Points\":6,\"Description\":\"Điểm cộng ưu tiên người thu nhập thấp\"},{\"GroupCode\":\"INDUSTRIAL_WORKER\",\"GroupName\":\"Công nhân, người lao động KCN\",\"Points\":6,\"Description\":\"Điểm cộng ưu tiên công nhân KCN\"}]", "Eligibility",
+                "Bảng cấu hình thang điểm ưu tiên cho các đối tượng thụ hưởng (JSON format).")
         };
 }
