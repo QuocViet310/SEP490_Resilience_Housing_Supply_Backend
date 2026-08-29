@@ -105,6 +105,10 @@ public class HousingProjectConfiguration : IEntityTypeConfiguration<HousingProje
             .IsRequired(false)
             .HasMaxLength(100);
 
+        builder.Property(x => x.DecisionDocumentUrl)
+            .IsRequired(false)
+            .HasMaxLength(500);
+
         builder.Property(x => x.ApprovalDate)
             .IsRequired(false);
 

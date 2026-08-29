@@ -23,6 +23,7 @@ public class HousingProjectResponseDto
     
     // Legal fields
     public string? DecisionNumber { get; set; }
+    public string? DecisionDocumentUrl { get; set; }
     public DateTime? ApprovalDate { get; set; }
     public DateTime? ApplicationOpenDate { get; set; }
     public DateTime? ApplicationCloseDate { get; set; }

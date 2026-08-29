@@ -466,6 +466,56 @@ public class HousingProjectsController : ControllerBase
     }
 
     /// <summary>
+    /// Upload giấy tờ pháp lý dự án (File PDF quyết định phê duyệt, quyết định giao đất hoặc ảnh chụp) lên Cloudinary trả về URL.
+    /// </summary>
+    [HttpPost("upload-document")]
+    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.DepartmentOfConstruction},{RoleConstants.SystemAdministrator}")]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UploadDocument(
+        IFormFile file,
+        [FromServices] IFileStorageService fileStorageService)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest(new { message = "Vui lòng chọn file tài liệu để upload." });
+        }
+
+        if (file.Length > 10 * 1024 * 1024)
+        {
+            return BadRequest(new { message = "Dung lượng file vượt quá giới hạn 10MB." });
+        }
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var allowedExtensions = new[] { ".pdf", ".jpg", ".jpeg", ".png", ".webp" };
+        if (!allowedExtensions.Contains(ext))
+        {
+            return BadRequest(new { message = "File không hợp lệ. Chỉ chấp nhận file định dạng PDF (.pdf) hoặc hình ảnh (.jpg, .jpeg, .png, .webp)." });
+        }
+
+        try
+        {
+            string secureUrl;
+            if (ext == ".pdf")
+            {
+                secureUrl = await fileStorageService.UploadPdfAsync(file, "housing-project-documents");
+            }
+            else
+            {
+                secureUrl = await fileStorageService.UploadImageAsync(file, "housing-project-documents");
+            }
+
+            return Ok(new { url = secureUrl, message = "Upload tài liệu quyết định dự án thành công." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi upload tài liệu dự án");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// CĐT → luôn gán JWT user id. Admin/SXD → dùng DeveloperId trên form (nếu có).
     /// </summary>
     private Guid? ResolveDeveloperIdForCreate(Guid? requestedDeveloperId)

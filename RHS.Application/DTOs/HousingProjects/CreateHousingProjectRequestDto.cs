@@ -30,6 +30,9 @@ public class CreateHousingProjectRequestDto
     [Required(ErrorMessage = "Số quyết định phê duyệt là bắt buộc.")]
     public string DecisionNumber { get; set; } = string.Empty;
 
+    /// <summary>URL file PDF hoặc hình ảnh giấy tờ quyết định phê duyệt dự án</summary>
+    public string? DecisionDocumentUrl { get; set; }
+
     /// <summary>Thời gian mở tiếp nhận hồ sơ đăng ký mua nhà</summary>
     public DateTime? ApplicationOpenDate { get; set; }
 

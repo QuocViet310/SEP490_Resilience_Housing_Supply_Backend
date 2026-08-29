@@ -89,6 +89,7 @@ public class HousingProjectService : IHousingProjectService
             IsDeleted = false,
             
             DecisionNumber = request.DecisionNumber.Trim(),
+            DecisionDocumentUrl = request.DecisionDocumentUrl?.Trim(),
             ApprovalDate = null,
             ApplicationOpenDate = request.ApplicationOpenDate,
             ApplicationCloseDate = request.ApplicationCloseDate,
@@ -209,6 +210,7 @@ public class HousingProjectService : IHousingProjectService
 
         // Update legal fields
         existingProject.DecisionNumber = request.DecisionNumber.Trim();
+        existingProject.DecisionDocumentUrl = request.DecisionDocumentUrl?.Trim();
         existingProject.ApplicationOpenDate = request.ApplicationOpenDate;
         existingProject.ApplicationCloseDate = request.ApplicationCloseDate;
 
@@ -431,6 +433,7 @@ public class HousingProjectService : IHousingProjectService
             UpdatedAt = project.UpdatedAt,
             Status = project.HousingProjectStatus?.StatusName,
             DecisionNumber = project.DecisionNumber,
+            DecisionDocumentUrl = project.DecisionDocumentUrl,
             ApprovalDate = project.ApprovalDate,
             ApplicationOpenDate = project.ApplicationOpenDate,
             ApplicationCloseDate = project.ApplicationCloseDate,

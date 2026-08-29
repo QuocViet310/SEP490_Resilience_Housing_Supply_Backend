@@ -69,6 +69,8 @@ public class HousingProject
 
     // New Legal and Developer properties
     public string? DecisionNumber { get; set; }
+    /// <summary>URL file PDF hoặc hình ảnh giấy tờ quyết định phê duyệt chủ trương / quy hoạch</summary>
+    public string? DecisionDocumentUrl { get; set; }
     public DateTime? ApprovalDate { get; set; }
     public DateTime? ApplicationOpenDate { get; set; }
     public DateTime? ApplicationCloseDate { get; set; }
