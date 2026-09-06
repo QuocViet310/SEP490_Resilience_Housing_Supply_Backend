@@ -225,4 +225,74 @@ public class AuthController : ControllerBase
 
         return Ok(result);
     }
+
+    /// <summary>
+    /// Kích hoạt nạp dữ liệu demo & 10 tài khoản test mẫu vào Database
+    /// </summary>
+    [HttpPost("seed-demo-data")]
+    public async Task<IActionResult> SeedDemoData(
+        [FromServices] RHS.Infrastructure.Data.AppDbContext db,
+        [FromServices] ILoggerFactory loggerFactory)
+    {
+        var logger = loggerFactory.CreateLogger("DemoDataSeeder");
+        await RHS.Infrastructure.Seed.DemoDataSeeder.EnsureSeededAsync(db, logger);
+        return Ok(new
+        {
+            success = true,
+            message = "Đã nạp toàn bộ 10 tài khoản test và dữ liệu demo thành công!",
+            password = "123456",
+            testAccounts = new[]
+            {
+                "dan.test01@rhs.local",
+                "dan.test02@rhs.local",
+                "dan.test03@rhs.local",
+                "dan.test04@rhs.local",
+                "dan.test05@rhs.local",
+                "dan.test06@rhs.local",
+                "dan.test07@rhs.local",
+                "dan.test08@rhs.local",
+                "dan.test09@rhs.local",
+                "dan.test10@rhs.local",
+                "dan.test11@rhs.local",
+                "dan.free@rhs.local",
+                "cdt.demo@rhs.local",
+                "sxd.demo@rhs.local",
+                "admin.demo@rhs.local"
+            }
+        });
+    }
+
+    /// <summary>
+    /// Lấy danh sách tài khoản demo có sẵn trong hệ thống
+    /// </summary>
+    [HttpGet("demo-accounts")]
+    public IActionResult GetDemoAccounts()
+    {
+        return Ok(new
+        {
+            success = true,
+            defaultPassword = "123456",
+            testCitizens = new[]
+            {
+                new { email = "dan.test01@rhs.local", name = "Nguyễn Văn An", citizenId = "079095000001", phone = "0908000001", gender = "Nam" },
+                new { email = "dan.test02@rhs.local", name = "Trần Thị Bình", citizenId = "079093000002", phone = "0908000002", gender = "Nữ" },
+                new { email = "dan.test03@rhs.local", name = "Lê Hoàng Cường", citizenId = "079090000003", phone = "0908000003", gender = "Nam" },
+                new { email = "dan.test04@rhs.local", name = "Phạm Thị Dung", citizenId = "079096000004", phone = "0908000004", gender = "Nữ" },
+                new { email = "dan.test05@rhs.local", name = "Hoàng Văn Em", citizenId = "079088000005", phone = "0908000005", gender = "Nam" },
+                new { email = "dan.test06@rhs.local", name = "Võ Thị Hạnh", citizenId = "079097000006", phone = "0908000006", gender = "Nữ" },
+                new { email = "dan.test07@rhs.local", name = "Đặng Quốc Hùng", citizenId = "079091000007", phone = "0908000007", gender = "Nam" },
+                new { email = "dan.test08@rhs.local", name = "Bùi Mai Linh", citizenId = "079094000008", phone = "0908000008", gender = "Nữ" },
+                new { email = "dan.test09@rhs.local", name = "Ngô Thanh Nam", citizenId = "079092000009", phone = "0908000009", gender = "Nam" },
+                new { email = "dan.test10@rhs.local", name = "Đỗ Phương Oanh", citizenId = "079099000010", phone = "0908000010", gender = "Nữ" },
+                new { email = "dan.test11@rhs.local", name = "Trần Quốc Phong", citizenId = "079098000011", phone = "0908000011", gender = "Nam" },
+                new { email = "dan.free@rhs.local", name = "Nguyễn Thị Free", citizenId = "001090000016", phone = "0901000016", gender = "Nữ" }
+            },
+            staffAccounts = new[]
+            {
+                new { role = "Housing Developer (CĐT)", email = "cdt.demo@rhs.local" },
+                new { role = "Department Of Construction (SXD)", email = "sxd.demo@rhs.local" },
+                new { role = "System Administrator (Admin)", email = "admin.demo@rhs.local" }
+            }
+        });
+    }
 }

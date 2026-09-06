@@ -798,91 +798,107 @@ public static class DemoDataSeeder
                     userUpdated++;
                 }
             }
-
-            if (def.SkipApplication || !projectExists)
-                continue;
-
-            var app = await db.HousingApplications
-                .FirstOrDefaultAsync(a => a.ApplicationId == def.ApplicationId, ct);
-            if (app != null)
-                continue;
-
-            // Tránh trùng ApplicantId+ProjectId nếu đã có hồ sơ khác
-            var existsPair = await db.HousingApplications.AnyAsync(
-                a => a.ApplicantId == def.UserId
-                     && a.ProjectId == projectId
-                     && a.ApplicationStatus != ApplicationStatusConstants.Rejected
-                     && a.ApplicationStatus != ApplicationStatusConstants.Canceled, ct);
-            if (existsPair)
-                continue;
-
-            app = new HousingApplication
-            {
-                ApplicationId = def.ApplicationId,
-                ApplicantId = def.UserId,
-                ProjectId = projectId,
-                ApplicationStatus = def.Status,
-                SubmittedAt = now.AddDays(def.SubmittedDaysAgo),
-                CreatedAt = now.AddDays(def.SubmittedDaysAgo - 1),
-                UpdatedAt = now,
-                FullName = def.FullName,
-                CitizenId = def.CitizenId,
-                Occupation = def.Occupation,
-                WorkPlace = "Công ty TNHH Demo RHS",
-                CurrentResidence = "12 Nguyễn Văn Linh, Quận 7, TP.HCM",
-                PermanentAddress = "12 Nguyễn Văn Linh, Quận 7, TP.HCM",
-                HousingStatus = HousingStatusConstants.NoHouse,
-                MaritalStatus = "SINGLE",
-                HouseholdMembersCount = 3,
-                PriorityGroup = def.PriorityGroup,
-                PriorityScore = def.PriorityScore,
-                MonthlyIncome = def.MonthlyIncome,
-                LotteryResult = def.LotteryResult,
-                SlotCode = def.SlotCode,
-                IsViolation = false
-            };
-            db.HousingApplications.Add(app);
-            appAdded++;
-
-            db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
-            {
-                HistoryId = Guid.NewGuid(),
-                ApplicationId = def.ApplicationId,
-                ChangedBy = def.UserId,
-                Action = ReviewActionConstants.Submit,
-                OldStatus = ApplicationStatusConstants.Draft,
-                NewStatus = def.Status,
-                Note = $"[DEMO_SEED] Hồ sơ demo trạng thái {def.Status}",
-                ChangedAt = now.AddDays(def.SubmittedDaysAgo)
-            });
-
-            if (def.NeedsAgreement)
-            {
-                var hasAgreement = await db.PrincipleAgreements
-                    .AnyAsync(a => a.ApplicationId == def.ApplicationId, ct);
-                if (!hasAgreement)
-                {
-                    db.PrincipleAgreements.Add(new PrincipleAgreement
-                    {
-                        Id = Guid.NewGuid(),
-                        ApplicationId = def.ApplicationId,
-                        PdfUrl = $"/api/payment/download-contract/{def.ApplicationId}",
-                        CreatedAt = now.AddDays(-2),
-                        IsSigned = def.AgreementSigned,
-                        SignedAt = def.AgreementSigned ? now.AddDays(-1) : null,
-                        SignedIpAddress = def.AgreementSigned ? "127.0.0.1" : null
-                    });
-                    agreementAdded++;
-                }
-            }
         }
 
-        if (userAdded > 0 || userUpdated > 0 || appAdded > 0 || agreementAdded > 0)
+        // Lưu toàn bộ User trước để đảm bảo tài khoản test luôn tồn tại
+        if (userAdded > 0 || userUpdated > 0)
         {
             await db.SaveChangesAsync(ct);
             logger?.LogInformation(
-                "Demo seed: applicants +{Users} (~{Updated} patched), applications +{Apps}, agreements +{Agreements}. Password={Password}",
-                userAdded, userUpdated, appAdded, agreementAdded, DemoPassword);
+                "Demo seed: saved applicants +{Users} (~{Updated} updated). Password={Password}",
+                userAdded, userUpdated, DemoPassword);
+        }
+
+        // Nạp hồ sơ mẫu cho các user cần hồ sơ (nếu dự án tồn tại)
+        if (projectExists)
+        {
+            foreach (var def in defs)
+            {
+                if (def.SkipApplication)
+                    continue;
+
+                var app = await db.HousingApplications
+                    .FirstOrDefaultAsync(a => a.ApplicationId == def.ApplicationId, ct);
+                if (app == null)
+                {
+                    // Tránh trùng ApplicantId+ProjectId nếu đã có hồ sơ khác
+                    var existsPair = await db.HousingApplications.AnyAsync(
+                        a => a.ApplicantId == def.UserId
+                             && a.ProjectId == projectId
+                             && a.ApplicationStatus != ApplicationStatusConstants.Rejected
+                             && a.ApplicationStatus != ApplicationStatusConstants.Canceled, ct);
+                    if (!existsPair)
+                    {
+                        app = new HousingApplication
+                        {
+                            ApplicationId = def.ApplicationId,
+                            ApplicantId = def.UserId,
+                            ProjectId = projectId,
+                            ApplicationStatus = def.Status,
+                            SubmittedAt = now.AddDays(def.SubmittedDaysAgo),
+                            CreatedAt = now.AddDays(def.SubmittedDaysAgo - 1),
+                            UpdatedAt = now,
+                            FullName = def.FullName,
+                            CitizenId = def.CitizenId,
+                            Occupation = def.Occupation,
+                            WorkPlace = "Công ty TNHH Demo RHS",
+                            CurrentResidence = "12 Nguyễn Văn Linh, Quận 7, TP.HCM",
+                            PermanentAddress = "12 Nguyễn Văn Linh, Quận 7, TP.HCM",
+                            HousingStatus = HousingStatusConstants.NoHouse,
+                            MaritalStatus = "SINGLE",
+                            HouseholdMembersCount = 3,
+                            PriorityGroup = def.PriorityGroup,
+                            PriorityScore = def.PriorityScore,
+                            MonthlyIncome = def.MonthlyIncome,
+                            LotteryResult = def.LotteryResult,
+                            SlotCode = def.SlotCode,
+                            IsViolation = false
+                        };
+                        db.HousingApplications.Add(app);
+                        appAdded++;
+
+                        db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+                        {
+                            HistoryId = Guid.NewGuid(),
+                            ApplicationId = def.ApplicationId,
+                            ChangedBy = def.UserId,
+                            Action = ReviewActionConstants.Submit,
+                            OldStatus = ApplicationStatusConstants.Draft,
+                            NewStatus = def.Status,
+                            Note = $"[DEMO_SEED] Hồ sơ demo trạng thái {def.Status}",
+                            ChangedAt = now.AddDays(def.SubmittedDaysAgo)
+                        });
+                    }
+                }
+
+                if (def.NeedsAgreement)
+                {
+                    var hasAgreement = await db.PrincipleAgreements
+                        .AnyAsync(a => a.ApplicationId == def.ApplicationId, ct);
+                    if (!hasAgreement)
+                    {
+                        db.PrincipleAgreements.Add(new PrincipleAgreement
+                        {
+                            Id = Guid.NewGuid(),
+                            ApplicationId = def.ApplicationId,
+                            PdfUrl = $"/api/payment/download-contract/{def.ApplicationId}",
+                            CreatedAt = now.AddDays(-2),
+                            IsSigned = def.AgreementSigned,
+                            SignedAt = def.AgreementSigned ? now.AddDays(-1) : null,
+                            SignedIpAddress = def.AgreementSigned ? "127.0.0.1" : null
+                        });
+                        agreementAdded++;
+                    }
+                }
+            }
+
+            if (appAdded > 0 || agreementAdded > 0)
+            {
+                await db.SaveChangesAsync(ct);
+                logger?.LogInformation(
+                    "Demo seed: applications +{Apps}, agreements +{Agreements}.",
+                    appAdded, agreementAdded);
+            }
         }
         else
         {
