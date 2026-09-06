@@ -445,8 +445,11 @@ public class PaymentService : IPaymentService
             return;
         }
 
-        // Nếu đã xử lý rồi (idempotency guard) — vẫn đảm bảo payment = Paid
-        if (application.ApplicationStatus == ApplicationStatusConstants.DepositPaid
+        // Đã qua bước cọc (chờ ký / đã ký / đã trả đủ) — không chạy lại SlotCode.
+        // DEPOSIT_PAID (dữ liệu cũ) vẫn rơi xuống dưới để chuyển CONTRACT_PENDING.
+        if (application.ApplicationStatus == ApplicationStatusConstants.ContractPending
+            || application.ApplicationStatus == ApplicationStatusConstants.ContractSigned
+            || application.ApplicationStatus == ApplicationStatusConstants.InstallmentInProgress
             || application.ApplicationStatus == ApplicationStatusConstants.FullyPaid)
         {
             if (!string.Equals(payment.Status, "Paid", StringComparison.OrdinalIgnoreCase)
@@ -457,7 +460,9 @@ public class PaymentService : IPaymentService
                 await _paymentRepository.UpdateAsync(payment);
             }
 
-            _logger.LogInformation("Application {AppId} already DEPOSIT_PAID. Skipping.", application.ApplicationId);
+            _logger.LogInformation(
+                "Application {AppId} already at {Status}. Skipping deposit post-process.",
+                application.ApplicationId, application.ApplicationStatus);
             return;
         }
 
@@ -544,12 +549,12 @@ public class PaymentService : IPaymentService
 
             _logger.LogInformation(
                 "Post-payment completed: AppId={AppId}, SlotCode={SlotCode}, Status={Old}→{New}.",
-                application.ApplicationId, slotCode, oldStatus, ApplicationStatusConstants.DepositPaid);
+                application.ApplicationId, slotCode, oldStatus, ApplicationStatusConstants.ContractPending);
 
             await _notificationService.SendAsync(
                 application.ApplicantId,
-                "Thanh toán Đợt 1 thành công",
-                $"Mã giao dịch/suất: {slotCode}. Hồ sơ đã ghi nhận thanh toán Đợt 1 thành công.",
+                "Đã đóng cọc Đợt 1 — hãy ký hợp đồng",
+                $"Mã giao dịch/suất: {slotCode}. Vui lòng đọc và đồng ý điều khoản hợp đồng mua bán nhà ở xã hội.",
                 NotificationTypeConstants.DepositPaid);
         }
         catch (Exception ex)

@@ -70,10 +70,13 @@ public class ContractSignService : IContractSignService
             };
         }
 
-        // Chỉ cho ký khi đã vào bước hợp đồng (sau chốt danh sách / trúng bốc thăm)
+        // Chờ ký sau khi đóng cọc. DEPOSIT_PENDING / DEPOSIT_PAID: dữ liệu cũ hoặc
+        // thanh toán Đợt 1 chưa kịp chuyển CONTRACT_PENDING — vẫn cho ký nếu đã cọc + có căn.
         var allowedStatuses = new[]
         {
-            ApplicationStatusConstants.ContractPending
+            ApplicationStatusConstants.ContractPending,
+            ApplicationStatusConstants.DepositPaid,
+            ApplicationStatusConstants.DepositPending,
         };
 
         if (!allowedStatuses.Contains(application.ApplicationStatus))
@@ -232,19 +235,19 @@ public class ContractSignService : IContractSignService
     /// <inheritdoc/>
     public async Task<ContractSignStatusDto?> GetSignStatusAsync(Guid applicationId)
     {
-        var agreement = await _agreementRepo.GetByApplicationIdAsync(applicationId);
-        if (agreement == null)
+        var application = await _applicationRepo.GetByIdWithDetailsAsync(applicationId);
+        if (application == null)
             return null;
 
-        var application = await _applicationRepo.GetByIdWithDetailsAsync(applicationId);
+        var agreement = await _agreementRepo.GetByApplicationIdAsync(applicationId);
 
         return new ContractSignStatusDto
         {
             ApplicationId     = applicationId,
-            IsSigned          = agreement.IsSigned,
-            SignedAt          = agreement.SignedAt,
-            PdfUrl            = agreement.PdfUrl,
-            ApplicationStatus = application?.ApplicationStatus ?? string.Empty
+            IsSigned          = agreement?.IsSigned ?? false,
+            SignedAt          = agreement?.SignedAt,
+            PdfUrl            = agreement?.PdfUrl,
+            ApplicationStatus = application.ApplicationStatus
         };
     }
 }

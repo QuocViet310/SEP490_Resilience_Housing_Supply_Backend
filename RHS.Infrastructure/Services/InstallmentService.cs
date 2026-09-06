@@ -477,8 +477,21 @@ public class InstallmentService : IInstallmentService
             || i.Status == InstallmentStatusConstants.Cancelled);
 
         var application = installment.HousingApplication;
+
+        var isPhase1 = installment.Milestone.PhaseOrder == 1
+            || string.Equals(installment.Milestone.TriggerEvent, TriggerEventConstants.OnLotteryWon, StringComparison.OrdinalIgnoreCase);
+        if (isPhase1)
+            await PromoteToContractPendingAfterDepositAsync(application, applicantId);
+
+        var isContractSigned = application.ApplicationStatus == ApplicationStatusConstants.ContractSigned
+            || application.ApplicationStatus == ApplicationStatusConstants.InstallmentInProgress
+            || application.ApplicationStatus == ApplicationStatusConstants.FullyPaid
+            || await _db.PrincipleAgreements.AnyAsync(p => p.ApplicationId == application.ApplicationId && p.IsSigned);
+
+        // Chỉ FULLY_PAID sau khi đã ký — nếu mới đóng Đợt 1 thì dừng ở CONTRACT_PENDING.
         if (allPaid
             && allInstallments.Count > 0
+            && isContractSigned
             && application.ApplicationStatus != ApplicationStatusConstants.FullyPaid)
         {
             var oldStatus = application.ApplicationStatus;
@@ -516,6 +529,76 @@ public class InstallmentService : IInstallmentService
         }
 
         await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Đóng cọc Đợt 1 xong → chờ ký hợp đồng (không nhảy FULLY_PAID dù dự án chỉ có 1 đợt).
+    /// </summary>
+    private async Task PromoteToContractPendingAfterDepositAsync(HousingApplication application, Guid changedBy)
+    {
+        var terminal = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ApplicationStatusConstants.ContractSigned,
+            ApplicationStatusConstants.InstallmentInProgress,
+            ApplicationStatusConstants.FullyPaid,
+            ApplicationStatusConstants.Canceled,
+            ApplicationStatusConstants.Expired,
+            ApplicationStatusConstants.Rejected,
+        };
+        if (terminal.Contains(application.ApplicationStatus))
+            return;
+
+        var changed = false;
+        var oldStatus = application.ApplicationStatus;
+        if (!string.Equals(oldStatus, ApplicationStatusConstants.ContractPending, StringComparison.OrdinalIgnoreCase))
+        {
+            application.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+            application.UpdatedAt = DateTime.UtcNow;
+            changed = true;
+
+            _db.Set<ApplicationStatusHistory>().Add(new ApplicationStatusHistory
+            {
+                HistoryId     = Guid.NewGuid(),
+                ApplicationId = application.ApplicationId,
+                ChangedBy     = changedBy,
+                OldStatus     = oldStatus,
+                NewStatus     = ApplicationStatusConstants.ContractPending,
+                Action        = ReviewActionConstants.DepositPayment,
+                Note          = "Thanh toán Đợt 1 thành công. Hồ sơ chuyển sang chờ ký hợp đồng.",
+                ChangedAt     = DateTime.UtcNow
+            });
+        }
+
+        var hasAgreement = await _db.PrincipleAgreements
+            .AnyAsync(p => p.ApplicationId == application.ApplicationId);
+        if (!hasAgreement)
+        {
+            _db.PrincipleAgreements.Add(new PrincipleAgreement
+            {
+                Id            = Guid.NewGuid(),
+                ApplicationId = application.ApplicationId,
+                PdfUrl        = $"/api/payment/download-contract/{application.ApplicationId}",
+                CreatedAt     = DateTime.UtcNow
+            });
+            changed = true;
+        }
+
+        if (!changed)
+            return;
+
+        try
+        {
+            await _notificationService.SendAsync(
+                application.ApplicantId,
+                "Đã đóng cọc Đợt 1 — hãy ký hợp đồng",
+                "Thanh toán Đợt 1 thành công. Vui lòng đọc và đồng ý điều khoản hợp đồng mua bán nhà ở xã hội.",
+                NotificationTypeConstants.DepositPaid);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send post-deposit sign reminder for app {AppId}.",
+                application.ApplicationId);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
