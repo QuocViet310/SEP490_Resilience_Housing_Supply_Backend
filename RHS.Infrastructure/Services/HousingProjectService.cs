@@ -390,13 +390,15 @@ public class HousingProjectService : IHousingProjectService
                 $"Ứng trước lần đầu (Đợt 1, gồm tiền đặt cọc nếu có) đang là {p1}%. Điều 89 Luật Nhà ở năm 2023: không được vượt quá {PaymentScheduleRules.FirstPaymentMaxPercent:0}% giá trị hợp đồng.");
         }
 
-        PaymentScheduleRules.ValidateRatios(
-            sortedItems.Select(i => (
-                i.PhaseOrder,
-                i.PhaseName ?? $"Đợt {i.PhaseOrder}",
-                i.Percentage.GetValueOrDefault(),
-                i.TriggerEvent ?? string.Empty
-            )).ToList());
+        var named = sortedItems.Select(i => (
+            PhaseOrder: i.PhaseOrder,
+            PhaseName: i.PhaseName ?? $"Đợt {i.PhaseOrder}",
+            Percentage: i.Percentage.GetValueOrDefault(),
+            TriggerEvent: i.TriggerEvent ?? string.Empty
+        )).ToList();
+        PaymentScheduleRules.ValidateTriggerOrder(
+            named.Select(i => (i.PhaseOrder, i.PhaseName, i.TriggerEvent)).ToList());
+        PaymentScheduleRules.ValidateRatios(named);
 
         targetCollection.Clear();
         foreach (var item in sortedItems)

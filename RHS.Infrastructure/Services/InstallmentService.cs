@@ -94,42 +94,9 @@ public class InstallmentService : IInstallmentService
             return;
         }
 
-        // Trường hợp 2: Khi ký hợp đồng → mở các đợt gắn mốc ON_CONTRACT_SIGNED (không mặc định là Đợt 2)
+        // Ký hợp đồng không tự mở đợt — chủ đầu tư mở khi tiến độ dự án thật tới.
         if (string.Equals(triggerEvent, TriggerEventConstants.OnContractSigned, StringComparison.OrdinalIgnoreCase))
         {
-            var signedInstallments = await _db.PaymentInstallments
-                .Include(i => i.Milestone)
-                .Where(i => i.ApplicationId == applicationId
-                            && i.Milestone != null
-                            && i.Milestone.TriggerEvent == TriggerEventConstants.OnContractSigned)
-                .OrderBy(i => i.Milestone.PhaseOrder)
-                .ToListAsync();
-
-            foreach (var inst in signedInstallments)
-            {
-                if (inst.Status == InstallmentStatusConstants.Locked)
-                {
-                    inst.Status = InstallmentStatusConstants.Pending;
-                    inst.StartDate = eventDate;
-                    inst.DueDate = eventDate.AddDays(inst.Milestone.DueDays);
-                    inst.UpdatedAt = DateTime.UtcNow;
-                }
-
-                try
-                {
-                    await _notificationService.SendAsync(
-                        app.ApplicantId,
-                        $"Ký hợp đồng thành công — mở thanh toán {inst.Milestone.PhaseName}",
-                        $"Ký hợp đồng thành công. Khoản thanh toán {inst.Milestone.PhaseName}: {inst.Amount:N0} VND. Hạn đóng: {inst.DueDate:dd/MM/yyyy}.",
-                        NotificationTypeConstants.InstallmentCreated);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed notification for installment {Id} after contract signed", inst.Id);
-                }
-            }
-
-            await _db.SaveChangesAsync();
             return;
         }
 
@@ -1459,12 +1426,6 @@ public class InstallmentService : IInstallmentService
                     || await _db.Payments.AnyAsync(p => p.ApplicationId == applicationId
                                                        && (p.Status == "Success" || p.Status == "Paid"));
 
-        // Đã ký Hợp đồng nếu status từ CONTRACT_SIGNED trở đi hoặc PrincipleAgreement đã ký
-        var isContractSigned = app.ApplicationStatus == ApplicationStatusConstants.ContractSigned
-                            || app.ApplicationStatus == ApplicationStatusConstants.InstallmentInProgress
-                            || app.ApplicationStatus == ApplicationStatusConstants.FullyPaid
-                            || await _db.PrincipleAgreements.AnyAsync(p => p.ApplicationId == applicationId && p.IsSigned);
-
         if (existingInstallments.Count == 0)
         {
             var newInstallments = new List<PaymentInstallment>();
@@ -1493,10 +1454,6 @@ public class InstallmentService : IInstallmentService
                 {
                     status = isD1Paid ? InstallmentStatusConstants.Paid : InstallmentStatusConstants.Pending;
                     if (isD1Paid) paidAt = app.UpdatedAt ?? now;
-                }
-                else if (string.Equals(m.TriggerEvent, TriggerEventConstants.OnContractSigned, StringComparison.OrdinalIgnoreCase))
-                {
-                    status = isContractSigned ? InstallmentStatusConstants.Pending : InstallmentStatusConstants.Locked;
                 }
                 else
                 {
@@ -1533,19 +1490,6 @@ public class InstallmentService : IInstallmentService
                 d1.Status = InstallmentStatusConstants.Paid;
                 d1.PaidAt ??= app.UpdatedAt ?? now;
                 d1.UpdatedAt = now;
-                modified = true;
-            }
-
-            foreach (var signedInst in existingInstallments.Where(i =>
-                         i.Milestone != null
-                         && string.Equals(i.Milestone.TriggerEvent, TriggerEventConstants.OnContractSigned, StringComparison.OrdinalIgnoreCase)
-                         && isContractSigned
-                         && i.Status == InstallmentStatusConstants.Locked))
-            {
-                signedInst.Status = InstallmentStatusConstants.Pending;
-                signedInst.StartDate = now;
-                signedInst.DueDate = now.AddDays(signedInst.Milestone.DueDays);
-                signedInst.UpdatedAt = now;
                 modified = true;
             }
 

@@ -43,6 +43,43 @@ public static class PaymentScheduleRules
     public static bool IsCertificateTrigger(string? trigger) =>
         string.Equals(trigger, TriggerEventConstants.RedBookIssued, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Thứ tự tiến độ thực tế: cấp nhà → ký hợp đồng → phần thô → cất nóc → bàn giao → sổ hồng.
+    /// Được phép bỏ qua mốc, không được xếp ngược.
+    /// </summary>
+    public static int TriggerRank(string? trigger)
+    {
+        if (string.IsNullOrWhiteSpace(trigger)) return -1;
+        return trigger.Trim().ToUpperInvariant() switch
+        {
+            TriggerEventConstants.OnLotteryWon => 0,
+            TriggerEventConstants.OnApproved => 0,
+            TriggerEventConstants.OnContractSigned => 1,
+            TriggerEventConstants.ConstructionRoughFloor => 2,
+            TriggerEventConstants.RoofingCompleted => 3,
+            TriggerEventConstants.Handover => 4,
+            TriggerEventConstants.RedBookIssued => 5,
+            _ => -1
+        };
+    }
+
+    public static void ValidateTriggerOrder(
+        IReadOnlyList<(int PhaseOrder, string PhaseName, string TriggerEvent)> phases)
+    {
+        for (int i = 1; i < phases.Count; i++)
+        {
+            var prev = TriggerRank(phases[i - 1].TriggerEvent);
+            var cur = TriggerRank(phases[i].TriggerEvent);
+            if (prev < 0 || cur < 0) continue;
+            if (cur < prev)
+            {
+                throw new ArgumentException(
+                    $"Đợt {phases[i].PhaseOrder} đang gắn mốc sớm hơn Đợt {phases[i - 1].PhaseOrder}. " +
+                    "Thứ tự mốc phải theo tiến độ: cấp nhà → ký hợp đồng → phần thô → cất nóc → bàn giao nhà → cấp sổ hồng.");
+            }
+        }
+    }
+
     public static void ValidateRatios(
         IReadOnlyList<(int PhaseOrder, string PhaseName, decimal Percentage, string TriggerEvent)> phases)
     {
@@ -106,7 +143,7 @@ public static class TriggerEventConstants
     /// <summary>Khi trúng bốc thăm hoặc cấp nhà — mở đợt tiền cọc (Đợt 1).</summary>
     public const string OnLotteryWon = "ON_LOTTERY_WON";
 
-    /// <summary>Khi người dân ký hợp đồng mua bán — mở các đợt gắn mốc này.</summary>
+    /// <summary>Mốc sau khi người dân ký hợp đồng. Chủ đầu tư mở đợt thủ công khi tiến độ thật tới — không tự mở lúc ký.</summary>
     public const string OnContractSigned = "ON_CONTRACT_SIGNED";
 
     /// <summary>Khi chủ đầu tư công bố hoàn thành phần thô.</summary>
