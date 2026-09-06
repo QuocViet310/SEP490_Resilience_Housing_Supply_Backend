@@ -30,29 +30,73 @@ public static class DemoDataSeeder
     public static readonly Guid OneBedroomApartmentTypeId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     public static readonly Guid TwoBedroomApartmentTypeId = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
-    public static async Task EnsureSeededAsync(AppDbContext db, ILogger? logger = null, CancellationToken ct = default)
+    public static async Task<DemoSeedResult> EnsureSeededAsync(AppDbContext db, ILogger? logger = null, CancellationToken ct = default)
     {
+        var result = new DemoSeedResult();
+
         try { await EnsureApartmentTypesAsync(db, logger, ct); }
-        catch (Exception ex) { logger?.LogError(ex, "Demo seed: error in EnsureApartmentTypesAsync"); }
+        catch (Exception ex)
+        {
+            var msg = $"EnsureApartmentTypesAsync: {ex.InnerException?.Message ?? ex.Message}";
+            result.Errors.Add(msg);
+            logger?.LogError(ex, "{Msg}", msg);
+        }
 
         try { await EnsureProjectStatusesAsync(db, logger, ct); }
-        catch (Exception ex) { logger?.LogError(ex, "Demo seed: error in EnsureProjectStatusesAsync"); }
+        catch (Exception ex)
+        {
+            var msg = $"EnsureProjectStatusesAsync: {ex.InnerException?.Message ?? ex.Message}";
+            result.Errors.Add(msg);
+            logger?.LogError(ex, "{Msg}", msg);
+        }
 
         User? developer = null;
         try { developer = await EnsureDemoStaffAsync(db, logger, ct); }
-        catch (Exception ex) { logger?.LogError(ex, "Demo seed: error in EnsureDemoStaffAsync"); }
+        catch (Exception ex)
+        {
+            var msg = $"EnsureDemoStaffAsync: {ex.InnerException?.Message ?? ex.Message}";
+            result.Errors.Add(msg);
+            logger?.LogError(ex, "{Msg}", msg);
+        }
 
         if (developer != null)
         {
             try { await EnsureDemoProjectsAsync(db, developer.Id, logger, ct); }
-            catch (Exception ex) { logger?.LogError(ex, "Demo seed: error in EnsureDemoProjectsAsync"); }
+            catch (Exception ex)
+            {
+                var msg = $"EnsureDemoProjectsAsync: {ex.InnerException?.Message ?? ex.Message}";
+                result.Errors.Add(msg);
+                logger?.LogError(ex, "{Msg}", msg);
+            }
 
             try { await RepairOrphanProjectDeveloperIdsAsync(db, developer.Id, logger, ct); }
-            catch (Exception ex) { logger?.LogError(ex, "Demo seed: error in RepairOrphanProjectDeveloperIdsAsync"); }
+            catch (Exception ex)
+            {
+                var msg = $"RepairOrphanProjectDeveloperIdsAsync: {ex.InnerException?.Message ?? ex.Message}";
+                result.Errors.Add(msg);
+                logger?.LogError(ex, "{Msg}", msg);
+            }
         }
 
-        try { await EnsureDemoApplicantsAndApplicationsAsync(db, logger, ct); }
-        catch (Exception ex) { logger?.LogError(ex, "Demo seed: error in EnsureDemoApplicantsAndApplicationsAsync"); }
+        try { await EnsureDemoApplicantsAndApplicationsAsync(db, result, logger, ct); }
+        catch (Exception ex)
+        {
+            var msg = $"EnsureDemoApplicantsAndApplicationsAsync: {ex.InnerException?.Message ?? ex.Message}";
+            result.Errors.Add(msg);
+            logger?.LogError(ex, "{Msg}", msg);
+        }
+
+        return result;
+    }
+
+    public class DemoSeedResult
+    {
+        public int UsersAdded { get; set; }
+        public int UsersUpdated { get; set; }
+        public int AppsAdded { get; set; }
+        public int AgreementsAdded { get; set; }
+        public List<string> SeededEmails { get; set; } = new();
+        public List<string> Errors { get; set; } = new();
     }
 
     private static async Task EnsureApartmentTypesAsync(AppDbContext db, ILogger? logger, CancellationToken ct)
@@ -697,6 +741,7 @@ public static class DemoDataSeeder
     /// </summary>
     private static async Task EnsureDemoApplicantsAndApplicationsAsync(
         AppDbContext db,
+        DemoSeedResult result,
         ILogger? logger,
         CancellationToken ct)
     {
@@ -718,95 +763,95 @@ public static class DemoDataSeeder
         var now = DateTime.UtcNow;
         var defs = BuildApplicantApplicationDefs(projectId, now);
 
-        var userAdded = 0;
-        var userUpdated = 0;
-        var appAdded = 0;
-        var agreementAdded = 0;
-
         foreach (var def in defs)
         {
-            var user = await db.Users.FirstOrDefaultAsync(u => u.Id == def.UserId || u.Email == def.Email, ct);
-            var issueDate = def.DateOfBirth.AddYears(20) < now ? def.DateOfBirth.AddYears(20) : now.AddYears(-3);
-            if (user == null)
+            try
             {
-                user = new User
+                var user = await db.Users.FirstOrDefaultAsync(u => u.Id == def.UserId || u.Email == def.Email, ct);
+                var issueDate = def.DateOfBirth.AddYears(20) < now ? def.DateOfBirth.AddYears(20) : now.AddYears(-3);
+                if (user == null)
                 {
-                    Id = def.UserId,
-                    Email = def.Email,
-                    FullName = def.FullName,
-                    PasswordHash = passwordHash,
-                    RoleId = RoleConstants.ApplicantId,
-                    Status = "Active",
-                    IsEmailVerified = true,
-                    IsEkycVerified = true,
-                    EkycVerifiedAt = now.AddDays(-30),
-                    PhoneNumber = def.Phone,
-                    CitizenId = def.CitizenId,
-                    DateOfBirth = def.DateOfBirth,
-                    Gender = def.Gender,
-                    Nationality = "Việt Nam",
-                    PlaceOfOrigin = def.PlaceOfOrigin,
-                    IdIssueDate = issueDate,
-                    IdIssuePlace = "Cục Cảnh sát Quản lý hành chính về trật tự xã hội",
-                    MaritalStatus = def.MaritalStatus,
-                    Occupation = def.Occupation,
-                    WorkPlace = "Công ty TNHH Demo RHS",
-                    CurrentResidence = def.Address,
-                    PermanentAddress = def.Address,
-                    Address = def.Address,
-                    MonthlyIncome = def.MonthlyIncome > 0 ? def.MonthlyIncome : null,
-                    HousingStatus = HousingStatusConstants.NoHouse,
-                    PriorityGroup = def.PriorityGroup,
-                    CreatedAt = now.AddDays(-30)
-                };
-                db.Users.Add(user);
-                userAdded++;
+                    user = new User
+                    {
+                        Id = def.UserId,
+                        Email = def.Email,
+                        FullName = def.FullName,
+                        PasswordHash = passwordHash,
+                        RoleId = RoleConstants.ApplicantId,
+                        Status = "Active",
+                        IsEmailVerified = true,
+                        IsEkycVerified = true,
+                        EkycVerifiedAt = now.AddDays(-30),
+                        PhoneNumber = def.Phone,
+                        CitizenId = def.CitizenId,
+                        DateOfBirth = def.DateOfBirth,
+                        Gender = def.Gender,
+                        Nationality = "Việt Nam",
+                        PlaceOfOrigin = def.PlaceOfOrigin,
+                        IdIssueDate = issueDate,
+                        IdIssuePlace = "Cục Cảnh sát Quản lý hành chính về trật tự xã hội",
+                        MaritalStatus = def.MaritalStatus,
+                        Occupation = def.Occupation,
+                        WorkPlace = "Công ty TNHH Demo RHS",
+                        CurrentResidence = def.Address,
+                        PermanentAddress = def.Address,
+                        Address = def.Address,
+                        MonthlyIncome = def.MonthlyIncome > 0 ? def.MonthlyIncome : null,
+                        HousingStatus = HousingStatusConstants.NoHouse,
+                        PriorityGroup = def.PriorityGroup,
+                        CreatedAt = now.AddDays(-30)
+                    };
+                    db.Users.Add(user);
+                    await db.SaveChangesAsync(ct);
+                    result.UsersAdded++;
+                    result.SeededEmails.Add(user.Email);
+                }
+                else
+                {
+                    // Đồng bộ CCCD / DOB / địa chỉ / eKYC nếu seed cũ thiếu
+                    var changed = false;
+                    if (string.IsNullOrWhiteSpace(user.CitizenId)) { user.CitizenId = def.CitizenId; changed = true; }
+                    if (user.DateOfBirth == null) { user.DateOfBirth = def.DateOfBirth; changed = true; }
+                    if (string.IsNullOrWhiteSpace(user.Address)) { user.Address = def.Address; changed = true; }
+                    if (user.Status != "Active") { user.Status = "Active"; changed = true; }
+                    if (!user.IsEkycVerified) { user.IsEkycVerified = true; changed = true; }
+                    if (user.EkycVerifiedAt == null) { user.EkycVerifiedAt = now.AddDays(-30); changed = true; }
+                    if (string.IsNullOrWhiteSpace(user.Gender)) { user.Gender = def.Gender; changed = true; }
+                    if (string.IsNullOrWhiteSpace(user.Nationality)) { user.Nationality = "Việt Nam"; changed = true; }
+                    if (string.IsNullOrWhiteSpace(user.PlaceOfOrigin)) { user.PlaceOfOrigin = def.PlaceOfOrigin; changed = true; }
+                    if (user.IdIssueDate == null) { user.IdIssueDate = issueDate; changed = true; }
+                    if (string.IsNullOrWhiteSpace(user.IdIssuePlace)) { user.IdIssuePlace = "Cục Cảnh sát Quản lý hành chính về trật tự xã hội"; changed = true; }
+                    if (string.IsNullOrWhiteSpace(user.MaritalStatus)) { user.MaritalStatus = def.MaritalStatus; changed = true; }
+                    if (string.IsNullOrWhiteSpace(user.Occupation)) { user.Occupation = def.Occupation; changed = true; }
+                    if (string.IsNullOrWhiteSpace(user.WorkPlace)) { user.WorkPlace = "Công ty TNHH Demo RHS"; changed = true; }
+                    if (string.IsNullOrWhiteSpace(user.CurrentResidence)) { user.CurrentResidence = def.Address; changed = true; }
+                    if (string.IsNullOrWhiteSpace(user.PermanentAddress)) { user.PermanentAddress = def.Address; changed = true; }
+                    if (user.MonthlyIncome == null || user.MonthlyIncome == 0) { user.MonthlyIncome = def.MonthlyIncome > 0 ? def.MonthlyIncome : null; changed = true; }
+                    if (string.IsNullOrWhiteSpace(user.HousingStatus)) { user.HousingStatus = HousingStatusConstants.NoHouse; changed = true; }
+                    if (string.IsNullOrWhiteSpace(user.PriorityGroup)) { user.PriorityGroup = def.PriorityGroup; changed = true; }
+
+                    if (user.PasswordHash == null ||
+                        !BCrypt.Net.BCrypt.Verify(DemoPassword, user.PasswordHash))
+                    {
+                        user.PasswordHash = passwordHash;
+                        changed = true;
+                    }
+                    if (changed)
+                    {
+                        user.UpdatedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync(ct);
+                        result.UsersUpdated++;
+                    }
+                    result.SeededEmails.Add(user.Email);
+                }
             }
-            else
+            catch (Exception ex)
             {
-                // Đồng bộ CCCD / DOB / địa chỉ / eKYC nếu seed cũ thiếu
-                var changed = false;
-                if (string.IsNullOrWhiteSpace(user.CitizenId)) { user.CitizenId = def.CitizenId; changed = true; }
-                if (user.DateOfBirth == null) { user.DateOfBirth = def.DateOfBirth; changed = true; }
-                if (string.IsNullOrWhiteSpace(user.Address)) { user.Address = def.Address; changed = true; }
-                if (user.Status != "Active") { user.Status = "Active"; changed = true; }
-                if (!user.IsEkycVerified) { user.IsEkycVerified = true; changed = true; }
-                if (user.EkycVerifiedAt == null) { user.EkycVerifiedAt = now.AddDays(-30); changed = true; }
-                if (string.IsNullOrWhiteSpace(user.Gender)) { user.Gender = def.Gender; changed = true; }
-                if (string.IsNullOrWhiteSpace(user.Nationality)) { user.Nationality = "Việt Nam"; changed = true; }
-                if (string.IsNullOrWhiteSpace(user.PlaceOfOrigin)) { user.PlaceOfOrigin = def.PlaceOfOrigin; changed = true; }
-                if (user.IdIssueDate == null) { user.IdIssueDate = issueDate; changed = true; }
-                if (string.IsNullOrWhiteSpace(user.IdIssuePlace)) { user.IdIssuePlace = "Cục Cảnh sát Quản lý hành chính về trật tự xã hội"; changed = true; }
-                if (string.IsNullOrWhiteSpace(user.MaritalStatus)) { user.MaritalStatus = def.MaritalStatus; changed = true; }
-                if (string.IsNullOrWhiteSpace(user.Occupation)) { user.Occupation = def.Occupation; changed = true; }
-                if (string.IsNullOrWhiteSpace(user.WorkPlace)) { user.WorkPlace = "Công ty TNHH Demo RHS"; changed = true; }
-                if (string.IsNullOrWhiteSpace(user.CurrentResidence)) { user.CurrentResidence = def.Address; changed = true; }
-                if (string.IsNullOrWhiteSpace(user.PermanentAddress)) { user.PermanentAddress = def.Address; changed = true; }
-                if (user.MonthlyIncome == null || user.MonthlyIncome == 0) { user.MonthlyIncome = def.MonthlyIncome > 0 ? def.MonthlyIncome : null; changed = true; }
-                if (string.IsNullOrWhiteSpace(user.HousingStatus)) { user.HousingStatus = HousingStatusConstants.NoHouse; changed = true; }
-                if (string.IsNullOrWhiteSpace(user.PriorityGroup)) { user.PriorityGroup = def.PriorityGroup; changed = true; }
-
-                if (user.PasswordHash == null ||
-                    !BCrypt.Net.BCrypt.Verify(DemoPassword, user.PasswordHash))
-                {
-                    user.PasswordHash = passwordHash;
-                    changed = true;
-                }
-                if (changed)
-                {
-                    user.UpdatedAt = DateTime.UtcNow;
-                    userUpdated++;
-                }
+                db.ChangeTracker.Clear();
+                var msg = $"Lỗi lưu User {def.Email}: {ex.InnerException?.Message ?? ex.Message}";
+                result.Errors.Add(msg);
+                logger?.LogError(ex, "{Msg}", msg);
             }
-        }
-
-        // Lưu toàn bộ User trước để đảm bảo tài khoản test luôn tồn tại
-        if (userAdded > 0 || userUpdated > 0)
-        {
-            await db.SaveChangesAsync(ct);
-            logger?.LogInformation(
-                "Demo seed: saved applicants +{Users} (~{Updated} updated). Password={Password}",
-                userAdded, userUpdated, DemoPassword);
         }
 
         // Nạp hồ sơ mẫu cho các user cần hồ sơ (nếu dự án tồn tại)
@@ -817,92 +862,93 @@ public static class DemoDataSeeder
                 if (def.SkipApplication)
                     continue;
 
-                var app = await db.HousingApplications
-                    .FirstOrDefaultAsync(a => a.ApplicationId == def.ApplicationId, ct);
-                if (app == null)
+                try
                 {
-                    // Tránh trùng ApplicantId+ProjectId nếu đã có hồ sơ khác
-                    var existsPair = await db.HousingApplications.AnyAsync(
-                        a => a.ApplicantId == def.UserId
-                             && a.ProjectId == projectId
-                             && a.ApplicationStatus != ApplicationStatusConstants.Rejected
-                             && a.ApplicationStatus != ApplicationStatusConstants.Canceled, ct);
-                    if (!existsPair)
+                    var app = await db.HousingApplications
+                        .FirstOrDefaultAsync(a => a.ApplicationId == def.ApplicationId, ct);
+                    if (app == null)
                     {
-                        app = new HousingApplication
+                        // Tránh trùng ApplicantId+ProjectId nếu đã có hồ sơ khác
+                        var existsPair = await db.HousingApplications.AnyAsync(
+                            a => a.ApplicantId == def.UserId
+                                 && a.ProjectId == projectId
+                                 && a.ApplicationStatus != ApplicationStatusConstants.Rejected
+                                 && a.ApplicationStatus != ApplicationStatusConstants.Canceled, ct);
+                        if (!existsPair)
                         {
-                            ApplicationId = def.ApplicationId,
-                            ApplicantId = def.UserId,
-                            ProjectId = projectId,
-                            ApplicationStatus = def.Status,
-                            SubmittedAt = now.AddDays(def.SubmittedDaysAgo),
-                            CreatedAt = now.AddDays(def.SubmittedDaysAgo - 1),
-                            UpdatedAt = now,
-                            FullName = def.FullName,
-                            CitizenId = def.CitizenId,
-                            Occupation = def.Occupation,
-                            WorkPlace = "Công ty TNHH Demo RHS",
-                            CurrentResidence = "12 Nguyễn Văn Linh, Quận 7, TP.HCM",
-                            PermanentAddress = "12 Nguyễn Văn Linh, Quận 7, TP.HCM",
-                            HousingStatus = HousingStatusConstants.NoHouse,
-                            MaritalStatus = "SINGLE",
-                            HouseholdMembersCount = 3,
-                            PriorityGroup = def.PriorityGroup,
-                            PriorityScore = def.PriorityScore,
-                            MonthlyIncome = def.MonthlyIncome,
-                            LotteryResult = def.LotteryResult,
-                            SlotCode = def.SlotCode,
-                            IsViolation = false
-                        };
-                        db.HousingApplications.Add(app);
-                        appAdded++;
+                            app = new HousingApplication
+                            {
+                                ApplicationId = def.ApplicationId,
+                                ApplicantId = def.UserId,
+                                ProjectId = projectId,
+                                ApplicationStatus = def.Status,
+                                SubmittedAt = now.AddDays(def.SubmittedDaysAgo),
+                                CreatedAt = now.AddDays(def.SubmittedDaysAgo - 1),
+                                UpdatedAt = now,
+                                FullName = def.FullName,
+                                CitizenId = def.CitizenId,
+                                Occupation = def.Occupation,
+                                WorkPlace = "Công ty TNHH Demo RHS",
+                                CurrentResidence = "12 Nguyễn Văn Linh, Quận 7, TP.HCM",
+                                PermanentAddress = "12 Nguyễn Văn Linh, Quận 7, TP.HCM",
+                                HousingStatus = HousingStatusConstants.NoHouse,
+                                MaritalStatus = "SINGLE",
+                                HouseholdMembersCount = 3,
+                                PriorityGroup = def.PriorityGroup,
+                                PriorityScore = def.PriorityScore,
+                                MonthlyIncome = def.MonthlyIncome,
+                                LotteryResult = def.LotteryResult,
+                                SlotCode = def.SlotCode,
+                                IsViolation = false
+                            };
+                            db.HousingApplications.Add(app);
 
-                        db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+                            db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+                            {
+                                HistoryId = Guid.NewGuid(),
+                                ApplicationId = def.ApplicationId,
+                                ChangedBy = def.UserId,
+                                Action = ReviewActionConstants.Submit,
+                                OldStatus = ApplicationStatusConstants.Draft,
+                                NewStatus = def.Status,
+                                Note = $"[DEMO_SEED] Hồ sơ demo trạng thái {def.Status}",
+                                ChangedAt = now.AddDays(def.SubmittedDaysAgo)
+                            });
+
+                            await db.SaveChangesAsync(ct);
+                            result.AppsAdded++;
+                        }
+                    }
+
+                    if (def.NeedsAgreement)
+                    {
+                        var hasAgreement = await db.PrincipleAgreements
+                            .AnyAsync(a => a.ApplicationId == def.ApplicationId, ct);
+                        if (!hasAgreement)
                         {
-                            HistoryId = Guid.NewGuid(),
-                            ApplicationId = def.ApplicationId,
-                            ChangedBy = def.UserId,
-                            Action = ReviewActionConstants.Submit,
-                            OldStatus = ApplicationStatusConstants.Draft,
-                            NewStatus = def.Status,
-                            Note = $"[DEMO_SEED] Hồ sơ demo trạng thái {def.Status}",
-                            ChangedAt = now.AddDays(def.SubmittedDaysAgo)
-                        });
+                            db.PrincipleAgreements.Add(new PrincipleAgreement
+                            {
+                                Id = Guid.NewGuid(),
+                                ApplicationId = def.ApplicationId,
+                                PdfUrl = $"/api/payment/download-contract/{def.ApplicationId}",
+                                CreatedAt = now.AddDays(-2),
+                                IsSigned = def.AgreementSigned,
+                                SignedAt = def.AgreementSigned ? now.AddDays(-1) : null,
+                                SignedIpAddress = def.AgreementSigned ? "127.0.0.1" : null
+                            });
+                            await db.SaveChangesAsync(ct);
+                            result.AgreementsAdded++;
+                        }
                     }
                 }
-
-                if (def.NeedsAgreement)
+                catch (Exception ex)
                 {
-                    var hasAgreement = await db.PrincipleAgreements
-                        .AnyAsync(a => a.ApplicationId == def.ApplicationId, ct);
-                    if (!hasAgreement)
-                    {
-                        db.PrincipleAgreements.Add(new PrincipleAgreement
-                        {
-                            Id = Guid.NewGuid(),
-                            ApplicationId = def.ApplicationId,
-                            PdfUrl = $"/api/payment/download-contract/{def.ApplicationId}",
-                            CreatedAt = now.AddDays(-2),
-                            IsSigned = def.AgreementSigned,
-                            SignedAt = def.AgreementSigned ? now.AddDays(-1) : null,
-                            SignedIpAddress = def.AgreementSigned ? "127.0.0.1" : null
-                        });
-                        agreementAdded++;
-                    }
+                    db.ChangeTracker.Clear();
+                    var msg = $"Lỗi lưu Application cho {def.Email}: {ex.InnerException?.Message ?? ex.Message}";
+                    result.Errors.Add(msg);
+                    logger?.LogError(ex, "{Msg}", msg);
                 }
             }
-
-            if (appAdded > 0 || agreementAdded > 0)
-            {
-                await db.SaveChangesAsync(ct);
-                logger?.LogInformation(
-                    "Demo seed: applications +{Apps}, agreements +{Agreements}.",
-                    appAdded, agreementAdded);
-            }
-        }
-        else
-        {
-            logger?.LogInformation("Demo seed: applicants/applications already present — skip.");
         }
     }
 
@@ -950,17 +996,17 @@ public static class DemoDataSeeder
                 null, null, false, false, -25, "Nhân viên", new DateTime(1989, 12, 2, 0, 0, 0, DateTimeKind.Utc)),
 
             Def("c1000001-0001-0001-0001-000000000010", "d1000001-0001-0001-0001-000000000010",
-                "dan.approved1@rhs.local", "Hoàng Văn Approved 1", "001090000010", "0901000010",
+                "dan.approved1@rhs.local", "Hoàng Văn Approved 1", "001090000021", "0901000021",
                 ApplicationStatusConstants.Approved, PriorityGroupConstants.UrbanPoor, 50, 8_500_000m,
                 null, null, false, false, -11, "Công nhân", new DateTime(1994, 5, 10, 0, 0, 0, DateTimeKind.Utc)),
 
             Def("c1000001-0001-0001-0001-000000000011", "d1000001-0001-0001-0001-000000000011",
-                "dan.approved2@rhs.local", "Lê Thị Approved 2", "001090000011", "0901000011",
+                "dan.approved2@rhs.local", "Lê Thị Approved 2", "001090000022", "0901000022",
                 ApplicationStatusConstants.Approved, PriorityGroupConstants.LowIncomeUrban, 40, 9_000_000m,
                 null, null, false, false, -10, "Nhân viên", new DateTime(1991, 8, 15, 0, 0, 0, DateTimeKind.Utc)),
 
             Def("c1000001-0001-0001-0001-000000000012", "d1000001-0001-0001-0001-000000000012",
-                "dan.approved3@rhs.local", "Phạm Văn Approved 3", "001090000012", "0901000012",
+                "dan.approved3@rhs.local", "Phạm Văn Approved 3", "001090000023", "0901000023",
                 ApplicationStatusConstants.Approved, PriorityGroupConstants.Worker, 35, 10_000_000m,
                 null, null, false, false, -9, "Công nhân", new DateTime(1990, 2, 20, 0, 0, 0, DateTimeKind.Utc)),
 

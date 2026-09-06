@@ -235,30 +235,41 @@ public class AuthController : ControllerBase
         [FromServices] ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger("DemoDataSeeder");
-        await RHS.Infrastructure.Seed.DemoDataSeeder.EnsureSeededAsync(db, logger);
+        var seedResult = await RHS.Infrastructure.Seed.DemoDataSeeder.EnsureSeededAsync(db, logger);
+
+        var demoUsersInDb = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+            .ToListAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.AsNoTracking(
+                    db.Users.Where(u => u.Email.EndsWith("@rhs.local"))
+                ).Select(u => new
+                {
+                    u.Id,
+                    u.Email,
+                    u.FullName,
+                    u.CitizenId,
+                    u.PhoneNumber,
+                    u.Status,
+                    u.IsEkycVerified
+                })
+            );
+
         return Ok(new
         {
-            success = true,
-            message = "Đã nạp toàn bộ 10 tài khoản test và dữ liệu demo thành công!",
-            password = "123456",
-            testAccounts = new[]
+            success = seedResult.Errors.Count == 0,
+            message = seedResult.Errors.Count == 0
+                ? $"Đã nạp thành công! Thêm mới {seedResult.UsersAdded} users, cập nhật {seedResult.UsersUpdated} users. Tổng {demoUsersInDb.Count} tài khoản trong DB."
+                : $"Hoàn tất có cảnh báo ({seedResult.Errors.Count} lỗi). Thêm {seedResult.UsersAdded}, cập nhật {seedResult.UsersUpdated}. Tổng {demoUsersInDb.Count} tài khoản trong DB.",
+            summary = new
             {
-                "dan.test01@rhs.local",
-                "dan.test02@rhs.local",
-                "dan.test03@rhs.local",
-                "dan.test04@rhs.local",
-                "dan.test05@rhs.local",
-                "dan.test06@rhs.local",
-                "dan.test07@rhs.local",
-                "dan.test08@rhs.local",
-                "dan.test09@rhs.local",
-                "dan.test10@rhs.local",
-                "dan.test11@rhs.local",
-                "dan.free@rhs.local",
-                "cdt.demo@rhs.local",
-                "sxd.demo@rhs.local",
-                "admin.demo@rhs.local"
-            }
+                usersAdded = seedResult.UsersAdded,
+                usersUpdated = seedResult.UsersUpdated,
+                appsAdded = seedResult.AppsAdded,
+                agreementsAdded = seedResult.AgreementsAdded,
+                totalDemoUsersInDb = demoUsersInDb.Count,
+                errors = seedResult.Errors
+            },
+            password = "123456",
+            demoUsersInDatabase = demoUsersInDb
         });
     }
 
