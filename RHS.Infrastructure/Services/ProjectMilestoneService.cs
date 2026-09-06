@@ -47,7 +47,9 @@ public class ProjectMilestoneService : IProjectMilestoneService
             ProjectName        = project.ProjectName,
             TotalMilestones    = dtoList.Count,
             TotalPercentage    = totalPct,
-            IsFullyConfigured  = dtoList.Count >= 3 && dtoList.Count <= 6 && Math.Abs(totalPct - 100m) < 0.001m,
+            IsFullyConfigured  = dtoList.Count >= PaymentPhaseCountConstants.Min
+                              && dtoList.Count <= PaymentPhaseCountConstants.Max
+                              && Math.Abs(totalPct - 100m) < 0.001m,
             Milestones         = dtoList
         };
     }
@@ -67,11 +69,13 @@ public class ProjectMilestoneService : IProjectMilestoneService
         // 1. Validate Developer Access
         await ValidateDeveloperAccessAsync(project, userId, ct);
 
-        // 2. Validate Milestones Count (3 - 6 đợt)
-        if (request.Milestones == null || request.Milestones.Count < 3 || request.Milestones.Count > 6)
+        // 2. Validate Milestones Count (tối thiểu 3 đợt)
+        if (request.Milestones == null
+            || request.Milestones.Count < PaymentPhaseCountConstants.Min
+            || request.Milestones.Count > PaymentPhaseCountConstants.Max)
         {
             throw new ArgumentException(
-                $"Chủ đầu tư chỉ được cấu hình từ 3 đến 6 đợt đóng tiền theo quy định của dự án NOXH. Số đợt gửi lên: {request.Milestones?.Count ?? 0}.");
+                $"Lịch thanh toán phải có từ {PaymentPhaseCountConstants.Min} đợt trở lên (luật không ấn định số đợt; hệ thống nhận tối đa {PaymentPhaseCountConstants.Max} đợt). Số đợt gửi lên: {request.Milestones?.Count ?? 0}.");
         }
 
         var sortedItems = request.Milestones.OrderBy(m => m.PhaseOrder).ToList();
@@ -126,11 +130,19 @@ public class ProjectMilestoneService : IProjectMilestoneService
         // 6. Validate Phase 1 (First payment / Deposit ratio)
         var firstPhase = sortedItems[0];
         var p1Val = firstPhase.Percentage.GetValueOrDefault();
-        if (p1Val > 30.0m)
+        if (p1Val > PaymentScheduleRules.FirstPaymentMaxPercent)
         {
             throw new ArgumentException(
-                $"Tỷ lệ thanh toán Đợt 1 ({p1Val}%) vượt quá mức trần quy định cho NOXH (tối đa 30% giá trị hợp đồng).");
+                $"Ứng trước lần đầu (Đợt 1, gồm tiền đặt cọc nếu có) đang là {p1Val}%. Điều 89 Luật Nhà ở năm 2023: không được vượt quá {PaymentScheduleRules.FirstPaymentMaxPercent:0}% giá trị hợp đồng.");
         }
+
+        PaymentScheduleRules.ValidateRatios(
+            sortedItems.Select(i => (
+                i.PhaseOrder,
+                i.PhaseName ?? $"Đợt {i.PhaseOrder}",
+                i.Percentage.GetValueOrDefault(),
+                i.TriggerEvent ?? string.Empty
+            )).ToList());
 
         // 7. Check if project already has actual PAID installments (lock structural changes)
         var hasPaidInstallments = await _context.PaymentInstallments

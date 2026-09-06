@@ -1,5 +1,88 @@
 namespace RHS.Domain.Constants;
 
+/// <summary>
+/// Số đợt do chủ đầu tư thỏa thuận trong hợp đồng — luật không ấn định số đợt.
+/// Min = 2 vì Điều 89 Luật Nhà ở 2023 bắt giữ lại ít nhất 5% đến khi cấp giấy chứng nhận.
+/// Max là trần kỹ thuật để tránh gửi lịch quá dài.
+/// </summary>
+public static class PaymentPhaseCountConstants
+{
+    public const int Min = 2;
+    public const int Max = 50;
+}
+
+/// <summary>
+/// Trần tỷ lệ thanh toán nhà ở xã hội — Điều 89.1.c Luật Nhà ở 2023.
+/// Số đợt do các bên thỏa thuận, phù hợp tiến độ xây dựng đã phê duyệt.
+/// </summary>
+public static class PaymentScheduleRules
+{
+    /// <summary>Ứng trước lần đầu (gồm tiền đặt cọc nếu có) ≤ 30%.</summary>
+    public const decimal FirstPaymentMaxPercent = 30m;
+
+    /// <summary>Tổng thu đến trước khi bàn giao nhà ≤ 70%.</summary>
+    public const decimal BeforeHandoverMaxPercent = 70m;
+
+    /// <summary>Tổng thu đến trước khi cấp giấy chứng nhận ≤ 95%.</summary>
+    public const decimal BeforeCertificateMaxPercent = 95m;
+
+    /// <summary>Phải giữ lại ít nhất 5% đến khi cấp giấy chứng nhận.</summary>
+    public const decimal RetainedUntilCertificateMinPercent = 5m;
+
+    public static bool IsBeforeHandoverTrigger(string? trigger)
+    {
+        if (string.IsNullOrWhiteSpace(trigger)) return true;
+        var t = trigger.Trim().ToUpperInvariant();
+        return t is TriggerEventConstants.OnLotteryWon
+            or TriggerEventConstants.OnContractSigned
+            or TriggerEventConstants.OnApproved
+            or TriggerEventConstants.ConstructionRoughFloor
+            or TriggerEventConstants.RoofingCompleted;
+    }
+
+    public static bool IsCertificateTrigger(string? trigger) =>
+        string.Equals(trigger, TriggerEventConstants.RedBookIssued, StringComparison.OrdinalIgnoreCase);
+
+    public static void ValidateRatios(
+        IReadOnlyList<(int PhaseOrder, string PhaseName, decimal Percentage, string TriggerEvent)> phases)
+    {
+        decimal beforeHandover = 0m;
+        decimal beforeCertificate = 0m;
+        decimal certificate = 0m;
+
+        foreach (var p in phases)
+        {
+            if (IsCertificateTrigger(p.TriggerEvent))
+            {
+                certificate += p.Percentage;
+                continue;
+            }
+
+            beforeCertificate += p.Percentage;
+            if (IsBeforeHandoverTrigger(p.TriggerEvent))
+                beforeHandover += p.Percentage;
+        }
+
+        if (beforeHandover > BeforeHandoverMaxPercent + 0.001m)
+        {
+            throw new ArgumentException(
+                $"Tổng các đợt trước thời điểm bàn giao đang là {beforeHandover:0.##}%. Điều 89 Luật Nhà ở năm 2023: không được thu quá 70% giá trị hợp đồng đến trước khi bàn giao nhà.");
+        }
+
+        if (beforeCertificate > BeforeCertificateMaxPercent + 0.001m)
+        {
+            throw new ArgumentException(
+                $"Tổng các đợt trước khi cấp giấy chứng nhận đang là {beforeCertificate:0.##}%. Điều 89 Luật Nhà ở năm 2023: không được thu quá 95% đến trước khi cấp giấy chứng nhận.");
+        }
+
+        if (certificate + 0.001m < RetainedUntilCertificateMinPercent)
+        {
+            throw new ArgumentException(
+                "Phải có đợt gắn mốc cấp giấy chứng nhận (sổ hồng) với tỷ lệ tối thiểu 5% giá trị hợp đồng (Điều 89 Luật Nhà ở năm 2023).");
+        }
+    }
+}
+
 /// <summary>Phương thức tính số tiền cho milestone.</summary>
 public static class CalculationTypeConstants
 {
@@ -17,25 +100,25 @@ public static class CalculationTypeConstants
 /// <summary>Sự kiện kích hoạt sinh PaymentInstallment từ milestone template.</summary>
 public static class TriggerEventConstants
 {
-    /// <summary>Khi hồ sơ được SXD phê duyệt (APPROVED) — legacy / tùy chọn</summary>
+    /// <summary>Khi hồ sơ được Sở Xây dựng phê duyệt (APPROVED) — legacy / tùy chọn</summary>
     public const string OnApproved = "ON_APPROVED";
 
-    /// <summary>Khi trúng bốc thăm (WON/PRIORITY_WON) hoặc cấp nhà → Đợt 1 (Cọc - 10%)</summary>
+    /// <summary>Khi trúng bốc thăm hoặc cấp nhà — mở đợt tiền cọc (Đợt 1).</summary>
     public const string OnLotteryWon = "ON_LOTTERY_WON";
 
-    /// <summary>Khi người dân ký hợp đồng mua bán chính thức → Đợt 2 (20%)</summary>
+    /// <summary>Khi người dân ký hợp đồng mua bán — mở các đợt gắn mốc này.</summary>
     public const string OnContractSigned = "ON_CONTRACT_SIGNED";
 
-    /// <summary>Khi CĐT chuyển trạng thái xây dựng xong tầng thô → Đợt 3 (20%)</summary>
+    /// <summary>Khi chủ đầu tư công bố hoàn thành phần thô.</summary>
     public const string ConstructionRoughFloor = "CONSTRUCTION_ROUGH_FLOOR";
 
-    /// <summary>Khi CĐT chuyển trạng thái cất nóc tòa nhà → Đợt 4 (20%)</summary>
+    /// <summary>Khi chủ đầu tư công bố cất nóc công trình.</summary>
     public const string RoofingCompleted = "ROOFING_COMPLETED";
 
-    /// <summary>Khi CĐT chuyển trạng thái bàn giao căn hộ → Đợt 5 (25% + 2% Phí bảo trì)</summary>
+    /// <summary>Khi chủ đầu tư công bố bàn giao nhà.</summary>
     public const string Handover = "HANDOVER";
 
-    /// <summary>Khi CĐT chuyển trạng thái nhận sổ hồng → Đợt 6 (5% còn lại)</summary>
+    /// <summary>Khi chủ đầu tư công bố cấp giấy chứng nhận (sổ hồng).</summary>
     public const string RedBookIssued = "RED_BOOK_ISSUED";
 
     public static readonly IReadOnlyList<string> All = new[]
@@ -54,12 +137,12 @@ public static class TriggerEventConstants
     /// <summary>Map mã thời điểm phát hành sang tên hiển thị tiếng Việt</summary>
     public static string GetDisplayName(string triggerEvent) => triggerEvent switch
     {
-        OnLotteryWon => "Đợt 1 (Cọc - Trúng bốc thăm/Cấp nhà)",
-        OnContractSigned => "Đợt 2 (Ký Hợp đồng mua bán)",
-        ConstructionRoughFloor => "Đợt 3 (Xây dựng xong tầng thô)",
-        RoofingCompleted => "Đợt 4 (Cất nóc tòa nhà)",
-        Handover => "Đợt 5 (Bàn giao nhà & Chìa khóa)",
-        RedBookIssued => "Đợt 6 (Nhận Giấy chứng nhận - Sổ hồng)",
+        OnLotteryWon => "Khi được cấp nhà hoặc trúng bốc thăm",
+        OnContractSigned => "Sau khi ký hợp đồng mua bán",
+        ConstructionRoughFloor => "Khi hoàn thành xây dựng phần thô",
+        RoofingCompleted => "Khi cất nóc công trình",
+        Handover => "Khi bàn giao nhà",
+        RedBookIssued => "Khi cấp giấy chứng nhận (sổ hồng)",
         _ => triggerEvent
     };
 }

@@ -57,7 +57,7 @@ public class InstallmentService : IInstallmentService
 
         await EnsureDefaultMilestonesAsync(app.ProjectId);
 
-        // Tự động sinh hoặc đồng bộ 6 đợt cho hồ sơ
+        // Tự động sinh hoặc đồng bộ lịch đóng tiền theo cấu hình chủ đầu tư
         await EnsureInstallmentsForApplicationAsync(applicationId);
 
         // Trường hợp 1: Khi trúng bốc thăm / cấp nhà (ON_LOTTERY_WON)
@@ -94,38 +94,42 @@ public class InstallmentService : IInstallmentService
             return;
         }
 
-        // Trường hợp 2: Khi Ký Hợp đồng (ON_CONTRACT_SIGNED) → Unlock Đợt 2 (LOCKED → PENDING)
+        // Trường hợp 2: Khi ký hợp đồng → mở các đợt gắn mốc ON_CONTRACT_SIGNED (không mặc định là Đợt 2)
         if (string.Equals(triggerEvent, TriggerEventConstants.OnContractSigned, StringComparison.OrdinalIgnoreCase))
         {
-            var d2Inst = await _db.PaymentInstallments
+            var signedInstallments = await _db.PaymentInstallments
                 .Include(i => i.Milestone)
-                .FirstOrDefaultAsync(i => i.ApplicationId == applicationId && i.Milestone.PhaseOrder == 2);
+                .Where(i => i.ApplicationId == applicationId
+                            && i.Milestone != null
+                            && i.Milestone.TriggerEvent == TriggerEventConstants.OnContractSigned)
+                .OrderBy(i => i.Milestone.PhaseOrder)
+                .ToListAsync();
 
-            if (d2Inst != null)
+            foreach (var inst in signedInstallments)
             {
-                if (d2Inst.Status == InstallmentStatusConstants.Locked)
+                if (inst.Status == InstallmentStatusConstants.Locked)
                 {
-                    d2Inst.Status = InstallmentStatusConstants.Pending;
-                    d2Inst.StartDate = eventDate;
-                    d2Inst.DueDate = eventDate.AddDays(d2Inst.Milestone.DueDays);
-                    d2Inst.UpdatedAt = DateTime.UtcNow;
-
-                    await _db.SaveChangesAsync();
+                    inst.Status = InstallmentStatusConstants.Pending;
+                    inst.StartDate = eventDate;
+                    inst.DueDate = eventDate.AddDays(inst.Milestone.DueDays);
+                    inst.UpdatedAt = DateTime.UtcNow;
                 }
 
                 try
                 {
                     await _notificationService.SendAsync(
                         app.ApplicantId,
-                        "📝 Ký hợp đồng thành công - Mở thanh toán Đợt 2",
-                        $"Ký Hợp đồng thành công. Khoản thanh toán Đợt 2: {d2Inst.Amount:N0} VND. Hạn đóng: {d2Inst.DueDate:dd/MM/yyyy}.",
+                        $"Ký hợp đồng thành công — mở thanh toán {inst.Milestone.PhaseName}",
+                        $"Ký hợp đồng thành công. Khoản thanh toán {inst.Milestone.PhaseName}: {inst.Amount:N0} VND. Hạn đóng: {inst.DueDate:dd/MM/yyyy}.",
                         NotificationTypeConstants.InstallmentCreated);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed notification for D2 installment {Id}", d2Inst.Id);
+                    _logger.LogWarning(ex, "Failed notification for installment {Id} after contract signed", inst.Id);
                 }
             }
+
+            await _db.SaveChangesAsync();
             return;
         }
 
@@ -140,7 +144,7 @@ public class InstallmentService : IInstallmentService
     /// <inheritdoc />
     public async Task<InstallmentSummaryDto?> GetSummaryAsync(Guid applicationId)
     {
-        // Tự động sinh lịch 6 đợt & đồng bộ mở Đợt 2 nếu đã ký hợp đồng
+        // Tự động sinh lịch theo cấu hình dự án & đồng bộ các đợt gắn mốc ký hợp đồng
         await EnsureInstallmentsForApplicationAsync(applicationId);
 
         // Self-heal: payment đã Paid nhưng installment còn PENDING (lỗi history ChangedBy)
@@ -191,6 +195,7 @@ public class InstallmentService : IInstallmentService
                 Id                 = i.Id,
                 PhaseOrder         = i.Milestone?.PhaseOrder ?? 0,
                 PhaseName          = i.Milestone?.PhaseName ?? $"Đợt",
+                TriggerEvent       = i.Milestone?.TriggerEvent ?? string.Empty,
                 Amount             = i.Amount,
                 StartDate          = i.StartDate,
                 DueDate            = i.DueDate,
@@ -1402,8 +1407,8 @@ public class InstallmentService : IInstallmentService
     }
 
     /// <summary>
-    /// Đảm bảo một hồ sơ đã được cấp căn có đầy đủ các đợt đóng tiền (từ 3 đến 6 đợt theo cấu hình dự án của CĐT).
-    /// Tự động đồng bộ Đợt 1 sang PAID nếu đã cọc, và Đợt 2 sang PENDING nếu đã ký hợp đồng.
+    /// Đảm bảo hồ sơ đã cấp căn có đủ các đợt đóng tiền theo cấu hình chủ đầu tư (tối thiểu 3 đợt).
+    /// Đồng bộ Đợt 1 sang PAID nếu đã cọc, và các đợt gắn mốc ký hợp đồng sang PENDING nếu đã ký.
     /// </summary>
     private async Task EnsureInstallmentsForApplicationAsync(Guid applicationId)
     {
@@ -1434,7 +1439,7 @@ public class InstallmentService : IInstallmentService
             .OrderBy(m => m.PhaseOrder)
             .ToListAsync();
 
-        if (milestones.Count < 3)
+        if (milestones.Count < PaymentPhaseCountConstants.Min)
             return;
 
         var existingInstallments = await _db.PaymentInstallments
@@ -1489,9 +1494,8 @@ public class InstallmentService : IInstallmentService
                     status = isD1Paid ? InstallmentStatusConstants.Paid : InstallmentStatusConstants.Pending;
                     if (isD1Paid) paidAt = app.UpdatedAt ?? now;
                 }
-                else if (m.PhaseOrder == 2)
+                else if (string.Equals(m.TriggerEvent, TriggerEventConstants.OnContractSigned, StringComparison.OrdinalIgnoreCase))
                 {
-                    // Đợt 2 tự động mở khi đã ký hợp đồng
                     status = isContractSigned ? InstallmentStatusConstants.Pending : InstallmentStatusConstants.Locked;
                 }
                 else
@@ -1532,13 +1536,16 @@ public class InstallmentService : IInstallmentService
                 modified = true;
             }
 
-            var d2 = existingInstallments.FirstOrDefault(i => i.Milestone.PhaseOrder == 2);
-            if (d2 != null && isContractSigned && d2.Status == InstallmentStatusConstants.Locked)
+            foreach (var signedInst in existingInstallments.Where(i =>
+                         i.Milestone != null
+                         && string.Equals(i.Milestone.TriggerEvent, TriggerEventConstants.OnContractSigned, StringComparison.OrdinalIgnoreCase)
+                         && isContractSigned
+                         && i.Status == InstallmentStatusConstants.Locked))
             {
-                d2.Status = InstallmentStatusConstants.Pending;
-                d2.StartDate = now;
-                d2.DueDate = now.AddDays(d2.Milestone.DueDays);
-                d2.UpdatedAt = now;
+                signedInst.Status = InstallmentStatusConstants.Pending;
+                signedInst.StartDate = now;
+                signedInst.DueDate = now.AddDays(signedInst.Milestone.DueDays);
+                signedInst.UpdatedAt = now;
                 modified = true;
             }
 
@@ -1570,8 +1577,8 @@ public class InstallmentService : IInstallmentService
     }
 
     /// <summary>
-    /// Đảm bảo dự án có ít nhất các đợt đóng tiền mặc định nếu CĐT chưa cấu hình.
-    /// Nếu CĐT đã cấu hình từ 3 đến 6 đợt -> giữ nguyên cấu hình của CĐT.
+    /// Đảm bảo dự án có lịch đóng tiền nếu chủ đầu tư chưa cấu hình.
+    /// Nếu đã có bất kỳ đợt nào do chủ đầu tư nhập thì giữ nguyên (kể cả tên).
     /// </summary>
     private async Task EnsureDefaultMilestonesAsync(Guid projectId)
     {
@@ -1581,18 +1588,14 @@ public class InstallmentService : IInstallmentService
 
         if (allMilestones.Count > 0)
         {
-            // Dự án đã được CĐT cấu hình từ 3 đến 6 đợt -> Giữ nguyên cấu hình CĐT
             return;
         }
 
         var standardConfigs = new (int PhaseOrder, string PhaseName, decimal Pct, string Trigger, int DueDays, string Desc)[]
         {
-            (1, "Đợt 1", 10m, TriggerEventConstants.OnLotteryWon, 7, "Đợt 1 — 10% giá trị căn hộ khi trúng bốc thăm / cấp nhà"),
-            (2, "Đợt 2", 20m, TriggerEventConstants.OnContractSigned, 15, "Đợt 2 — 20% giá trị căn hộ khi ký Hợp đồng mua bán chính thức"),
-            (3, "Đợt 3", 20m, TriggerEventConstants.ConstructionRoughFloor, 30, "Đợt 3 — 20% giá trị căn hộ khi hoàn thành xây thô"),
-            (4, "Đợt 4", 20m, TriggerEventConstants.RoofingCompleted, 30, "Đợt 4 — 20% giá trị căn hộ khi cất nóc tòa nhà"),
-            (5, "Đợt 5", 25m, TriggerEventConstants.Handover, 30, "Đợt 5 — 25% giá trị căn hộ (+ 2% Phí bảo trì) khi bàn giao nhà & chìa khóa"),
-            (6, "Đợt 6", 5m, TriggerEventConstants.RedBookIssued, 30, "Đợt 6 — 5% phần còn lại khi nhận Giấy chứng nhận (Sổ hồng)")
+            (1, "Đợt 1", 20m, TriggerEventConstants.OnLotteryWon, 7, "Đợt 1 — tiền cọc khi được cấp nhà"),
+            (2, "Đợt 2", 50m, TriggerEventConstants.OnContractSigned, 15, "Đợt 2 — sau khi ký hợp đồng mua bán"),
+            (3, "Đợt 3", 30m, TriggerEventConstants.Handover, 15, "Đợt 3 — khi bàn giao nhà")
         };
 
         var now = DateTime.UtcNow;
@@ -1613,7 +1616,7 @@ public class InstallmentService : IInstallmentService
 
         _db.PaymentMilestones.AddRange(newMilestones);
         await _db.SaveChangesAsync();
-        _logger.LogInformation("Seeded default 6-phase payment milestones for Project={ProjectId}.", projectId);
+        _logger.LogInformation("Seeded default {Count}-phase payment milestones for Project={ProjectId}.", newMilestones.Count, projectId);
     }
 
     /// <summary>

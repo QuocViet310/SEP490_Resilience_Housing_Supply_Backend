@@ -78,12 +78,9 @@ public class CreateHousingProjectRequestDto
     public Guid? DeveloperId { get; set; }
 
     /// <summary>
-    /// Cấu hình linh hoạt từ 3 đến 6 đợt đóng tiền cho dự án (Theo đặc tả nghiệp vụ NOXH).
-    /// - Bắt buộc: 3 đến 6 đợt.
-    /// - Tổng %: Đúng bằng 100%.
-    /// - Đợt 1: Tối đa 30% giá trị hợp đồng.
-    /// - Đợt cuối (Sổ hồng): Giữ lại 5%.
-    /// * Lưu ý: Nếu để trống (null), hệ thống sẽ tự động khởi tạo 5 đợt chuẩn theo tiến độ thi công NOXH.
+    /// Lịch đóng tiền do chủ đầu tư thỏa thuận (luật không ấn định số đợt).
+    /// - Tổng % = 100%.
+    /// - Lần đầu (gồm đặt cọc nếu có) ≤ 30%; trước bàn giao ≤ 70%; trước giấy chứng nhận ≤ 95%; giữ lại ≥ 5% đến sổ hồng.
     /// </summary>
     public List<MilestoneSetupItemDto>? Milestones { get; set; }
 }

@@ -114,14 +114,13 @@ public class HousingProjectService : IHousingProjectService
             }
         }
 
-        // Cấu hình 3 đến 6 đợt đóng tiền (nếu CĐT gửi lên) hoặc Seed mặc định 5 đợt chuẩn theo tiến độ thi công NOXH
+        // Dùng lịch chủ đầu tư gửi lên; nếu trống thì tạo 3 đợt tạm để chỉnh sau.
         if (request.Milestones != null && request.Milestones.Count > 0)
         {
             ValidateAndBuildPaymentMilestones(housingProject.Id, request.Milestones, housingProject.PaymentMilestones);
         }
         else
         {
-            // Seed mặc định 5 đợt chuẩn (Đợt 1: 20%, Đợt 2: 20%, Đợt 3: 20%, Đợt 4: 35%, Đợt 5: 5%)
             AddDefaultPercentMilestones(housingProject, 20m);
         }
 
@@ -339,9 +338,10 @@ public class HousingProjectService : IHousingProjectService
         List<RHS.Application.DTOs.Milestone.MilestoneSetupItemDto> milestoneDtos,
         ICollection<PaymentMilestone> targetCollection)
     {
-        if (milestoneDtos.Count < 3 || milestoneDtos.Count > 6)
+        if (milestoneDtos.Count < PaymentPhaseCountConstants.Min || milestoneDtos.Count > PaymentPhaseCountConstants.Max)
         {
-            throw new ArgumentException($"Dự án NOXH phải có từ 3 đến 6 đợt đóng tiền (Hiện tại có {milestoneDtos.Count} đợt).");
+            throw new ArgumentException(
+                $"Lịch thanh toán phải có từ {PaymentPhaseCountConstants.Min} đợt trở lên (luật không ấn định số đợt; hệ thống nhận tối đa {PaymentPhaseCountConstants.Max} đợt). Hiện tại có {milestoneDtos.Count} đợt.");
         }
 
         var sortedItems = milestoneDtos.OrderBy(m => m.PhaseOrder).ToList();
@@ -384,10 +384,19 @@ public class HousingProjectService : IHousingProjectService
         }
 
         var p1 = sortedItems[0].Percentage.GetValueOrDefault();
-        if (p1 > 30.0m)
+        if (p1 > PaymentScheduleRules.FirstPaymentMaxPercent)
         {
-            throw new ArgumentException($"Tỷ lệ thanh toán Đợt 1 ({p1}%) vượt quá mức trần quy định cho NOXH (tối đa 30% giá trị hợp đồng).");
+            throw new ArgumentException(
+                $"Ứng trước lần đầu (Đợt 1, gồm tiền đặt cọc nếu có) đang là {p1}%. Điều 89 Luật Nhà ở năm 2023: không được vượt quá {PaymentScheduleRules.FirstPaymentMaxPercent:0}% giá trị hợp đồng.");
         }
+
+        PaymentScheduleRules.ValidateRatios(
+            sortedItems.Select(i => (
+                i.PhaseOrder,
+                i.PhaseName ?? $"Đợt {i.PhaseOrder}",
+                i.Percentage.GetValueOrDefault(),
+                i.TriggerEvent ?? string.Empty
+            )).ToList());
 
         targetCollection.Clear();
         foreach (var item in sortedItems)
@@ -512,21 +521,22 @@ public class HousingProjectService : IHousingProjectService
     private static void AddDefaultPercentMilestones(HousingProject project, decimal phase1Pct = 20m)
     {
         var p1 = Math.Clamp(phase1Pct, 10m, 30m);
+        var p2 = 50m;
+        var p3 = 100m - p1 - p2;
         var now = DateTime.UtcNow;
 
-        // Seed 5 đợt chuẩn theo tiến độ thi công NOXH:
-        // Đợt 1 (Cọc/Ký HĐ): 20%, Đợt 2 (Xây thô): 20%, Đợt 3 (Cất nóc): 20%, Đợt 4 (Bàn giao): 35%, Đợt 5 (Sổ hồng): 5%
+        // Chỉ dùng khi chủ đầu tư không gửi lịch. Tên generic — chủ đầu tư nên nhập lại khi chỉnh dự án.
         project.PaymentMilestones.Add(new PaymentMilestone
         {
             Id              = Guid.NewGuid(),
             ProjectId       = project.Id,
             PhaseOrder      = 1,
-            PhaseName       = "Đợt 1 — Đặt cọc & Ký Hợp đồng",
+            PhaseName       = "Đợt 1",
             CalculationType = CalculationTypeConstants.Percentage,
             Percentage      = p1,
-            TriggerEvent    = TriggerEventConstants.OnContractSigned,
-            DueDays         = 15,
-            Description     = $"Đợt 1 — {p1:0.##}% giá trị căn hộ khi ký Hợp đồng mua bán chính thức",
+            TriggerEvent    = TriggerEventConstants.OnLotteryWon,
+            DueDays         = 7,
+            Description     = $"Đợt 1 — {p1:0.##}% giá trị căn (tiền cọc khi được cấp nhà)",
             IsActive        = true,
             CreatedAt       = now
         });
@@ -536,12 +546,12 @@ public class HousingProjectService : IHousingProjectService
             Id              = Guid.NewGuid(),
             ProjectId       = project.Id,
             PhaseOrder      = 2,
-            PhaseName       = "Đợt 2 — Hoàn thành sàn thô",
+            PhaseName       = "Đợt 2",
             CalculationType = CalculationTypeConstants.Percentage,
-            Percentage      = 20m,
-            TriggerEvent    = TriggerEventConstants.ConstructionRoughFloor,
-            DueDays         = 30,
-            Description     = "Đợt 2 — 20% giá trị căn hộ khi hoàn thành phần khung bê tông cốt thép",
+            Percentage      = p2,
+            TriggerEvent    = TriggerEventConstants.OnContractSigned,
+            DueDays         = 15,
+            Description     = $"Đợt 2 — {p2:0.##}% giá trị căn sau khi ký hợp đồng mua bán",
             IsActive        = true,
             CreatedAt       = now
         });
@@ -551,43 +561,12 @@ public class HousingProjectService : IHousingProjectService
             Id              = Guid.NewGuid(),
             ProjectId       = project.Id,
             PhaseOrder      = 3,
-            PhaseName       = "Đợt 3 — Cất nóc tòa nhà",
+            PhaseName       = "Đợt 3",
             CalculationType = CalculationTypeConstants.Percentage,
-            Percentage      = 20m,
-            TriggerEvent    = TriggerEventConstants.RoofingCompleted,
-            DueDays         = 30,
-            Description     = "Đợt 3 — 20% giá trị căn hộ khi hoàn thành cất nóc toàn bộ công trình",
-            IsActive        = true,
-            CreatedAt       = now
-        });
-
-        var p4 = 100m - (p1 + 20m + 20m + 5m); // 35% nếu p1=20
-        project.PaymentMilestones.Add(new PaymentMilestone
-        {
-            Id              = Guid.NewGuid(),
-            ProjectId       = project.Id,
-            PhaseOrder      = 4,
-            PhaseName       = "Đợt 4 — Bàn giao nhà & Chìa khóa",
-            CalculationType = CalculationTypeConstants.Percentage,
-            Percentage      = p4,
+            Percentage      = p3,
             TriggerEvent    = TriggerEventConstants.Handover,
-            DueDays         = 30,
-            Description     = $"Đợt 4 — {p4:0.##}% giá trị căn hộ khi nhận bàn giao thực tế và chìa khóa nhà",
-            IsActive        = true,
-            CreatedAt       = now
-        });
-
-        project.PaymentMilestones.Add(new PaymentMilestone
-        {
-            Id              = Guid.NewGuid(),
-            ProjectId       = project.Id,
-            PhaseOrder      = 5,
-            PhaseName       = "Đợt 5 — Nhận Giấy chứng nhận (Sổ hồng)",
-            CalculationType = CalculationTypeConstants.Percentage,
-            Percentage      = 5m,
-            TriggerEvent    = TriggerEventConstants.RedBookIssued,
-            DueDays         = 30,
-            Description     = "Đợt 5 — 5% giá trị còn lại khi cơ quan nhà nước bàn giao Giấy chứng nhận quyền sở hữu",
+            DueDays         = 15,
+            Description     = $"Đợt 3 — {p3:0.##}% giá trị căn khi bàn giao nhà",
             IsActive        = true,
             CreatedAt       = now
         });

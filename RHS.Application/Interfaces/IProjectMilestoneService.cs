@@ -3,7 +3,7 @@ using RHS.Application.DTOs.Milestone;
 namespace RHS.Application.Interfaces;
 
 /// <summary>
-/// Service quản lý cấu hình các đợt thanh toán (3 - 6 đợt) cho dự án NOXH.
+/// Service quản lý lịch thanh toán do chủ đầu tư thỏa thuận (số đợt không cố định).
 /// </summary>
 public interface IProjectMilestoneService
 {
@@ -15,8 +15,8 @@ public interface IProjectMilestoneService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Thiết lập / Cập nhật trọn gói 3 đến 6 đợt đóng tiền cho dự án (CĐT / Admin).
-    /// Thực thi kiểm tra toàn bộ các validation nghiệp vụ (3-6 đợt, tổng 100%, tỷ lệ đợt 1, đợt sổ hồng, thứ tự liên tục...).
+    /// Thiết lập / cập nhật các đợt đóng tiền do chủ đầu tư nhập (tên, tỷ lệ, mốc mở).
+    /// Kiểm tra Điều 89 Luật Nhà ở 2023 (30% / 70% / 95% / giữ 5%), tổng 100%, thứ tự liên tục.
     /// </summary>
     Task<ProjectMilestonesResponseDto> ConfigureProjectMilestonesAsync(
         Guid projectId,

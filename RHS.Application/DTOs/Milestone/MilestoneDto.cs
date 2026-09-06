@@ -36,13 +36,14 @@ public class CreateMilestoneDto
 }
 
 /// <summary>
-/// DTO thiết lập / cấu hình trọn gói 3 đến 6 đợt đóng tiền cho dự án.
+/// DTO thiết lập lịch đóng tiền. Số đợt do chủ đầu tư thỏa thuận (luật không ấn định).
+/// Tên từng đợt do chủ đầu tư nhập.
 /// </summary>
 public class ConfigureProjectMilestonesRequestDto
 {
     [Required(ErrorMessage = "Danh sách đợt thanh toán không được để trống.")]
-    [MinLength(3, ErrorMessage = "Dự án NOXH phải có tối thiểu 3 đợt đóng tiền.")]
-    [MaxLength(6, ErrorMessage = "Dự án NOXH được cấu hình tối đa 6 đợt đóng tiền.")]
+    [MinLength(2, ErrorMessage = "Cần ít nhất 2 đợt: lần đầu và phần giữ lại đến khi cấp giấy chứng nhận.")]
+    [MaxLength(50, ErrorMessage = "Hệ thống nhận tối đa 50 đợt thanh toán.")]
     public List<MilestoneSetupItemDto> Milestones { get; set; } = new();
 }
 
@@ -51,7 +52,7 @@ public class ConfigureProjectMilestonesRequestDto
 /// </summary>
 public class MilestoneSetupItemDto
 {
-    [Range(1, 6, ErrorMessage = "Thứ tự đợt thanh toán từ 1 đến 6.")]
+    [Range(1, 50, ErrorMessage = "Thứ tự đợt thanh toán từ 1 đến 50.")]
     public int PhaseOrder { get; set; }
 
     [Required(ErrorMessage = "Tên đợt thanh toán không được để trống.")]

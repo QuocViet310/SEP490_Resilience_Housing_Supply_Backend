@@ -8,7 +8,7 @@ using System.Security.Claims;
 namespace RHS.API.Controllers;
 
 /// <summary>
-/// API Quản lý và Thiết lập các Đợt thanh toán (3 đến 6 đợt) cho dự án NOXH.
+/// API quản lý lịch thanh toán do chủ đầu tư thỏa thuận (số đợt không cố định).
 /// Prefix: /api/housing-projects/{projectId}/milestones
 /// </summary>
 [ApiController]
@@ -52,14 +52,9 @@ public class ProjectMilestonesController : ControllerBase
     }
 
     /// <summary>
-    /// [HousingDeveloper / Admin] Thiết lập / Cập nhật trọn gói 3 đến 6 đợt đóng tiền cho dự án.
-    /// Yêu cầu:
-    ///   - Bắt buộc từ 3 đến 6 đợt đóng tiền.
-    ///   - Tổng tỷ lệ % của tất cả các đợt phải đúng bằng 100%.
-    ///   - Đợt 1 tối đa 30% theo quy định NOXH.
-    ///   - Đợt cuối (Sổ hồng) giữ lại 5%.
-    ///   - Thứ tự đợt liên tục từ 1..N.
-    ///   - Sự kiện kích hoạt hợp lệ (ON_LOTTERY_WON, ON_CONTRACT_SIGNED, CONSTRUCTION_ROUGH_FLOOR, ROOFING_COMPLETED, HANDOVER, RED_BOOK_ISSUED).
+    /// [HousingDeveloper / Admin] Thiết lập lịch đóng tiền do chủ đầu tư thỏa thuận (số đợt không cố định).
+    /// Yêu cầu Điều 89 Luật Nhà ở 2023: lần đầu ≤ 30%, trước bàn giao ≤ 70%, trước giấy chứng nhận ≤ 95%, giữ ≥ 5% đến sổ hồng.
+    /// Tổng % = 100%. Tên từng đợt do chủ đầu tư nhập. Thứ tự liên tục 1..N.
     /// </summary>
     [HttpPut]
     [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.DepartmentOfConstruction}")]

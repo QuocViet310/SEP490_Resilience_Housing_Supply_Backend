@@ -11,6 +11,9 @@ public class InstallmentDto
 
     public string PhaseName { get; set; } = string.Empty;
 
+    /// <summary>Mốc kích hoạt do chủ đầu tư cấu hình (ON_LOTTERY_WON, HANDOVER, ...).</summary>
+    public string TriggerEvent { get; set; } = string.Empty;
+
     /// <summary>Số tiền gốc đợt thu (VND)</summary>
     public decimal Amount { get; set; }
 
