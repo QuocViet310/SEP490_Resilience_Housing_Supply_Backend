@@ -40,23 +40,22 @@ Tất cả dự án gắn CĐT demo, đã `IsConfirmed`, có `PublicAnnounceAt` 
 
 Hồ sơ gắn dự án **NOXH Bình Minh — Thủ Đức** (1 TK = 1 hồ sơ). Tài khoản trống: `dan.free@rhs.local`.
 
-### 11 Tài khoản người dân đã xác minh danh tính (Dùng test hệ thống)
+### 10 Tài khoản người dân mẫu đã xác minh danh tính đầy đủ (Dùng test hệ thống)
 
-Tất cả đều có mật khẩu: `123456`, trạng thái `Active`, đã có thông tin CCCD, Ngày sinh, Địa chỉ, SĐT, chưa gắn hồ sơ nào (có thể dùng để test nộp hồ sơ vào bất kỳ dự án nào):
+Tất cả đều có mật khẩu: `123456`, trạng thái `Active`, **đã hoàn tất eKYC & xác thực CCCD đầy đủ** (họ tên, CCCD, ngày sinh, giới tính, quê quán, địa chỉ, nghề nghiệp, tình trạng hôn nhân, thu nhập, nhóm ưu tiên), **chưa gắn hồ sơ nào** (có thể dùng để test nộp hồ sơ trực tiếp vào bất kỳ dự án nào):
 
-| Email | Họ và tên | Số CCCD | Số điện thoại | Ngày sinh | Địa chỉ |
-|---|---|---|---|---|---|
-| `dan.test01@rhs.local` | Nguyễn Văn An | `079095000001` | `0908000001` | 15/01/1995 | 123 Nguyễn Thị Minh Khai, P. Bến Thành, Q.1, TP.HCM |
-| `dan.test02@rhs.local` | Trần Thị Bình | `079093000002` | `0908000002` | 20/04/1993 | 456 Lê Duẩn, P. Bến Nghé, Q.1, TP.HCM |
-| `dan.test03@rhs.local` | Lê Hoàng Cường | `079090000003` | `0908000003` | 10/09/1990 | 789 Điện Biên Phủ, P. 25, Bình Thạnh, TP.HCM |
-| `dan.test04@rhs.local` | Phạm Thị Dung | `079096000004` | `0908000004` | 05/12/1996 | 101 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM |
-| `dan.test05@rhs.local` | Hoàng Văn Em | `079088000005` | `0908000005` | 25/03/1988 | 202 Quang Trung, P. 10, Gò Vấp, TP.HCM |
-| `dan.test06@rhs.local` | Võ Thị Hạnh | `079097000006` | `0908000006` | 18/06/1997 | 303 Cách Mạng Tháng 8, P. 12, Q.10, TP.HCM |
-| `dan.test07@rhs.local` | Đặng Quốc Hùng | `079091000007` | `0908000007` | 30/11/1991 | 404 Hoàng Văn Thụ, P. 4, Tân Bình, TP.HCM |
-| `dan.test08@rhs.local` | Bùi Mai Linh | `079094000008` | `0908000008` | 14/08/1994 | 505 Nguyễn Văn Linh, P. Tân Phong, Q.7, TP.HCM |
-| `dan.test09@rhs.local` | Ngô Thanh Nam | `079092000009` | `0908000009` | 28/02/1992 | 606 Kinh Dương Vương, P. An Lạc, Bình Tân, TP.HCM |
-| `dan.test10@rhs.local` | Đỗ Phương Oanh | `079099000010` | `0908000010` | 08/10/1999 | 707 Nguyễn Oanh, P. 17, Gò Vấp, TP.HCM |
-| `dan.test11@rhs.local` | Trần Quốc Phong | `079098000011` | `0908000011` | 20/05/1998 | 808 Phạm Văn Đồng, P. 1, Gò Vấp, TP.HCM |
+| Email | Họ và tên | Giới tính | Số CCCD | Số ĐT | Ngày sinh | Quê quán | Địa chỉ thường trú | Nghề nghiệp | Thu nhập/tháng | Nhóm ưu tiên |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `dan.test01@rhs.local` | Nguyễn Văn An | Nam | `079095000001` | `0908000001` | 15/01/1995 | Hà Nội | 123 Nguyễn Thị Minh Khai, P. Bến Thành, Q.1, TP.HCM | Công nhân | 8.500.000 đ | Hộ nghèo đô thị |
+| `dan.test02@rhs.local` | Trần Thị Bình | Nữ | `079093000002` | `0908000002` | 20/04/1993 | Nam Định | 456 Lê Duẩn, P. Bến Nghé, Q.1, TP.HCM | Nhân viên văn phòng | 9.000.000 đ | Hộ cận nghèo |
+| `dan.test03@rhs.local` | Lê Hoàng Cường | Nam | `079090000003` | `0908000003` | 10/09/1990 | Đà Nẵng | 789 Điện Biên Phủ, P. 25, Bình Thạnh, TP.HCM | Kỹ thuật viên | 9.500.000 đ | Thu nhập thấp đô thị |
+| `dan.test04@rhs.local` | Phạm Thị Dung | Nữ | `079096000004` | `0908000004` | 05/12/1996 | Nghệ An | 101 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM | Công nhân KCN | 10.000.000 đ | Công nhân / NLĐ KCN |
+| `dan.test05@rhs.local` | Hoàng Văn Em | Nam | `079088000005` | `0908000005` | 25/03/1988 | Thanh Hóa | 202 Quang Trung, P. 10, Gò Vấp, TP.HCM | Lao động tự do | 7.800.000 đ | Hộ nghèo đô thị |
+| `dan.test06@rhs.local` | Võ Thị Hạnh | Nữ | `079097000006` | `0908000006` | 18/06/1997 | Long An | 303 Cách Mạng Tháng 8, P. 12, Q.10, TP.HCM | Nhân viên bán hàng | 8.900.000 đ | Thu nhập thấp đô thị |
+| `dan.test07@rhs.local` | Đặng Quốc Hùng | Nam | `079091000007` | `0908000007` | 30/11/1991 | Bình Định | 404 Hoàng Văn Thụ, P. 4, Tân Bình, TP.HCM | Kỹ sư công nghệ | 10.500.000 đ | Công nhân / NLĐ KCN |
+| `dan.test08@rhs.local` | Bùi Mai Linh | Nữ | `079094000008` | `0908000008` | 14/08/1994 | Tiền Giang | 505 Nguyễn Văn Linh, P. Tân Phong, Q.7, TP.HCM | Kế toán viên | 9.200.000 đ | Hộ cận nghèo |
+| `dan.test09@rhs.local` | Ngô Thanh Nam | Nam | `079092000009` | `0908000009` | 28/02/1992 | Cần Thơ | 606 Kinh Dương Vương, P. An Lạc, Bình Tân, TP.HCM | Tài xế công nghệ | 8.000.000 đ | Hộ nghèo đô thị |
+| `dan.test10@rhs.local` | Đỗ Phương Oanh | Nữ | `079099000010` | `0908000010` | 08/10/1999 | Đồng Nai | 707 Nguyễn Oanh, P. 17, Gò Vấp, TP.HCM | Dược sĩ | 8.300.000 đ | Thu nhập thấp đô thị |
 
 ## Code
 
