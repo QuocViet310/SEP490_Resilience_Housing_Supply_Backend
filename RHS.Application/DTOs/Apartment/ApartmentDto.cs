@@ -90,7 +90,7 @@ public class CreateApartmentDto
     [Range(1.0, 99.0, ErrorMessage = "Tỷ lệ đồng sở hữu phải từ 1% đến 99%.")]
     public decimal? CoOwnershipRatio { get; set; }
 
-    [Range(1000000, 100000000000, ErrorMessage = "Giá bán phải lớn hơn 1.000.000 VND.")]
+    [Range(100000, 100000000000, ErrorMessage = "Giá bán tối thiểu 100.000 VND.")]
     public decimal Price { get; set; }
 
     public Guid? ApartmentTypeId { get; set; }
@@ -146,7 +146,7 @@ public class UpdateApartmentDto
     [Range(1.0, 99.0, ErrorMessage = "Tỷ lệ đồng sở hữu phải từ 1% đến 99%.")]
     public decimal? CoOwnershipRatio { get; set; }
 
-    [Range(1000000, 100000000000, ErrorMessage = "Giá bán phải lớn hơn 1.000.000 VND.")]
+    [Range(100000, 100000000000, ErrorMessage = "Giá bán tối thiểu 100.000 VND.")]
     public decimal Price { get; set; }
 
     public Guid? ApartmentTypeId { get; set; }

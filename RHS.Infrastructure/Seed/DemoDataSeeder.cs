@@ -86,6 +86,14 @@ public static class DemoDataSeeder
             logger?.LogError(ex, "{Msg}", msg);
         }
 
+        try { await ScaleVnPaySandboxPricesAsync(db, logger, ct); }
+        catch (Exception ex)
+        {
+            var msg = $"ScaleVnPaySandboxPricesAsync: {ex.InnerException?.Message ?? ex.Message}";
+            result.Errors.Add(msg);
+            logger?.LogError(ex, "{Msg}", msg);
+        }
+
         return result;
     }
 
@@ -438,13 +446,14 @@ public static class DemoDataSeeder
             .Where(p => p.AvailableUnits > 0)
             .ToList();
 
+        // Giá giả lập: chia 1000 so với giá thật — sandbox VNPay ≤ 150 triệu/lần.
         var templates = new (string UnitName, double Area, decimal Price)[]
         {
-            ("A-101", 38.5, 720_000_000m),
-            ("A-205", 45.2, 860_000_000m),
-            ("B-312", 52.0, 980_000_000m),
-            ("B-408", 58.7, 1_120_000_000m),
-            ("C-501", 66.3, 1_280_000_000m),
+            ("A-101", 38.5, 720_000m),
+            ("A-205", 45.2, 860_000m),
+            ("B-312", 52.0, 980_000m),
+            ("B-408", 58.7, 1_120_000m),
+            ("C-501", 66.3, 1_280_000m),
         };
 
         var added = 0;
@@ -493,6 +502,68 @@ public static class DemoDataSeeder
             logger?.LogInformation("Demo seed: apartments +{Count}.", added);
 
         return added;
+    }
+
+    /// <summary>
+    /// Giả lập VNPay không nhận quá 150 triệu/lần. Giá căn kiểu 850.000.000
+    /// chia 1.000 → 850.000; đợt thanh toán và giao dịch Pending đi cùng.
+    /// Idempotent: chỉ đụng bản ghi còn ≥ 150 triệu.
+    /// </summary>
+    private static async Task ScaleVnPaySandboxPricesAsync(AppDbContext db, ILogger? logger, CancellationToken ct)
+    {
+        const decimal sandboxMax = 150_000_000m;
+        const decimal scale = 1000m;
+
+        var apartments = await db.Apartments.Where(a => a.Price >= sandboxMax).ToListAsync(ct);
+        var projects = await db.HousingProjects
+            .Where(p => p.MinPrice >= sandboxMax || p.MaxPrice >= sandboxMax)
+            .ToListAsync(ct);
+
+        if (apartments.Count == 0 && projects.Count == 0)
+            return;
+
+        var scaledAptIds = apartments.Select(a => a.Id).ToList();
+        foreach (var apt in apartments)
+            apt.Price = Math.Round(apt.Price / scale, 0, MidpointRounding.AwayFromZero);
+
+        foreach (var project in projects)
+        {
+            if (project.MinPrice >= sandboxMax)
+                project.MinPrice = Math.Round(project.MinPrice / scale, 0, MidpointRounding.AwayFromZero);
+            if (project.MaxPrice >= sandboxMax)
+                project.MaxPrice = Math.Round(project.MaxPrice / scale, 0, MidpointRounding.AwayFromZero);
+        }
+
+        var appIds = scaledAptIds.Count == 0
+            ? new List<Guid>()
+            : await db.HousingApplications
+                .Where(a => a.ApartmentId.HasValue && scaledAptIds.Contains(a.ApartmentId.Value))
+                .Select(a => a.ApplicationId)
+                .ToListAsync(ct);
+
+        var installments = await db.PaymentInstallments
+            .Where(i => i.Amount >= sandboxMax || appIds.Contains(i.ApplicationId))
+            .ToListAsync(ct);
+        foreach (var inst in installments)
+        {
+            if (inst.Amount >= 1_000m)
+                inst.Amount = Math.Round(inst.Amount / scale, 0, MidpointRounding.AwayFromZero);
+        }
+
+        var payments = await db.Payments
+            .Where(p => p.Amount >= sandboxMax
+                        || (p.ApplicationId.HasValue && appIds.Contains(p.ApplicationId.Value)))
+            .ToListAsync(ct);
+        foreach (var payment in payments)
+        {
+            if (payment.Amount >= 1_000m)
+                payment.Amount = Math.Round(payment.Amount / scale, 0, MidpointRounding.AwayFromZero);
+        }
+
+        await db.SaveChangesAsync(ct);
+        logger?.LogInformation(
+            "VNPay sandbox scale /1000: apartments={Apts}, projects={Projects}, installments={Inst}, payments={Pay}.",
+            apartments.Count, projects.Count, installments.Count, payments.Count);
     }
 
     private static async Task<int> EnsureDemoImagesAsync(
@@ -670,7 +741,7 @@ public static class DemoDataSeeder
         [
             (
                 Make(p1, "NOXH Bình Minh — Thủ Đức", "Thành phố Hồ Chí Minh", "Phường Thủ Đức", "Phường Thủ Đức",
-                    "12 Đại lộ Mai Chí Thọ", openId, 2, 720_000_000m, 1_280_000_000m, 38, 67,
+                    "12 Đại lộ Mai Chí Thọ", openId, 2, 720_000m, 1_280_000m, 38, 67,
                     now.AddDays(-10), now.AddDays(60), now.AddDays(-40),
                     "Dự án OPEN demo Thủ Đức — đang nhận hồ sơ."),
                 Quotas(p1, 2),
@@ -678,7 +749,7 @@ public static class DemoDataSeeder
             ),
             (
                 Make(p2, "NOXH An Phú — Thủ Đức", "Thành phố Hồ Chí Minh", "Phường An Phú", "Phường An Phú",
-                    "88 Đường Song Hành", openId, 5, 720_000_000m, 1_280_000_000m, 38, 67,
+                    "88 Đường Song Hành", openId, 5, 720_000m, 1_280_000m, 38, 67,
                     now.AddDays(-5), now.AddDays(90), now.AddDays(-35),
                     "Dự án OPEN demo khu An Phú (TP.HCM)."),
                 Quotas(p2, 5),
@@ -686,7 +757,7 @@ public static class DemoDataSeeder
             ),
             (
                 Make(p3, "NOXH Bình Tân — An Lạc", "Thành phố Hồ Chí Minh", "Phường An Lạc", "Phường An Lạc",
-                    "45 Đường Kinh Dương Vương", openId, 4, 720_000_000m, 1_120_000_000m, 38, 59,
+                    "45 Đường Kinh Dương Vương", openId, 4, 720_000m, 1_120_000m, 38, 59,
                     now.AddDays(-3), now.AddDays(45), now.AddDays(-33),
                     "Dự án OPEN demo Bình Tân (TP.HCM)."),
                 Quotas(p3, 4),
@@ -694,7 +765,7 @@ public static class DemoDataSeeder
             ),
             (
                 Make(p4, "NOXH Phước Long — Thủ Đức", "Thành phố Hồ Chí Minh", "Phường Phước Long", "Phường Phước Long",
-                    "210 Đường Đỗ Xuân Hợp", openId, 4, 720_000_000m, 1_120_000_000m, 38, 59,
+                    "210 Đường Đỗ Xuân Hợp", openId, 4, 720_000m, 1_120_000m, 38, 59,
                     now.AddDays(-1), now.AddDays(30), now.AddDays(-31),
                     "Dự án OPEN số suất ít — test oversubscribe."),
                 Quotas(p4, 4),
@@ -702,7 +773,7 @@ public static class DemoDataSeeder
             ),
             (
                 Make(p7, "NOXH Nhà Ở Xã Hội — Tân Thuận", "Thành phố Hồ Chí Minh", "Phường Tân Thuận", "Phường Tân Thuận",
-                    "120 Nguyễn Văn Linh", openId, 5, 720_000_000m, 1_280_000_000m, 38, 67,
+                    "120 Nguyễn Văn Linh", openId, 5, 720_000m, 1_280_000m, 38, 67,
                     now.AddDays(-7), now.AddDays(75), now.AddDays(-38),
                     "Dự án OPEN Tân Thuận — test filter phường + sort giá."),
                 Quotas(p7, 5),
@@ -710,7 +781,7 @@ public static class DemoDataSeeder
             ),
             (
                 Make(p8, "NOXH Nhà Ở Xã Hội — Trung Mỹ Tây", "Thành phố Hồ Chí Minh", "Phường Trung Mỹ Tây", "Phường Trung Mỹ Tây",
-                    "55 Quốc lộ 1A", openId, 4, 720_000_000m, 1_120_000_000m, 38, 59,
+                    "55 Quốc lộ 1A", openId, 4, 720_000m, 1_120_000m, 38, 59,
                     now.AddDays(-2), now.AddDays(50), now.AddDays(-32),
                     "Dự án OPEN Trung Mỹ Tây — giá thấp hơn để test sort."),
                 Quotas(p8, 4),
@@ -718,7 +789,7 @@ public static class DemoDataSeeder
             ),
             (
                 Make(p5, "NOXH Tân Phú — Sắp mở", "Thành phố Hồ Chí Minh", "Phường Tân Sơn Nhì", "Phường Tân Sơn Nhì",
-                    "15 Đường Lũy Bán Bích", upcomingId, 5, 720_000_000m, 1_280_000_000m, 38, 67,
+                    "15 Đường Lũy Bán Bích", upcomingId, 5, 720_000m, 1_280_000m, 38, 67,
                     now.AddDays(7), now.AddDays(70), now.AddDays(-5),
                     "Dự án UPCOMING — chưa mở đăng ký (mobile sẽ ẩn)."),
                 Quotas(p5, 5),

@@ -66,7 +66,7 @@ public class VnPayService : IVnPayService
         vnpay.AddRequestData("vnp_Version", VnpVersion);
         vnpay.AddRequestData("vnp_Command", VnpCommand);
         vnpay.AddRequestData("vnp_TmnCode", tmnCode);
-        vnpay.AddRequestData("vnp_Amount", ((long)(request.Amount * 100)).ToString());
+        vnpay.AddRequestData("vnp_Amount", ((long)(ToSandboxAmount(request.Amount) * 100)).ToString());
         vnpay.AddRequestData("vnp_CreateDate", now.ToString("yyyyMMddHHmmss"));
         vnpay.AddRequestData("vnp_CurrCode", VnpCurrCode);
         vnpay.AddRequestData("vnp_IpAddr", GetClientIpAddress(context));
@@ -79,10 +79,22 @@ public class VnPayService : IVnPayService
         var paymentUrl = vnpay.CreateRequestUrl(baseUrl, hashSecret);
 
         _logger.LogInformation(
-            "VNPay URL Generated: TmnCode={TmnCode}, OrderId={OrderId}, PaymentUrl={PaymentUrl}",
-            tmnCode, request.OrderId, paymentUrl);
+            "VNPay URL Generated: TmnCode={TmnCode}, OrderId={OrderId}, Amount={Amount}, PaymentUrl={PaymentUrl}",
+            tmnCode, request.OrderId, ToSandboxAmount(request.Amount), paymentUrl);
 
         return paymentUrl;
+    }
+
+    /// <summary>
+    /// Sandbox VNPay từ chối giao dịch &gt; 150 triệu. Giá demo 850.000.000 → 850.000.
+    /// </summary>
+    private static decimal ToSandboxAmount(decimal amount)
+    {
+        const decimal sandboxMax = 150_000_000m;
+        var scaled = amount;
+        while (scaled > sandboxMax)
+            scaled = Math.Round(scaled / 1000m, 0, MidpointRounding.AwayFromZero);
+        return scaled;
     }
 
     /// <inheritdoc/>
