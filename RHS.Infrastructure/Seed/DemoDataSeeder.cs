@@ -32,12 +32,27 @@ public static class DemoDataSeeder
 
     public static async Task EnsureSeededAsync(AppDbContext db, ILogger? logger = null, CancellationToken ct = default)
     {
-        await EnsureApartmentTypesAsync(db, logger, ct);
-        await EnsureProjectStatusesAsync(db, logger, ct);
-        var developer = await EnsureDemoStaffAsync(db, logger, ct);
-        await EnsureDemoProjectsAsync(db, developer.Id, logger, ct);
-        await RepairOrphanProjectDeveloperIdsAsync(db, developer.Id, logger, ct);
-        await EnsureDemoApplicantsAndApplicationsAsync(db, logger, ct);
+        try { await EnsureApartmentTypesAsync(db, logger, ct); }
+        catch (Exception ex) { logger?.LogError(ex, "Demo seed: error in EnsureApartmentTypesAsync"); }
+
+        try { await EnsureProjectStatusesAsync(db, logger, ct); }
+        catch (Exception ex) { logger?.LogError(ex, "Demo seed: error in EnsureProjectStatusesAsync"); }
+
+        User? developer = null;
+        try { developer = await EnsureDemoStaffAsync(db, logger, ct); }
+        catch (Exception ex) { logger?.LogError(ex, "Demo seed: error in EnsureDemoStaffAsync"); }
+
+        if (developer != null)
+        {
+            try { await EnsureDemoProjectsAsync(db, developer.Id, logger, ct); }
+            catch (Exception ex) { logger?.LogError(ex, "Demo seed: error in EnsureDemoProjectsAsync"); }
+
+            try { await RepairOrphanProjectDeveloperIdsAsync(db, developer.Id, logger, ct); }
+            catch (Exception ex) { logger?.LogError(ex, "Demo seed: error in RepairOrphanProjectDeveloperIdsAsync"); }
+        }
+
+        try { await EnsureDemoApplicantsAndApplicationsAsync(db, logger, ct); }
+        catch (Exception ex) { logger?.LogError(ex, "Demo seed: error in EnsureDemoApplicantsAndApplicationsAsync"); }
     }
 
     private static async Task EnsureApartmentTypesAsync(AppDbContext db, ILogger? logger, CancellationToken ct)
@@ -689,8 +704,7 @@ public static class DemoDataSeeder
         var projectExists = await db.HousingProjects.AnyAsync(p => p.Id == projectId && !p.IsDeleted, ct);
         if (!projectExists)
         {
-            logger?.LogWarning("Demo seed: project Bình Minh missing — skip applicants/applications.");
-            return;
+            logger?.LogWarning("Demo seed: project Bình Minh missing — will still seed applicant users but skip demo applications.");
         }
 
         var roleExists = await db.Roles.AnyAsync(r => r.Id == RoleConstants.ApplicantId, ct);
@@ -785,7 +799,7 @@ public static class DemoDataSeeder
                 }
             }
 
-            if (def.SkipApplication)
+            if (def.SkipApplication || !projectExists)
                 continue;
 
             var app = await db.HousingApplications
