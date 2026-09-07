@@ -124,31 +124,23 @@ public class HousingApplicationRepository : IHousingApplicationRepository
 
     public async Task<bool> ExistsByApplicantAndProjectAsync(Guid applicantId, Guid projectId)
     {
-        // Exclude REJECTED/CANCELED để cho phép người dân nộp lại hồ sơ cho cùng dự án
+        // Exclude REJECTED/CANCELED/EXPIRED để cho phép người dân nộp lại hồ sơ cho cùng dự án.
+        // EXPIRED gồm cả hồ sơ nháp bị worker cho hết hiệu lực khi dự án đóng đợt — hồ sơ đã chết
+        // thì không được chiếm chỗ, và phải khớp với CitizenIdExistsInProjectAsync vốn đã loại trừ EXPIRED.
         return await _context.HousingApplications
             .AsNoTracking()
             .AnyAsync(x => x.ApplicantId == applicantId 
                 && x.ProjectId == projectId
                 && x.ApplicationStatus != ApplicationStatusConstants.Rejected
-                && x.ApplicationStatus != ApplicationStatusConstants.Canceled);
+                && x.ApplicationStatus != ApplicationStatusConstants.Canceled
+                && x.ApplicationStatus != ApplicationStatusConstants.Expired);
     }
 
     public async Task<bool> HasActiveApplicationAsync(Guid applicantId)
     {
-        // Đ38.1.e: 1 tài khoản chỉ 1 hồ sơ đang xử lý / đã chốt (không gồm DRAFT, REJECTED, CANCELED, EXPIRED, LOTTERY_LOST)
-        var activeStatuses = new[]
-        {
-            ApplicationStatusConstants.Submitted,
-            ApplicationStatusConstants.Reviewing,
-            ApplicationStatusConstants.NeedMoreDocuments,
-            ApplicationStatusConstants.PendingSxdReview,
-            ApplicationStatusConstants.Approved,
-            ApplicationStatusConstants.ApprovedByTimeout,
-            ApplicationStatusConstants.ContractPending,
-            ApplicationStatusConstants.ContractSigned,
-            ApplicationStatusConstants.DepositPaid,
-            ApplicationStatusConstants.FullyPaid
-        };
+        // Đ38.1.e — danh sách trạng thái chiếm suất lấy từ một nguồn duy nhất, xem
+        // ApplicationStatusConstants.ActiveOccupyingStatuses.
+        var activeStatuses = ApplicationStatusConstants.ActiveOccupyingStatuses;
 
         return await _context.HousingApplications
             .AsNoTracking()

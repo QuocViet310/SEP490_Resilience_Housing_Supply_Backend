@@ -100,6 +100,14 @@ public class ReviewService : IReviewService
             await ProjectIntakeGate.RequireIntakeOpenAsync(
                 _context, application.ProjectId, "nộp hồ sơ", DateTime.UtcNow);
         }
+        else
+        {
+            // Hồ sơ bổ sung: cho nộp sau khi đóng đợt, nhưng không cho nộp sau khi đã chốt lịch
+            // bốc thăm. Nếu để lọt thì hồ sơ này quay vào luồng thẩm định và có thể được duyệt khi
+            // đã hết suất, rồi treo vô thời hạn ở trạng thái đã duyệt mà không bao giờ được cấp căn.
+            await ProjectIntakeGate.RequireLotteryNotScheduledAsync(
+                _context, application.ProjectId, "nộp hồ sơ bổ sung");
+        }
 
         // Nghiệp vụ: bắt buộc đủ giấy tờ tùy theo nhóm đối tượng
         // (A) Giấy xác nhận nhà ở — bắt buộc tất cả
@@ -159,19 +167,7 @@ public class ReviewService : IReviewService
         var oneAppOnly = await _policyService.GetValueAsync(PolicyKeys.OneApplicationPerApplicant, true);
         if (oneAppOnly)
         {
-            var activeStatuses = new[]
-            {
-                ApplicationStatusConstants.Submitted,
-                ApplicationStatusConstants.Reviewing,
-                ApplicationStatusConstants.NeedMoreDocuments,
-                ApplicationStatusConstants.PendingSxdReview,
-                ApplicationStatusConstants.Approved,
-                ApplicationStatusConstants.ApprovedByTimeout,
-                ApplicationStatusConstants.DepositPaid,
-                ApplicationStatusConstants.ContractPending,
-                ApplicationStatusConstants.ContractSigned,
-                ApplicationStatusConstants.FullyPaid
-            };
+            var activeStatuses = ApplicationStatusConstants.ActiveOccupyingStatuses;
 
             var otherActive = await _context.HousingApplications
                 .AnyAsync(a => a.ApplicantId == applicantId

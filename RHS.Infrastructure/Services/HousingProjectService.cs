@@ -162,7 +162,6 @@ public class HousingProjectService : IHousingProjectService
     {
         // Validate request
         ValidateHousingProjectRequest(request);
-        await ValidateIntakeWindowAsync(request.ApplicationOpenDate, request.ApplicationCloseDate);
 
         // Check if project exists
         var existingProject = await _repository.GetByIdAsync(id);
@@ -170,6 +169,12 @@ public class HousingProjectService : IHousingProjectService
         {
             throw new InvalidOperationException($"Housing project with ID {id} not found.");
         }
+
+        // Nạp dự án trước khi kiểm khung thời gian để biết CĐT có thực sự đổi ngày mở hay không.
+        await ValidateIntakeWindowAsync(
+            request.ApplicationOpenDate,
+            request.ApplicationCloseDate,
+            existingProject.ApplicationOpenDate);
 
         // Chỉ cho phép chỉnh sửa khi dự án ở trạng thái PENDING
         var currentStatusCode = existingProject.HousingProjectStatus?.StatusCode?.Trim().ToUpperInvariant();
@@ -299,7 +304,15 @@ public class HousingProjectService : IHousingProjectService
     /// nhận hồ sơ và phải mở tiếp nhận đủ số ngày tối thiểu, để người dân có thời gian
     /// chuẩn bị giấy tờ. Chặn ngay ở bước khai dự án thay vì để CĐT mở đợt 3 ngày rồi đóng.
     /// </summary>
-    private async Task ValidateIntakeWindowAsync(DateTime? openDate, DateTime? closeDate)
+    /// <param name="currentOpenDate">
+    /// Ngày mở đang lưu trong DB khi cập nhật. Nếu CĐT không đổi ngày mở thì không xét lại thời gian
+    /// công bố: dự án khai đúng hạn 30 ngày, mười ngày sau chỉ còn 20 ngày, nếu xét lại thì CĐT
+    /// không sửa nổi cái mô tả của chính dự án mình mà buộc phải đẩy lùi ngày mở.
+    /// </param>
+    private async Task ValidateIntakeWindowAsync(
+        DateTime? openDate,
+        DateTime? closeDate,
+        DateTime? currentOpenDate = null)
     {
         if (openDate == null || closeDate == null)
             return;
@@ -307,6 +320,7 @@ public class HousingProjectService : IHousingProjectService
         var announceMinDays = await _policyService.GetValueAsync(PolicyKeys.PublicAnnounceMinDays, 30);
         var intakeMinDays = await _policyService.GetValueAsync(PolicyKeys.IntakeMinDays, 30);
 
+        // Độ dài khung tiếp nhận không phụ thuộc thời điểm xét nên luôn kiểm.
         var intakeDays = (closeDate.Value - openDate.Value).TotalDays;
         if (intakeDays < intakeMinDays)
         {
@@ -314,6 +328,10 @@ public class HousingProjectService : IHousingProjectService
                 $"Thời gian tiếp nhận hồ sơ phải kéo dài tối thiểu {intakeMinDays} ngày " +
                 $"(hiện chỉ {intakeDays:0.#} ngày) — Đ38.1 Nghị định 100/2024.");
         }
+
+        var openDateUnchanged = currentOpenDate.HasValue && currentOpenDate.Value == openDate.Value;
+        if (openDateUnchanged)
+            return;
 
         var earliestOpen = DateTime.UtcNow.AddDays(announceMinDays);
         if (openDate.Value < earliestOpen)

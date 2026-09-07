@@ -121,6 +121,35 @@ public static class ApplicationStatusConstants
         };
 
     /// <summary>
+    /// Hồ sơ đang chiếm một suất của người dân theo Đ38.1.e — mỗi người chỉ được một hồ sơ
+    /// đang hoạt động tại một thời điểm.
+    ///
+    /// Phải là NGUỒN DUY NHẤT: trước đây danh sách này được chép tay ở hai nơi (lúc tạo hồ sơ và
+    /// lúc nộp hồ sơ). Hai bản đang giống nhau nhưng cùng thiếu LOTTERY_WON / DEPOSIT_PENDING /
+    /// INSTALLMENT_IN_PROGRESS, và bất kỳ lần sửa một bên sau này cũng làm hai bên lệch.
+    ///
+    /// DRAFT không tính (chưa nộp thì chưa chiếm suất). WAITLIST cũng không tính: người dự bị
+    /// không giữ căn nào nên chặn họ nộp nơi khác là tự thêm điều kiện ngoài luật — nhưng
+    /// LOTTERY_WON và DEPOSIT_PENDING thì có giữ suất, phải tính.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ActiveOccupyingStatuses = new[]
+    {
+        Submitted,
+        Reviewing,
+        NeedMoreDocuments,
+        PendingSxdReview,
+        Approved,
+        ApprovedByTimeout,
+        LotteryWon,
+        DepositPending,
+        ContractPending,
+        ContractSigned,
+        DepositPaid,
+        InstallmentInProgress,
+        FullyPaid
+    };
+
+    /// <summary>
     /// Các trạng thái mà Applicant KHÔNG được phép tự hủy (trạng thái đóng).
     /// </summary>
     public static readonly IReadOnlyList<string> ClosedStatuses = new[]

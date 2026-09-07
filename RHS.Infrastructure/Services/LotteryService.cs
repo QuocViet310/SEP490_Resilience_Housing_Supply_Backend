@@ -1530,15 +1530,28 @@ public class LotteryService : ILotteryService
                 .OrderBy(a => a.WaitlistNumber)
                 .ToListAsync(ct);
 
+            // Người dự bị không bị coi là đang giữ suất nên vẫn được nộp ở dự án khác. Vì vậy tới
+            // lúc đôn phải kiểm lại: nếu họ đã trúng/đang xử lý ở nơi khác thì đôn lên là để họ
+            // giữ hai suất, trái Đ38.1.e. Bỏ qua và gọi người kế tiếp.
+            var applicantIds = candidates.Select(a => a.ApplicantId).Distinct().ToList();
+            var busyApplicantIds = await _db.HousingApplications
+                .Where(a => applicantIds.Contains(a.ApplicantId)
+                            && a.ProjectId != projectId
+                            && ApplicationStatusConstants.ActiveOccupyingStatuses.Contains(a.ApplicationStatus))
+                .Select(a => a.ApplicantId)
+                .Distinct()
+                .ToListAsync(ct);
+
             // Người chưa chọn nguyện vọng loại căn thì nhận được mọi loại.
             // Khi biết căn cụ thể được hoàn lại thì phải qua cùng bộ ràng buộc như CĐT gán căn tay,
             // nếu không thì một căn thuộc quỹ ưu tiên có thể bị đôn cho hồ sơ không thuộc nhóm ưu tiên.
             var nextCandidate = candidates.FirstOrDefault(a =>
-                releasedApartment != null
+                !busyApplicantIds.Contains(a.ApplicantId)
+                && (releasedApartment != null
                     ? ApartmentAssignmentGate.IsAssignable(a, releasedApartment)
                     : targetTypeId == null
                         || a.DesiredApartmentTypeId == null
-                        || a.DesiredApartmentTypeId == targetTypeId);
+                        || a.DesiredApartmentTypeId == targetTypeId));
 
             if (nextCandidate == null)
             {

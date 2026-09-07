@@ -161,10 +161,13 @@ public class HousingApplicationConfiguration : IEntityTypeConfiguration<HousingA
         builder.HasIndex(x => x.ApplicationStatus);
         builder.HasIndex(x => x.SubmittedAt);
         builder.HasIndex(x => x.CitizenId);
-        // Unique chỉ với hồ sơ còn hiệu lực — CANCELED/REJECTED được nộp lại cùng dự án
+        // Unique chỉ với hồ sơ còn hiệu lực — CANCELED/REJECTED/EXPIRED được nộp lại cùng dự án.
+        // Bộ lọc này phải khớp ExistsByApplicantAndProjectAsync: nếu code cho tạo lại mà index
+        // vẫn chặn thì người dân nhận lỗi 500 ngay lúc insert thay vì được nộp.
         builder.HasIndex(x => new { x.ApplicantId, x.ProjectId })
             .IsUnique()
-            .HasFilter("[ApplicationStatus] <> N'CANCELED' AND [ApplicationStatus] <> N'REJECTED'");
+            .HasFilter(
+                "[ApplicationStatus] NOT IN (N'CANCELED', N'REJECTED', N'EXPIRED')");
 
         // Một căn chỉ thuộc một hồ sơ còn hiệu lực. Kiểm tra Status=AVAILABLE trong code là
         // đọc-rồi-ghi không khóa, nên hai nhân viên gán cùng một căn gần như đồng thời đều lọt:

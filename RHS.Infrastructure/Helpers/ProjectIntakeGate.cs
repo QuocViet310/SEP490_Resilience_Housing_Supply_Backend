@@ -51,21 +51,8 @@ public static class ProjectIntakeGate
 
         var statusCode = project.HousingProjectStatus?.StatusCode?.Trim().ToUpperInvariant();
 
-        // 1. Đã chốt lịch bốc thăm thì tuyệt đối không nhận thêm hồ sơ:
-        //    danh sách tham gia bốc thăm phải cố định trước phiên, căn trả lại dùng danh sách dự bị.
-        if (project.LotteryDate.HasValue || project.IsLotteryApproved == true)
-        {
-            throw new InvalidOperationException(
-                $"Dự án đã chốt danh sách và lên lịch bốc thăm (dự kiến {project.LotteryDate:dd/MM/yyyy HH:mm}) " +
-                $"nên không thể {action}. Căn hộ bị trả lại sẽ chuyển cho người đứng đầu Danh sách dự bị, " +
-                "không mở thêm đợt nhận hồ sơ.");
-        }
-
-        if (project.LotterySessionStatus is not null)
-        {
-            throw new InvalidOperationException(
-                $"Phiên bốc thăm của dự án đã được khởi tạo nên không thể {action}.");
-        }
+        // 1. Đã chốt lịch bốc thăm thì tuyệt đối không nhận thêm hồ sơ.
+        EnsureLotteryNotScheduled(project, action);
 
         // 2. Trạng thái vòng đời đã đóng cửa tiếp nhận.
         if (statusCode is not null && IntakeBlockedStatusCodes.Contains(statusCode))
@@ -92,6 +79,33 @@ public static class ProjectIntakeGate
         }
     }
 
+    /// <summary>
+    /// Chặn khi danh sách bốc thăm đã chốt, KHÔNG xét thời hạn tiếp nhận.
+    ///
+    /// Dùng cho hồ sơ bổ sung theo yêu cầu của CĐT: hồ sơ đó đã tiếp nhận trong hạn nên nộp lại
+    /// sau khi đóng đợt là bình thường, nhưng khi phiên bốc thăm đã lên lịch thì danh sách tham gia
+    /// phải cố định — không thể thêm người vào sau khi đã công bố.
+    /// </summary>
+    public static void EnsureLotteryNotScheduled(HousingProject? project, string action)
+    {
+        if (project == null)
+            throw new KeyNotFoundException("Không tìm thấy dự án.");
+
+        if (project.LotteryDate.HasValue || project.IsLotteryApproved == true)
+        {
+            throw new InvalidOperationException(
+                $"Dự án đã chốt danh sách và lên lịch bốc thăm (dự kiến {project.LotteryDate:dd/MM/yyyy HH:mm}) " +
+                $"nên không thể {action}. Căn hộ bị trả lại sẽ chuyển cho người đứng đầu Danh sách dự bị, " +
+                "không mở thêm đợt nhận hồ sơ.");
+        }
+
+        if (project.LotterySessionStatus is not null)
+        {
+            throw new InvalidOperationException(
+                $"Phiên bốc thăm của dự án đã được khởi tạo nên không thể {action}.");
+        }
+    }
+
     /// <summary>Nạp dự án và kiểm tra cổng nhận hồ sơ trong một lượt.</summary>
     public static async Task<HousingProject> RequireIntakeOpenAsync(
         AppDbContext db,
@@ -102,6 +116,18 @@ public static class ProjectIntakeGate
     {
         var project = await LoadProjectForIntakeAsync(db, projectId, ct);
         EnsureIntakeOpen(project, now ?? DateTime.UtcNow, action);
+        return project!;
+    }
+
+    /// <summary>Nạp dự án và chỉ kiểm điều kiện bốc thăm chưa chốt.</summary>
+    public static async Task<HousingProject> RequireLotteryNotScheduledAsync(
+        AppDbContext db,
+        Guid projectId,
+        string action,
+        CancellationToken ct = default)
+    {
+        var project = await LoadProjectForIntakeAsync(db, projectId, ct);
+        EnsureLotteryNotScheduled(project, action);
         return project!;
     }
 }
