@@ -45,8 +45,18 @@ public interface ILotteryService
     /// <summary>Ghi nhận SXD giám sát phiên (khi join Hub) — Đ36.2.b NĐ 100/2024.</summary>
     Task RecordSupervisorAsync(Guid projectId, Guid sxdUserId, CancellationToken ct = default);
 
-    /// <summary>Đôn ứng viên tiếp theo trong Danh sách chờ (Waitlist) lên suất trúng mua khi có căn hộ bị trả lại / quá hạn cọc.</summary>
-    Task<HousingApplication?> PromoteNextWaitlistApplicantAsync(Guid projectId, Guid? desiredApartmentTypeId, CancellationToken ct = default);
+    /// <summary>
+    /// Đường đôn Danh sách dự bị duy nhất: chuyển quyền mua cho người đứng đầu danh sách
+    /// (theo thứ hạng 1, 2, 3...) khi có căn hộ bị trả lại do hủy hợp đồng hoặc không nộp tiền đúng hạn,
+    /// kèm hạn xác nhận theo PolicyConfig WAITLIST_CONFIRM_HOURS. Không mở đợt bốc thăm mới.
+    /// </summary>
+    /// <param name="desiredApartmentTypeId">Loại căn cần gọi; người có nguyện vọng khác được giữ nguyên thứ hạng.</param>
+    /// <param name="releasedApartmentId">Căn cụ thể được hoàn lại, sẽ gán luôn cho người được đôn.</param>
+    Task<HousingApplication?> PromoteNextWaitlistApplicantAsync(
+        Guid projectId,
+        Guid? desiredApartmentTypeId,
+        Guid? releasedApartmentId = null,
+        CancellationToken ct = default);
 
     /// <summary>Lấy Danh sách chờ (Waitlist) của dự án theo thứ tự dự bị (1, 2, 3...).</summary>
     Task<List<ApplicationSummaryResponseDto>> GetWaitlistAsync(Guid projectId, Guid? desiredApartmentTypeId = null, CancellationToken ct = default);

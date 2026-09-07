@@ -124,6 +124,61 @@ public class ProjectAutomationWorker : BackgroundService
 
         await context.SaveChangesAsync(stoppingToken);
 
+        // Hồ sơ nháp của dự án đã hết hạn tiếp nhận thì không còn giá trị — cho hết hiệu lực
+        // để người dân không bị treo một hồ sơ vô nghĩa và không chiếm chỗ "1 hồ sơ / 1 dự án".
+        var staleDrafts = await context.HousingApplications
+            .Include(a => a.HousingProject)
+            .Where(a => a.ApplicationStatus == ApplicationStatusConstants.Draft
+                     && a.HousingProject != null
+                     && a.HousingProject.ApplicationCloseDate.HasValue
+                     && a.HousingProject.ApplicationCloseDate.Value < now)
+            .ToListAsync(stoppingToken);
+
+        foreach (var draft in staleDrafts)
+        {
+            var closeDate = draft.HousingProject!.ApplicationCloseDate!.Value;
+
+            draft.ApplicationStatus = ApplicationStatusConstants.Expired;
+            draft.UpdatedAt = now;
+
+            context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+            {
+                HistoryId = Guid.NewGuid(),
+                ApplicationId = draft.ApplicationId,
+                ChangedBy = RoleConstants.SystemAdministratorId,
+                Action = ReviewActionConstants.IntakeClosedExpiry,
+                OldStatus = ApplicationStatusConstants.Draft,
+                NewStatus = ApplicationStatusConstants.Expired,
+                Note = $"Hồ sơ nháp hết hiệu lực do dự án đã đóng tiếp nhận hồ sơ lúc {closeDate:dd/MM/yyyy HH:mm} mà chưa nộp.",
+                ChangedAt = now
+            });
+        }
+
+        if (staleDrafts.Count > 0)
+        {
+            _logger.LogInformation(
+                "Worker: cho hết hiệu lực {Count} hồ sơ nháp thuộc dự án đã đóng tiếp nhận.",
+                staleDrafts.Count);
+            await context.SaveChangesAsync(stoppingToken);
+
+            foreach (var draft in staleDrafts)
+            {
+                try
+                {
+                    await notificationService.SendAsync(
+                        draft.ApplicantId,
+                        "Hồ sơ nháp đã hết hiệu lực",
+                        $"Dự án '{draft.HousingProject?.ProjectName}' đã hết hạn tiếp nhận hồ sơ nên hồ sơ nháp của bạn không còn hiệu lực. " +
+                        "Bạn có thể nộp hồ sơ tại dự án khác đang mở tiếp nhận.",
+                        NotificationTypeConstants.ApplicationExpired);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Worker: lỗi gửi thông báo hết hiệu lực hồ sơ nháp {AppId}", draft.ApplicationId);
+                }
+            }
+        }
+
         var cutoff = now.AddDays(-tacitDays);
 
         var pendingApps = await context.HousingApplications

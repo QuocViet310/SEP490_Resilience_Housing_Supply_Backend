@@ -71,4 +71,16 @@ public static class ReviewActionConstants
 
     /// <summary>Trượt bốc thăm</summary>
     public const string LotteryLost = "LOTTERY_LOST";
+
+    /// <summary>Hồ sơ nháp hết hiệu lực vì dự án đã đóng tiếp nhận hồ sơ</summary>
+    public const string IntakeClosedExpiry = "INTAKE_CLOSED_EXPIRY";
+
+    /// <summary>Không trúng đợt bốc thăm chính thức → xếp vào Danh sách dự bị theo thứ hạng</summary>
+    public const string WaitlistAssigned = "WAITLIST_ASSIGNED";
+
+    /// <summary>Được đôn từ Danh sách dự bị lên suất trúng mua khi có căn hoàn lại</summary>
+    public const string WaitlistPromoted = "PROMOTED_FROM_WAITLIST";
+
+    /// <summary>Người được đôn từ Danh sách dự bị không xác nhận trong thời hạn → mất suất</summary>
+    public const string WaitlistForfeited = "WAITLIST_FORFEITED";
 }

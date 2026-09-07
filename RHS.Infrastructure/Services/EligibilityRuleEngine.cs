@@ -12,8 +12,10 @@ namespace RHS.Infrastructure.Services;
 /// <summary>
 /// Rule engine Đ29 + Đ30: Đánh giá tự động điều kiện hưởng chính sách NOXH.
 /// Hỗ trợ tất cả nhóm đối tượng theo Điều 76 Luật Nhà ở 2023 &amp; Nghị định 100/2024/NĐ-CP:
-///   - Thu nhập: &lt; 15 triệu/người/tháng (Độc thân &lt;= 15 triệu/tháng; Vợ+Chồng &lt;= 30 triệu/tháng)
-///   - Diện tích: Chưa có nhà hoặc diện tích bình quân &lt; 10m²/người
+///   - Thu nhập (Đ30.1, chỉ nhóm khoản 5/6/8 Đ76): độc thân &lt;= 15 triệu/tháng; vợ+chồng &lt;= 30 triệu/tháng.
+///     LLVT (khoản 7) dùng trần riêng theo Đ67. Người có công, hộ nghèo/cận nghèo, trả nhà công vụ,
+///     bị thu hồi đất: không xét trần thu nhập.
+///   - Diện tích (Đ29): chưa có nhà, hoặc có nhà nhưng bình quân &lt; 15 m² sàn/người
 ///   - Đối tượng: Hộ nghèo/cận nghèo, người có công, thu nhập thấp, công nhân, LLVT...
 /// </summary>
 public class EligibilityRuleEngine : IEligibilityRuleEngine
@@ -205,19 +207,36 @@ public class EligibilityRuleEngine : IEligibilityRuleEngine
             {
                 reasons.Add($"Đối tượng thụ hưởng: {label} — hưởng chính sách ưu đãi Người có công theo Pháp lệnh (Đ76.1), không xét trần thu nhập.");
             }
+            else if (PriorityGroupConstants.RequiresMilitaryIncomeCheck(normPriorityGroup))
+            {
+                reasons.Add($"Đối tượng thụ hưởng: {label} — áp dụng trần thu nhập riêng theo Đ67 Nghị định 100/2024 (tính theo tổng thu nhập của sỹ quan cấp bậc hàm Đại tá).");
+            }
+            else if (PriorityGroupConstants.RequiresIncomeCheck(normPriorityGroup))
+            {
+                reasons.Add($"Đối tượng thụ hưởng: {label} — áp dụng trần thu nhập theo Đ30.1 Nghị định 100/2024 (đối tượng khoản 5, 6, 8 Điều 76 Luật Nhà ở).");
+            }
             else
             {
-                reasons.Add($"Đối tượng thụ hưởng: {label} — áp dụng trần thu nhập theo Điều 30 Luật Nhà ở & Nghị định 100/2024/NĐ-CP.");
+                reasons.Add($"Đối tượng thụ hưởng: {label} — Đ30 Nghị định 100/2024 không quy định trần thu nhập cho nhóm này, không xét thu nhập.");
             }
         }
 
-        // ── Bước 2: Kiểm tra trần thu nhập (Điều 30: < 15 triệu/người/tháng) ──
-        var maxIncomeSingle = await _policyService.GetValueAsync(PolicyKeys.IncomeSingleMaxVnd, 15_000_000m, ct);
-        var maxIncomeMarried = await _policyService.GetValueAsync(PolicyKeys.IncomeMarriedMaxVnd, 30_000_000m, ct);
+        // ── Bước 2: Kiểm tra trần thu nhập (Đ30.1 cho khoản 5/6/8 Đ76; Đ67 cho LLVT) ──
+        var isMilitary = PriorityGroupConstants.RequiresMilitaryIncomeCheck(normPriorityGroup);
+
+        var maxIncomeSingle = isMilitary
+            ? await _policyService.GetValueAsync(PolicyKeys.IncomeMilitarySingleMaxVnd, 15_000_000m, ct)
+            : await _policyService.GetValueAsync(PolicyKeys.IncomeSingleMaxVnd, 15_000_000m, ct);
+        var maxIncomeMarried = isMilitary
+            ? await _policyService.GetValueAsync(PolicyKeys.IncomeMilitaryMarriedMaxVnd, 30_000_000m, ct)
+            : await _policyService.GetValueAsync(PolicyKeys.IncomeMarriedMaxVnd, 30_000_000m, ct);
+
+        var incomeLegalRef = isMilitary ? "Đ67 Nghị định 100/2024" : "Đ30.1.a Nghị định 100/2024";
 
         if (!PriorityGroupConstants.RequiresIncomeCheck(normPriorityGroup))
         {
-            // Nhóm không cần xét trần thu nhập (Hộ nghèo, Người có công)
+            // Nhóm không xét trần thu nhập: người có công, hộ nghèo/cận nghèo,
+            // trả lại nhà công vụ (khoản 9), bị thu hồi đất (khoản 10).
             incomeCheckPassed = true;
             calculatedIncome = monthlyIncome;
             maxAllowedIncome = null;
@@ -239,13 +258,13 @@ public class EligibilityRuleEngine : IEligibilityRuleEngine
                     score -= 30;
                     incomeCheckPassed = false;
                     reasons.Add(
-                        $"Tổng thu nhập của 2 vợ chồng ({calculatedIncome.Value:N0} đ/tháng) vượt trần {maxIncomeMarried:N0} đ/tháng (Đ30.1.a - bình quân tối đa 15 triệu/người). Không đủ điều kiện.");
+                        $"Tổng thu nhập của 2 vợ chồng ({calculatedIncome.Value:N0} đ/tháng) vượt trần {maxIncomeMarried:N0} đ/tháng ({incomeLegalRef}). Không đủ điều kiện.");
                 }
                 else
                 {
                     incomeCheckPassed = true;
                     reasons.Add(
-                        $"Đủ điều kiện thu nhập: Tổng thu nhập 2 vợ chồng ({calculatedIncome.Value:N0} đ/tháng) ≤ trần quy định {maxIncomeMarried:N0} đ/tháng (bình quân {(calculatedIncome.Value / 2):N0} đ/người/tháng < 15 triệu/người).");
+                        $"Đủ điều kiện thu nhập: Tổng thu nhập 2 vợ chồng ({calculatedIncome.Value:N0} đ/tháng) ≤ trần quy định {maxIncomeMarried:N0} đ/tháng ({incomeLegalRef}).");
                 }
             }
             else
@@ -260,13 +279,13 @@ public class EligibilityRuleEngine : IEligibilityRuleEngine
                         score -= 30;
                         incomeCheckPassed = false;
                         reasons.Add(
-                            $"Thu nhập cá nhân ({calculatedIncome.Value:N0} đ/tháng) vượt trần quy định cho người độc thân {maxIncomeSingle:N0} đ/tháng (Đ30.1.a). Không đủ điều kiện.");
+                            $"Thu nhập cá nhân ({calculatedIncome.Value:N0} đ/tháng) vượt trần quy định cho người độc thân {maxIncomeSingle:N0} đ/tháng ({incomeLegalRef}). Không đủ điều kiện.");
                     }
                     else
                     {
                         incomeCheckPassed = true;
                         reasons.Add(
-                            $"Đủ điều kiện thu nhập: Thu nhập cá nhân ({calculatedIncome.Value:N0} đ/tháng) ≤ trần quy định {maxIncomeSingle:N0} đ/tháng.");
+                            $"Đủ điều kiện thu nhập: Thu nhập cá nhân ({calculatedIncome.Value:N0} đ/tháng) ≤ trần quy định {maxIncomeSingle:N0} đ/tháng ({incomeLegalRef}).");
                     }
                 }
                 else
@@ -277,8 +296,8 @@ public class EligibilityRuleEngine : IEligibilityRuleEngine
             }
         }
 
-        // ── Bước 3: Kiểm tra điều kiện nhà ở (Điều 29: Chưa có nhà hoặc diện tích < 10m²/người) ──
-        var maxArea = await _policyService.GetValueAsync(PolicyKeys.MaxAreaPerPersonM2, 10m, ct);
+        // ── Bước 3: Kiểm tra điều kiện nhà ở (Đ29: chưa có nhà, hoặc có nhà nhưng < 15 m² sàn/người) ──
+        var maxArea = await _policyService.GetValueAsync(PolicyKeys.MaxAreaPerPersonM2, 15m, ct);
         maxAreaAllowed = maxArea;
 
         if (normHousingStatus == HousingStatusConstants.NoHouse)

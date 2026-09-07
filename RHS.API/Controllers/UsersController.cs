@@ -178,7 +178,7 @@ public class UsersController : ControllerBase
 
     /// <summary>
     /// [Citizen] Thẩm định tự động điều kiện mua NOXH trực tiếp từ Hồ sơ cá nhân hiện tại của công dân.
-    /// Kiểm tra: Thu nhập (&lt; 15tr/người), Diện tích nhà ở (&lt; 10m²/người) và Nhóm đối tượng ưu tiên.
+    /// Kiểm tra: Thu nhập (&lt;= 15tr/30tr), Diện tích nhà ở (&lt; 15 m² sàn/người) và Nhóm đối tượng thụ hưởng.
     /// </summary>
     [HttpGet("profile/eligibility-check")]
     [ProducesResponseType(typeof(RHS.Application.DTOs.Eligibility.EligibilityResultDto), StatusCodes.Status200OK)]

@@ -113,7 +113,7 @@ public interface IHousingApplicationService
         Guid projectId, DeveloperWorkflowDecisionRequestDto request, Guid developerUserId);
 
     /// <summary>
-    /// Kiểm tra nhanh điều kiện mua nhà ở xã hội (Thu nhập &lt; 15tr/người, Diện tích &lt; 10m²/người).
+    /// Kiểm tra nhanh điều kiện mua nhà ở xã hội (Thu nhập &lt;= 15tr/30tr, Diện tích &lt; 15 m² sàn/người).
     /// </summary>
     Task<RHS.Application.DTOs.Eligibility.EligibilityResultDto> CheckEligibilityAsync(
         Guid applicantId,

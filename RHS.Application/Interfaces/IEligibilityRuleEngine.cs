@@ -4,7 +4,7 @@ using RHS.Domain.Entities;
 namespace RHS.Application.Interfaces;
 
 /// <summary>
-/// Rule engine Đ29 + Đ30: Đánh giá điều kiện mua nhà ở xã hội (Thu nhập &lt; 15tr/người, Diện tích &lt; 10m²/người).
+/// Rule engine Đ29 + Đ30: Đánh giá điều kiện mua nhà ở xã hội (Thu nhập &lt;= 15tr/30tr, Diện tích &lt; 15 m² sàn/người).
 /// </summary>
 public interface IEligibilityRuleEngine
 {

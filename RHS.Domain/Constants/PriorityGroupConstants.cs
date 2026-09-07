@@ -74,11 +74,22 @@ public static class PriorityGroupConstants
         RuralPoor, RuralNearPoor, UrbanPoor, UrbanNearPoor
     };
 
-    /// <summary>Các nhóm cần xét trần thu nhập (Đ30.1 / Đ30.2).</summary>
+    /// <summary>
+    /// Các nhóm xét trần thu nhập 15/30 triệu — Đ30.1 Nghị định 100/2024 chỉ áp cho
+    /// đối tượng tại khoản 5, 6 và 8 Điều 76 Luật Nhà ở.
+    /// Nhóm 9 (trả lại nhà công vụ) và nhóm 10 (bị thu hồi đất) không xét thu nhập.
+    /// </summary>
     public static readonly IReadOnlyList<string> IncomeCheckedGroups = new[]
     {
-        LowIncomeUrban, Worker, MilitaryPersonnel, CivilServant, PublicHousingReturn, LandRecoveryAffected
+        LowIncomeUrban, Worker, CivilServant
     };
+
+    /// <summary>
+    /// Nhóm có trần thu nhập riêng: lực lượng vũ trang (khoản 7 Điều 76) xét theo
+    /// tổng thu nhập của sỹ quan cấp bậc hàm Đại tá — Đ67 Nghị định 100/2024.
+    /// </summary>
+    public static bool RequiresMilitaryIncomeCheck(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value == MilitaryPersonnel;
 
     public static bool IsValid(string? value) =>
         !string.IsNullOrWhiteSpace(value) && AllValues.Contains(value);
@@ -89,6 +100,8 @@ public static class PriorityGroupConstants
     public static bool IsPovertyGroup(string? value) =>
         !string.IsNullOrWhiteSpace(value) && PovertyGroups.Contains(value);
 
+    /// <summary>Nhóm phải xét trần thu nhập — dùng trần 15/30 triệu, trừ LLVT dùng trần riêng Đ67.</summary>
     public static bool RequiresIncomeCheck(string? value) =>
-        !string.IsNullOrWhiteSpace(value) && IncomeCheckedGroups.Contains(value);
+        !string.IsNullOrWhiteSpace(value)
+        && (IncomeCheckedGroups.Contains(value) || value == MilitaryPersonnel);
 }

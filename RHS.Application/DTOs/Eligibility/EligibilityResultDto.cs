@@ -20,7 +20,7 @@ public class EligibilityResultDto
     /// <summary>Đạt điều kiện thu nhập (&lt; 15 triệu/người/tháng - Đ30)</summary>
     public bool IncomeCheckPassed { get; set; }
 
-    /// <summary>Đạt điều kiện thực trạng nhà ở &amp; diện tích (&lt; 10m²/người - Đ29)</summary>
+    /// <summary>Đạt điều kiện thực trạng nhà ở &amp; diện tích (&lt; 15 m² sàn/người - Đ29)</summary>
     public bool HousingAreaCheckPassed { get; set; }
 
     /// <summary>Tổng thu nhập hàng tháng được tính để xét duyệt (VND)</summary>
@@ -32,7 +32,7 @@ public class EligibilityResultDto
     /// <summary>Diện tích nhà ở bình quân đầu người tính toán (m²/người)</summary>
     public decimal? CalculatedAverageArea { get; set; }
 
-    /// <summary>Mức diện tích bình quân tối đa cho phép đối với nhà chật (m²/người, mặc định 10m²)</summary>
+    /// <summary>Mức diện tích bình quân tối đa cho phép đối với nhà chật (m²/người, mặc định 15 m²)</summary>
     public decimal? MaxAllowedAreaPerPerson { get; set; }
 
     /// <summary>Thông điệp tóm tắt kết luận thẩm định</summary>

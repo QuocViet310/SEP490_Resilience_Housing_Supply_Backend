@@ -21,6 +21,7 @@ public class InstallmentService : IInstallmentService
     private readonly IVnPayService _vnPayService;
     private readonly IPaymentRepository _paymentRepository;
     private readonly INotificationService _notificationService;
+    private readonly ILotteryService _lotteryService;
     private readonly ILogger<InstallmentService> _logger;
 
     public InstallmentService(
@@ -28,12 +29,14 @@ public class InstallmentService : IInstallmentService
         IVnPayService vnPayService,
         IPaymentRepository paymentRepository,
         INotificationService notificationService,
+        ILotteryService lotteryService,
         ILogger<InstallmentService> logger)
     {
         _db                  = db;
         _vnPayService        = vnPayService;
         _paymentRepository   = paymentRepository;
         _notificationService = notificationService;
+        _lotteryService      = lotteryService;
         _logger              = logger;
     }
 
@@ -1090,74 +1093,17 @@ public class InstallmentService : IInstallmentService
             ChangedAt = DateTime.UtcNow
         });
 
-        // Tự động đôn ứng viên tiếp theo từ Danh sách chờ (Waitlist) nếu có
-        Guid? promotedApplicantId = null;
-        string? promotedApplicantName = null;
-
-        var nextWaitlistCandidate = await _db.HousingApplications
-            .Include(a => a.Applicant)
-            .Where(a => a.ProjectId == app.ProjectId
-                     && a.WaitlistNumber.HasValue
-                     && a.WaitlistNumber > 0
-                     && a.ApplicationStatus != ApplicationStatusConstants.Canceled
-                     && a.ApplicationStatus != ApplicationStatusConstants.Rejected)
-            .OrderBy(a => a.WaitlistNumber)
-            .FirstOrDefaultAsync();
-
-        if (nextWaitlistCandidate != null)
-        {
-            promotedApplicantId = nextWaitlistCandidate.ApplicantId;
-            promotedApplicantName = nextWaitlistCandidate.FullName ?? nextWaitlistCandidate.Applicant?.FullName;
-
-            nextWaitlistCandidate.ApplicationStatus = ApplicationStatusConstants.Approved;
-            nextWaitlistCandidate.WaitlistPromotedAt = DateTime.UtcNow;
-            nextWaitlistCandidate.DepositDeadline = DateTime.UtcNow.AddHours(48); // 48 giờ để xác nhận nộp cọc
-            nextWaitlistCandidate.LotteryResult = LotteryResultConstants.Won;
-            nextWaitlistCandidate.UpdatedAt = DateTime.UtcNow;
-
-            if (releasedApartmentId.HasValue && releasedApartmentId.Value != Guid.Empty)
-            {
-                nextWaitlistCandidate.ApartmentId = releasedApartmentId.Value;
-                var ap = await _db.Apartments.FirstOrDefaultAsync(a => a.Id == releasedApartmentId.Value);
-                if (ap != null)
-                {
-                    ap.Status = "ASSIGNED";
-                    ap.UpdatedAt = DateTime.UtcNow;
-                }
-            }
-
-            if (app.HousingProject != null && app.HousingProject.AvailableUnits > 0)
-            {
-                app.HousingProject.AvailableUnits -= 1;
-            }
-
-            _db.Set<ApplicationStatusHistory>().Add(new ApplicationStatusHistory
-            {
-                HistoryId = Guid.NewGuid(),
-                ApplicationId = nextWaitlistCandidate.ApplicationId,
-                ChangedBy = userId,
-                OldStatus = "WAITLIST",
-                NewStatus = ApplicationStatusConstants.Approved,
-                Action = "PROMOTED_FROM_WAITLIST",
-                Note = $"Được đôn từ Danh sách chờ (Waitlist #{nextWaitlistCandidate.WaitlistNumber}) lên trúng tuyển do căn hộ bị thu hồi từ hồ sơ {applicationId}.",
-                ChangedAt = DateTime.UtcNow
-            });
-
-            try
-            {
-                await _notificationService.SendAsync(
-                    nextWaitlistCandidate.ApplicantId,
-                    "🎉 Chúc mừng! Được đôn từ Danh sách chờ (Waitlist)",
-                    $"Bạn đã được đôn từ Danh sách chờ lên trúng tuyển căn hộ do có căn bị thu hồi. Vui lòng hoàn tất thanh toán cọc trong vòng 48 giờ (trước {nextWaitlistCandidate.DepositDeadline:dd/MM/yyyy HH:mm}).",
-                    NotificationTypeConstants.ApplicationApproved);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to send waitlist promotion notification for app {AppId}", nextWaitlistCandidate.ApplicationId);
-            }
-        }
-
         await _db.SaveChangesAsync();
+
+        // Suất hoàn lại đi qua đường đôn Danh sách dự bị duy nhất của hệ thống
+        // (LotteryService) để thứ hạng, hạn xác nhận và thông báo chỉ có một cách xử lý.
+        var promoted = await _lotteryService.PromoteNextWaitlistApplicantAsync(
+            app.ProjectId,
+            app.DesiredApartmentTypeId,
+            releasedApartmentId);
+
+        var promotedApplicantId = promoted?.ApplicantId;
+        var promotedApplicantName = promoted?.FullName ?? promoted?.Applicant?.FullName;
 
         try
         {
@@ -1180,7 +1126,9 @@ public class InstallmentService : IInstallmentService
         {
             Success = true,
             Message = $"{(isForced ? "Cưỡng chế thu hồi căn" : "Hủy hợp đồng")} thành công. Số tiền cọc bị tịch thu: {preview.DepositForfeited:N0} VND. Số tiền thực hoàn: {preview.RefundAmount:N0} VND."
-                + (!string.IsNullOrEmpty(promotedApplicantName) ? $" Đã tự động đôn ứng viên {promotedApplicantName} từ Waitlist lên nhận căn." : ""),
+                + (!string.IsNullOrEmpty(promotedApplicantName)
+                    ? $" Đã chuyển quyền mua căn này cho {promotedApplicantName} — dự bị số {promoted?.WaitlistNumber}, hạn xác nhận {promoted?.DepositDeadline:dd/MM/yyyy HH:mm}."
+                    : " Danh sách dự bị hiện không có hồ sơ phù hợp loại căn này; căn được trả về quỹ căn của dự án."),
             ApplicationId = applicationId,
             IsForcedRevocation = isForced,
             DepositForfeited = preview.DepositForfeited,
@@ -1537,7 +1485,7 @@ public class InstallmentService : IInstallmentService
 
         var standardConfigs = new (int PhaseOrder, string PhaseName, decimal Pct, string Trigger, int DueDays, string Desc)[]
         {
-            (1, "Đợt 1", 20m, TriggerEventConstants.OnLotteryWon, 7, "Đợt 1 — tiền cọc khi được cấp nhà"),
+            (1, "Đợt 1", 20m, TriggerEventConstants.OnLotteryWon, 7, "Đợt 1 — thanh toán lần đầu (gồm cả tiền đặt cọc), không quá 30% giá trị hợp đồng theo Đ25.1 Luật Kinh doanh bất động sản 2023"),
             (2, "Đợt 2", 50m, TriggerEventConstants.OnContractSigned, 15, "Đợt 2 — sau khi ký hợp đồng mua bán"),
             (3, "Đợt 3", 30m, TriggerEventConstants.Handover, 15, "Đợt 3 — khi bàn giao nhà")
         };

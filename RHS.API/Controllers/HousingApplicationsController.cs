@@ -95,7 +95,7 @@ public class HousingApplicationsController : ControllerBase
     }
 
     /// <summary>
-    /// [Applicant] Kiểm tra nhanh điều kiện mua nhà ở xã hội (Thu nhập &lt; 15tr/người, Diện tích &lt; 10m²/người).
+    /// [Applicant] Kiểm tra nhanh điều kiện mua nhà ở xã hội (Thu nhập &lt;= 15tr/30tr, Diện tích &lt; 15 m² sàn/người).
     /// Có thể dùng dữ liệu từ Profile hoặc truyền dữ liệu tùy chỉnh để thẩm định trước khi nộp đơn.
     /// </summary>
     [HttpPost("check-eligibility")]
@@ -718,7 +718,8 @@ public class HousingApplicationsController : ControllerBase
         try
         {
             var app = await context.HousingApplications
-                .FindAsync(id);
+                .Include(a => a.DesiredApartmentType)
+                .FirstOrDefaultAsync(a => a.ApplicationId == id);
 
             if (app == null)
                 return NotFound(new { success = false, message = "Không tìm thấy hồ sơ." });
@@ -750,6 +751,7 @@ public class HousingApplicationsController : ControllerBase
             }
 
             var apartment = await context.Apartments
+                .Include(a => a.ApartmentType)
                 .FirstOrDefaultAsync(a => a.Id == request.ApartmentId);
 
             if (apartment == null || apartment.ProjectId != app.ProjectId)
@@ -761,13 +763,15 @@ public class HousingApplicationsController : ControllerBase
                 });
             }
 
-            if (!string.Equals(apartment.Status, ApartmentStatusConstants.Available, StringComparison.OrdinalIgnoreCase))
+            // Đúng loại nguyện vọng + đúng quỹ căn ưu tiên. Không có bước này thì kết quả bốc thăm
+            // công bằng vẫn bị làm lệch ở bước gán căn.
+            try
             {
-                return BadRequest(new
-                {
-                    success = false,
-                    message = $"Căn '{apartment.UnitName}' đã được bàn giao (Status={apartment.Status})."
-                });
+                ApartmentAssignmentGate.EnsureAssignable(app, apartment, app.FullName);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
             }
 
             var oldStatus = app.ApplicationStatus;

@@ -12,13 +12,16 @@ public class HousingProjectService : IHousingProjectService
 {
     private readonly IHousingProjectRepository _repository;
     private readonly IFileStorageService _fileStorageService;
+    private readonly IPolicyService _policyService;
 
     public HousingProjectService(
         IHousingProjectRepository repository,
-        IFileStorageService fileStorageService)
+        IFileStorageService fileStorageService,
+        IPolicyService policyService)
     {
         _repository = repository;
         _fileStorageService = fileStorageService;
+        _policyService = policyService;
     }
 
     public async Task<PagedResultDto<HousingProjectResponseDto>> GetHousingProjectsAsync(
@@ -46,6 +49,7 @@ public class HousingProjectService : IHousingProjectService
     {
         // Validate request
         ValidateHousingProjectRequest(request);
+        await ValidateIntakeWindowAsync(request.ApplicationOpenDate, request.ApplicationCloseDate);
 
         // Kiểm tra dự án trùng tên đang hoạt động (PENDING / UPCOMING / OPEN / FULL)
         var existingActive = await _repository.GetActiveProjectByNameAsync(request.ProjectName, developerId);
@@ -158,6 +162,7 @@ public class HousingProjectService : IHousingProjectService
     {
         // Validate request
         ValidateHousingProjectRequest(request);
+        await ValidateIntakeWindowAsync(request.ApplicationOpenDate, request.ApplicationCloseDate);
 
         // Check if project exists
         var existingProject = await _repository.GetByIdAsync(id);
@@ -287,6 +292,36 @@ public class HousingProjectService : IHousingProjectService
 
         // Return mapped response
         return MapToResponseDto(project);
+    }
+
+    /// <summary>
+    /// Đ38.1 Nghị định 100/2024 (sửa bởi Nghị định 54/2026): dự án phải công bố trước khi
+    /// nhận hồ sơ và phải mở tiếp nhận đủ số ngày tối thiểu, để người dân có thời gian
+    /// chuẩn bị giấy tờ. Chặn ngay ở bước khai dự án thay vì để CĐT mở đợt 3 ngày rồi đóng.
+    /// </summary>
+    private async Task ValidateIntakeWindowAsync(DateTime? openDate, DateTime? closeDate)
+    {
+        if (openDate == null || closeDate == null)
+            return;
+
+        var announceMinDays = await _policyService.GetValueAsync(PolicyKeys.PublicAnnounceMinDays, 30);
+        var intakeMinDays = await _policyService.GetValueAsync(PolicyKeys.IntakeMinDays, 30);
+
+        var intakeDays = (closeDate.Value - openDate.Value).TotalDays;
+        if (intakeDays < intakeMinDays)
+        {
+            throw new ArgumentException(
+                $"Thời gian tiếp nhận hồ sơ phải kéo dài tối thiểu {intakeMinDays} ngày " +
+                $"(hiện chỉ {intakeDays:0.#} ngày) — Đ38.1 Nghị định 100/2024.");
+        }
+
+        var earliestOpen = DateTime.UtcNow.AddDays(announceMinDays);
+        if (openDate.Value < earliestOpen)
+        {
+            throw new ArgumentException(
+                $"Ngày mở tiếp nhận hồ sơ phải cách hôm nay tối thiểu {announceMinDays} ngày " +
+                $"để công bố công khai thông tin dự án (sớm nhất: {earliestOpen:dd/MM/yyyy}) — Đ38.1 Nghị định 100/2024.");
+        }
     }
 
     private static void ValidateHousingProjectRequest(dynamic request)
@@ -707,8 +742,12 @@ public class HousingProjectService : IHousingProjectService
         }
         else if (normalized == "CLOSED" || normalized == "FULL")
         {
-            // Ghi nhận đã qua thời điểm đóng nếu chưa có
-            project.ApplicationCloseDate ??= now;
+            // Đóng là đóng thật: hạn nộp phải lùi về hiện tại, nếu không thì cột trạng thái
+            // nói đã đóng mà ProjectIntakeGate vẫn thấy còn trong hạn → hai nguồn sự thật.
+            if (!project.ApplicationCloseDate.HasValue || project.ApplicationCloseDate.Value > now)
+            {
+                project.ApplicationCloseDate = now;
+            }
         }
 
         // Note hiện chưa có cột riêng — giữ tham số để mở rộng audit sau

@@ -167,6 +167,22 @@ public class PolicyService : IPolicyService
             InvalidateCache();
             _logger.LogInformation("Migrated PolicyConfig {Key} from 24h to 168h (7 days).", PolicyKeys.DepositPaymentHours);
         }
+
+        // Đ29.2 Nghị định 100/2024 quy định ngưỡng 15 m² sàn/người. Các DB cũ seed sai 10 m² làm
+        // loại oan hồ sơ có 10–15 m²/người, nên chỉnh lại đúng ngưỡng luật.
+        var areaPolicy = await _db.PolicyConfigs
+            .FirstOrDefaultAsync(p => p.PolicyName == PolicyKeys.MaxAreaPerPersonM2, ct);
+        if (areaPolicy != null && areaPolicy.PolicyValue == "10")
+        {
+            areaPolicy.PolicyValue = "15";
+            areaPolicy.Description =
+                "Diện tích nhà ở bình quân đầu người tối đa (m² sàn) — Đ29.2 Nghị định 100/2024: " +
+                "có nhà nhưng thấp hơn 15 m² sàn/người thì vẫn đủ điều kiện.";
+            areaPolicy.UpdatedBy = effectiveUserId;
+            await _db.SaveChangesAsync(ct);
+            InvalidateCache();
+            _logger.LogInformation("Migrated PolicyConfig {Key} from 10 to 15 m²/person.", PolicyKeys.MaxAreaPerPersonM2);
+        }
     }
 
     public void InvalidateCache() => _cache.Remove(CacheKeyAll);

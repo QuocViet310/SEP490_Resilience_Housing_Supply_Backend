@@ -23,6 +23,10 @@ public class LotteryParticipantResultDto
     public string? SlotCode { get; set; }
     public string? PriorityGroup { get; set; }
     public string Result { get; set; } = string.Empty;
+
+    /// <summary>Thứ tự trong Danh sách dự bị (1, 2, 3...) khi Result = WAITLIST.</summary>
+    public int? WaitlistNumber { get; set; }
+
     public bool IsPriority { get; set; }
 }
 

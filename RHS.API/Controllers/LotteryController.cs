@@ -315,11 +315,19 @@ public class LotteryController : ControllerBase
     public async Task<IActionResult> PromoteWaitlist(
         Guid projectId,
         [FromQuery] Guid? desiredApartmentTypeId,
+        [FromQuery] Guid? releasedApartmentId,
         CancellationToken ct)
     {
-        var promoted = await _lotteryService.PromoteNextWaitlistApplicantAsync(projectId, desiredApartmentTypeId, ct);
+        var promoted = await _lotteryService.PromoteNextWaitlistApplicantAsync(
+            projectId, desiredApartmentTypeId, releasedApartmentId, ct);
         if (promoted is null)
-            return NotFound(new { message = "Không có ứng viên nào trong Danh sách chờ (Waitlist) thỏa mãn để đôn quyền mua." });
-        return Ok(new { message = "Đã đôn thành công ứng viên đứng đầu Waitlist lên suất trúng mua.", applicationId = promoted.ApplicationId, waitlistNumber = promoted.WaitlistNumber, depositDeadline = promoted.DepositDeadline });
+            return NotFound(new { message = "Không có ứng viên nào trong Danh sách dự bị thỏa mãn để chuyển quyền mua." });
+        return Ok(new
+        {
+            message = "Đã chuyển quyền mua cho người đứng đầu Danh sách dự bị.",
+            applicationId = promoted.ApplicationId,
+            waitlistNumber = promoted.WaitlistNumber,
+            depositDeadline = promoted.DepositDeadline
+        });
     }
 }

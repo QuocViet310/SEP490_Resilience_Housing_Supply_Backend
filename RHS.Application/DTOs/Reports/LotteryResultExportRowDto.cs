@@ -13,8 +13,11 @@ public class LotteryResultExportRowDto
     public string CitizenId { get; set; } = string.Empty;
     public string PhoneNumber { get; set; } = string.Empty;
     public string BeneficiaryGroup { get; set; } = string.Empty;
-    public string LotteryResult { get; set; } = string.Empty; // PRIORITY_WON, WON, LOST
+    public string LotteryResult { get; set; } = string.Empty; // PRIORITY_WON, WON, WAITLIST, LOST
     public string SlotCode { get; set; } = string.Empty;
+
+    /// <summary>Thứ tự trong Danh sách dự bị (1, 2, 3...) khi LotteryResult = WAITLIST.</summary>
+    public int? WaitlistNumber { get; set; }
     public DateTime? DrawnAt { get; set; }
     public bool HasPrincipleAgreement { get; set; }
 }

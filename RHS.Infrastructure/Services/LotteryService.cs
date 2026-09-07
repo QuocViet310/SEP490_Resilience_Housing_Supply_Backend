@@ -19,6 +19,7 @@ public class LotteryService : ILotteryService
     private readonly AppDbContext _db;
     private readonly INotificationService _notificationService;
     private readonly IHubContext<LotteryHub, ILotteryHubClient> _hubContext;
+    private readonly IPolicyService _policyService;
     private readonly ILogger<LotteryService> _logger;
 
     private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> ProjectLocks = new();
@@ -34,11 +35,13 @@ public class LotteryService : ILotteryService
         AppDbContext db,
         INotificationService notificationService,
         IHubContext<LotteryHub, ILotteryHubClient> hubContext,
+        IPolicyService policyService,
         ILogger<LotteryService> logger)
     {
         _db = db;
         _notificationService = notificationService;
         _hubContext = hubContext;
+        _policyService = policyService;
         _logger = logger;
     }
 
@@ -61,6 +64,22 @@ public class LotteryService : ILotteryService
         // Cho phép lệch đồng hồ nhẹ; lịch phải ở tương lai để người dân biết trước.
         if (dto.LotteryDate.ToUniversalTime() < DateTime.UtcNow.AddMinutes(-1))
             throw new InvalidOperationException("Thời gian bốc thăm phải ở tương lai.");
+
+        // Danh sách tham gia bốc thăm phải cố định trước khi lên lịch. Nếu còn nhận hồ sơ thì
+        // hoặc phải chặn oan người đang nộp, hoặc danh sách bị thay đổi sau khi đã công bố lịch.
+        if (!project.ApplicationCloseDate.HasValue)
+        {
+            throw new InvalidOperationException(
+                "Dự án chưa có hạn chót tiếp nhận hồ sơ. Hãy đóng đợt tiếp nhận trước khi đề xuất lịch bốc thăm.");
+        }
+
+        if (DateTime.UtcNow < project.ApplicationCloseDate.Value)
+        {
+            throw new InvalidOperationException(
+                $"Dự án vẫn đang nhận hồ sơ đến {project.ApplicationCloseDate.Value:dd/MM/yyyy HH:mm}. " +
+                "Chỉ đề xuất lịch bốc thăm sau khi đã hết hạn tiếp nhận và chốt danh sách, " +
+                "để danh sách tham gia không thay đổi sau khi công bố lịch.");
+        }
 
         // Căn cứ suất = đếm căn AVAILABLE − soft-hold
         await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(_db, projectId, _logger, ct);
@@ -366,7 +385,7 @@ public class LotteryService : ILotteryService
                 Action = ReviewActionConstants.PriorityDirectApproval,
                 OldStatus = oldStatus,
                 NewStatus = ApplicationStatusConstants.DepositPending,
-                Note = "Hồ sơ thuộc diện ưu tiên được phê duyệt trực tiếp, chuyển sang bước thanh toán cọc Đợt 1 (10%).",
+                Note = "Hồ sơ thuộc diện ưu tiên được phê duyệt trực tiếp, chuyển sang bước thanh toán Đợt 1 (thanh toán lần đầu, gồm cả tiền đặt cọc).",
                 ChangedAt = now
             });
         }
@@ -400,30 +419,18 @@ public class LotteryService : ILotteryService
                 Action = ReviewActionConstants.LotteryWon,
                 OldStatus = oldStatus,
                 NewStatus = ApplicationStatusConstants.DepositPending,
-                Note = "Hồ sơ trúng bốc thăm, chuyển sang bước thanh toán cọc Đợt 1 (10%).",
+                Note = "Hồ sơ trúng bốc thăm, chuyển sang bước thanh toán Đợt 1 (thanh toán lần đầu, gồm cả tiền đặt cọc).",
                 ChangedAt = now
             });
         }
 
+        // Hồ sơ không trúng KHÔNG bị hủy: xếp vào Danh sách dự bị theo đúng thứ tự đã bốc,
+        // để căn hộ bị trả lại về sau được chuyển quyền mua thay vì mở đợt bốc thăm mới.
+        await AssignWaitlistRanksAsync(projectId, randomLosers, drawnBy, now, ct);
+
         foreach (var app in randomLosers)
         {
-            var oldStatus = app.ApplicationStatus;
-            app.LotteryResult = LotteryResultConstants.Lost;
-            app.ApplicationStatus = ApplicationStatusConstants.LotteryLost;
-            app.UpdatedAt = now;
-            results.Add(MapParticipant(app, LotteryResultConstants.Lost, !string.IsNullOrWhiteSpace(app.PriorityGroup)));
-
-            _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
-            {
-                HistoryId = Guid.NewGuid(),
-                ApplicationId = app.ApplicationId,
-                ChangedBy = drawnBy,
-                Action = ReviewActionConstants.LotteryLost,
-                OldStatus = oldStatus,
-                NewStatus = ApplicationStatusConstants.LotteryLost,
-                Note = "Hồ sơ trượt bốc thăm.",
-                ChangedAt = now
-            });
+            results.Add(MapParticipant(app, LotteryResultConstants.Waitlist, !string.IsNullOrWhiteSpace(app.PriorityGroup)));
         }
 
         // Cập nhật HousingQuota RemainingSlots
@@ -734,43 +741,21 @@ public class LotteryService : ILotteryService
             {
                 var nowExhausted = DateTime.UtcNow;
 
-                var groupedByDesiredType = undrawnApps.GroupBy(a => a.DesiredApartmentTypeId);
+                // Thứ hạng dự bị tiếp tục theo thứ tự bốc ngẫu nhiên của chính phiên này,
+                // dùng cùng dãy số với các đợt trước để chỉ có một Danh sách dự bị cho cả dự án.
+                var remainingInDrawOrder = undrawnApps
+                    .OrderBy(_ => Random.Shared.Next())
+                    .ToList();
 
-                foreach (var group in groupedByDesiredType)
-                {
-                    int existingWaitlistCount = await _db.HousingApplications.CountAsync(
-                        a => a.ProjectId == projectId
-                             && a.DesiredApartmentTypeId == group.Key
-                             && a.WaitlistNumber.HasValue, ct);
-
-                    var shuffledGroup = group.OrderBy(_ => Random.Shared.Next()).ToList();
-                    int waitlistRank = existingWaitlistCount + 1;
-
-                    foreach (var remainingApp in shuffledGroup)
-                    {
-                        remainingApp.WaitlistNumber = waitlistRank;
-                        remainingApp.LotteryResult = LotteryResultConstants.Waitlist;
-                        remainingApp.ApplicationStatus = ApplicationStatusConstants.Waitlist;
-                        remainingApp.UpdatedAt = nowExhausted;
-
-                        _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
-                        {
-                            HistoryId = Guid.NewGuid(),
-                            ApplicationId = remainingApp.ApplicationId,
-                            ChangedBy = actorId,
-                            Action = ReviewActionConstants.LotteryLost,
-                            OldStatus = remainingApp.ApplicationStatus,
-                            NewStatus = ApplicationStatusConstants.Waitlist,
-                            Note = $"Không trúng đợt bốc chính thức. Được tự động xếp vào Danh sách dự bị (Waitlist #{waitlistRank}) cho loại căn hộ đã chọn.",
-                            ChangedAt = nowExhausted
-                        });
-
-                        waitlistRank++;
-                    }
-                }
+                var assigned = await AssignWaitlistRanksAsync(
+                    projectId, remainingInDrawOrder, actorId, nowExhausted, ct);
 
                 await _db.SaveChangesAsync(ct);
-                throw new InvalidOperationException("Loại căn hộ mà các hồ sơ còn lại đăng ký đều đã hết suất bốc thăm. Tất cả hồ sơ còn lại đã được xếp vào Danh sách dự bị (Waitlist).");
+
+                throw new InvalidOperationException(
+                    "Các loại căn hộ mà hồ sơ còn lại đăng ký đều đã hết suất. " +
+                    $"{assigned} hồ sơ còn lại đã được xếp vào Danh sách dự bị theo thứ tự bốc thăm — " +
+                    "khi có căn bị trả lại, hệ thống sẽ chuyển quyền mua theo thứ tự này.");
             }
 
             var applicantId = app.ApplicantId;
@@ -1166,24 +1151,9 @@ public class LotteryService : ILotteryService
                             && (a.LotteryResult == null || a.LotteryResult == LotteryResultConstants.Pending))
                 .ToListAsync(ct);
 
-            foreach (var app in pending)
-            {
-                var old = app.ApplicationStatus;
-                app.LotteryResult = LotteryResultConstants.Lost;
-                app.ApplicationStatus = ApplicationStatusConstants.LotteryLost;
-                app.UpdatedAt = now;
-                _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
-                {
-                    HistoryId = Guid.NewGuid(),
-                    ApplicationId = app.ApplicationId,
-                    ChangedBy = actorId,
-                    Action = ReviewActionConstants.LotteryLost,
-                    OldStatus = old,
-                    NewStatus = ApplicationStatusConstants.LotteryLost,
-                    Note = "Kết thúc phiên live — hồ sơ chưa bốc được ghi nhận trượt.",
-                    ChangedAt = now
-                });
-            }
+            // Hồ sơ chưa bốc tới khi phiên kết thúc cũng vào Danh sách dự bị, không bị hủy.
+            var pendingInDrawOrder = pending.OrderBy(_ => Random.Shared.Next()).ToList();
+            await AssignWaitlistRanksAsync(projectId, pendingInDrawOrder, actorId, now, ct);
 
             var drawn = await _db.HousingApplications
                 .AsNoTracking()
@@ -1201,7 +1171,7 @@ public class LotteryService : ILotteryService
                 a,
                 a.LotteryResult!,
                 !string.IsNullOrWhiteSpace(a.PriorityGroup))).ToList();
-            results.AddRange(pending.Select(a => MapParticipant(a, LotteryResultConstants.Lost,
+            results.AddRange(pending.Select(a => MapParticipant(a, LotteryResultConstants.Waitlist,
                 !string.IsNullOrWhiteSpace(a.PriorityGroup))));
 
             var draw = new LotteryDraw
@@ -1460,12 +1430,78 @@ public class LotteryService : ILotteryService
         CitizenId = app.CitizenId,
         SlotCode = app.SlotCode,
         PriorityGroup = app.PriorityGroup,
+        Result = result,
+        WaitlistNumber = app.WaitlistNumber,
         IsPriority = isPriority
     };
 
+    /// <summary>
+    /// Xếp các hồ sơ không trúng vào Danh sách dự bị theo MỘT dãy thứ hạng duy nhất cho cả dự án
+    /// (Thứ tự 1, 2, 3...). Thứ tự truyền vào chính là thứ tự đã bốc công khai, nên thứ hạng dự bị
+    /// luôn truy được về biên bản phiên bốc thăm chứ không phải hệ thống tự sắp lại.
+    /// Hồ sơ đã có thứ hạng thì giữ nguyên, không đánh số lại.
+    /// </summary>
+    private async Task<int> AssignWaitlistRanksAsync(
+        Guid projectId,
+        IReadOnlyList<HousingApplication> orderedApps,
+        Guid actorId,
+        DateTime now,
+        CancellationToken ct)
+    {
+        if (orderedApps.Count == 0) return 0;
+
+        var maxRank = await _db.HousingApplications
+            .Where(a => a.ProjectId == projectId && a.WaitlistNumber.HasValue)
+            .MaxAsync(a => (int?)a.WaitlistNumber, ct) ?? 0;
+
+        var assigned = 0;
+
+        foreach (var app in orderedApps)
+        {
+            if (app.WaitlistNumber.HasValue) continue;
+
+            var rank = maxRank + assigned + 1;
+            var oldStatus = app.ApplicationStatus;
+
+            app.WaitlistNumber = rank;
+            app.LotteryResult = LotteryResultConstants.Waitlist;
+            app.ApplicationStatus = ApplicationStatusConstants.Waitlist;
+            app.UpdatedAt = now;
+
+            _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+            {
+                HistoryId = Guid.NewGuid(),
+                ApplicationId = app.ApplicationId,
+                ChangedBy = actorId,
+                Action = ReviewActionConstants.WaitlistAssigned,
+                OldStatus = oldStatus,
+                NewStatus = ApplicationStatusConstants.Waitlist,
+                Note = $"Không trúng đợt bốc thăm chính thức. Hồ sơ không bị hủy mà được xếp vào " +
+                       $"Danh sách dự bị thứ tự #{rank}. Khi có căn hộ bị trả lại do hủy hợp đồng " +
+                       "hoặc không nộp tiền đúng hạn, hệ thống gọi lần lượt theo thứ tự này.",
+                ChangedAt = now
+            });
+
+            assigned++;
+        }
+
+        return assigned;
+    }
+
+    /// <summary>
+    /// Đường đôn Danh sách dự bị DUY NHẤT của hệ thống. Mọi nguồn suất hoàn lại
+    /// (hủy hợp đồng, cưỡng chế thu hồi, quá hạn nộp tiền, người được đôn bỏ suất)
+    /// đều phải gọi hàm này để thứ hạng và hạn xác nhận chỉ có một cách hiểu.
+    /// </summary>
+    /// <param name="desiredApartmentTypeId">
+    /// Chỉ gọi người có nguyện vọng đúng loại căn được hoàn lại. Người bị bỏ qua GIỮ NGUYÊN
+    /// thứ hạng để được gọi khi có căn đúng loại nguyện vọng của họ.
+    /// </param>
+    /// <param name="releasedApartmentId">Căn cụ thể được hoàn lại, nếu có thì gán luôn cho người được đôn.</param>
     public async Task<HousingApplication?> PromoteNextWaitlistApplicantAsync(
         Guid projectId,
         Guid? desiredApartmentTypeId,
+        Guid? releasedApartmentId = null,
         CancellationToken ct = default)
     {
         var semaphore = ProjectLocks.GetOrAdd(projectId, _ => new SemaphoreSlim(1, 1));
@@ -1473,44 +1509,83 @@ public class LotteryService : ILotteryService
 
         try
         {
-            var nextCandidate = await _db.HousingApplications
+            Apartment? releasedApartment = null;
+            if (releasedApartmentId.HasValue && releasedApartmentId.Value != Guid.Empty)
+            {
+                releasedApartment = await _db.Apartments
+                    .Include(a => a.ApartmentType)
+                    .FirstOrDefaultAsync(a => a.Id == releasedApartmentId.Value && a.ProjectId == projectId, ct);
+            }
+
+            // Căn hoàn lại quyết định loại căn cần gọi; nếu không có căn cụ thể thì dùng tham số.
+            var targetTypeId = releasedApartment?.ApartmentTypeId ?? desiredApartmentTypeId;
+
+            var candidates = await _db.HousingApplications
                 .Include(a => a.Applicant)
                 .Include(a => a.DesiredApartmentType)
                 .Where(a => a.ProjectId == projectId
-                            && (a.ApplicationStatus == ApplicationStatusConstants.Waitlist || a.LotteryResult == LotteryResultConstants.Waitlist)
+                            && a.ApplicationStatus == ApplicationStatusConstants.Waitlist
                             && a.WaitlistNumber.HasValue
-                            && (desiredApartmentTypeId == null || a.DesiredApartmentTypeId == desiredApartmentTypeId))
+                            && !a.IsViolation)
                 .OrderBy(a => a.WaitlistNumber)
-                .FirstOrDefaultAsync(ct);
+                .ToListAsync(ct);
+
+            // Người chưa chọn nguyện vọng loại căn thì nhận được mọi loại.
+            // Khi biết căn cụ thể được hoàn lại thì phải qua cùng bộ ràng buộc như CĐT gán căn tay,
+            // nếu không thì một căn thuộc quỹ ưu tiên có thể bị đôn cho hồ sơ không thuộc nhóm ưu tiên.
+            var nextCandidate = candidates.FirstOrDefault(a =>
+                releasedApartment != null
+                    ? ApartmentAssignmentGate.IsAssignable(a, releasedApartment)
+                    : targetTypeId == null
+                        || a.DesiredApartmentTypeId == null
+                        || a.DesiredApartmentTypeId == targetTypeId);
 
             if (nextCandidate == null)
             {
                 _logger.LogInformation(
-                    "Không tìm thấy ứng viên trong Danh sách chờ (Waitlist) cho dự án {ProjectId} (Type: {TypeId}).",
-                    projectId, desiredApartmentTypeId);
+                    "Danh sách dự bị dự án {ProjectId} không có ai phù hợp loại căn {TypeId} ({Total} hồ sơ dự bị).",
+                    projectId, targetTypeId, candidates.Count);
                 return null;
             }
 
+            var confirmHours = await _policyService.GetValueAsync(PolicyKeys.WaitlistConfirmHours, 48, ct);
             var now = DateTime.UtcNow;
             var oldStatus = nextCandidate.ApplicationStatus;
 
+            // Có căn cụ thể thì vào ngay bước nộp tiền như người trúng bốc thăm bình thường;
+            // chưa có căn cụ thể thì chờ CĐT cấp căn (LOTTERY_WON).
             nextCandidate.LotteryResult = LotteryResultConstants.Won;
-            nextCandidate.ApplicationStatus = ApplicationStatusConstants.LotteryWon;
+            nextCandidate.ApplicationStatus = releasedApartment != null
+                ? ApplicationStatusConstants.DepositPending
+                : ApplicationStatusConstants.LotteryWon;
             nextCandidate.WaitlistPromotedAt = now;
-            nextCandidate.DepositDeadline = now.AddHours(48);
+            nextCandidate.DepositDeadline = now.AddHours(confirmHours);
             nextCandidate.UpdatedAt = now;
 
-            string typeName = nextCandidate.DesiredApartmentType?.TypeName ?? "loại căn đã chọn";
+            if (releasedApartment != null)
+            {
+                nextCandidate.ApartmentId = releasedApartment.Id;
+                releasedApartment.Status = ApartmentStatusConstants.Assigned;
+                releasedApartment.UpdatedAt = now;
+            }
+
+            var typeName = releasedApartment?.UnitName
+                ?? nextCandidate.DesiredApartmentType?.TypeName
+                ?? "loại căn đã đăng ký nguyện vọng";
+            var deadlineText = nextCandidate.DepositDeadline!.Value.ToString("dd/MM/yyyy HH:mm");
 
             _db.ApplicationStatusHistories.Add(new ApplicationStatusHistory
             {
                 HistoryId = Guid.NewGuid(),
                 ApplicationId = nextCandidate.ApplicationId,
                 ChangedBy = nextCandidate.ApplicantId,
-                Action = ReviewActionConstants.LotteryWon,
+                Action = ReviewActionConstants.WaitlistPromoted,
                 OldStatus = oldStatus,
-                NewStatus = ApplicationStatusConstants.LotteryWon,
-                Note = $"Được tự động đôn từ Danh sách dự bị (Waitlist #{nextCandidate.WaitlistNumber}) lên suất trúng mua ({typeName}) do có suất hoàn trả. Hạn chót xác nhận nộp cọc: {nextCandidate.DepositDeadline:dd/MM/yyyy HH:mm} (48h).",
+                NewStatus = nextCandidate.ApplicationStatus,
+                Note = $"Được đôn từ Danh sách dự bị #{nextCandidate.WaitlistNumber} lên suất trúng mua ({typeName}) " +
+                       $"do có căn hoàn lại. Không mở đợt bốc thăm mới. " +
+                       $"Hạn xác nhận nộp tiền đợt 1: {deadlineText} ({confirmHours} giờ). " +
+                       "Quá hạn thì mất suất và hệ thống gọi người kế tiếp.",
                 ChangedAt = now
             });
 
@@ -1522,8 +1597,10 @@ public class LotteryService : ILotteryService
             {
                 await _notificationService.SendAsync(
                     nextCandidate.ApplicantId,
-                    "Bạn đã được đôn từ Danh sách dự bị lên suất trúng mua NOXH!",
-                    $"Chúc mừng! Do có căn hộ ({typeName}) bị hoàn lại, hồ sơ của bạn (Waitlist #{nextCandidate.WaitlistNumber}) đã được đôn lên suất trúng mua. Vui lòng hoàn tất nộp cọc đợt 1 trước {nextCandidate.DepositDeadline:HH:mm dd/MM/yyyy} (trong vòng 48h).",
+                    "Bạn đã được đôn từ Danh sách dự bị lên suất trúng mua NOXH",
+                    $"Do có căn hộ ({typeName}) bị trả lại, hồ sơ của bạn (dự bị số {nextCandidate.WaitlistNumber}) " +
+                    $"đã được chuyển quyền mua. Vui lòng xác nhận và hoàn tất nộp tiền đợt 1 trước {deadlineText} " +
+                    $"(trong {confirmHours} giờ). Quá hạn, suất sẽ được chuyển cho người kế tiếp trong danh sách.",
                     NotificationTypeConstants.ContractPending);
             }
             catch (Exception ex)
@@ -1543,8 +1620,8 @@ public class LotteryService : ILotteryService
             }
 
             _logger.LogInformation(
-                "Đã đôn thành công ứng viên {ApplicantId} (Waitlist #{WaitlistNum}) lên suất trúng mua cho dự án {ProjectId}.",
-                nextCandidate.ApplicantId, nextCandidate.WaitlistNumber, projectId);
+                "Đã đôn ứng viên {ApplicantId} (dự bị #{WaitlistNum}) lên suất trúng mua dự án {ProjectId}, hạn xác nhận {Deadline}.",
+                nextCandidate.ApplicantId, nextCandidate.WaitlistNumber, projectId, nextCandidate.DepositDeadline);
 
             return nextCandidate;
         }

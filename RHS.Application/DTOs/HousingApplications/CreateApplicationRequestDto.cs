@@ -53,7 +53,7 @@ public class CreateApplicationRequestDto
 
     /// <summary>
     /// Thực trạng nhà ở. Giá trị hợp lệ:
-    /// "NO_HOUSE" (Chưa có nhà) hoặc "SMALL_HOUSE" (Diện tích &lt; 10m²/người).
+    /// "NO_HOUSE" (Chưa có nhà) hoặc "SMALL_HOUSE" (Diện tích &lt; 15 m² sàn/người).
     /// </summary>
     public string? HousingStatus { get; set; }
 
@@ -79,7 +79,7 @@ public class CreateApplicationRequestDto
     [Range(0, 1_000_000_000, ErrorMessage = "Thu nhập vợ/chồng không hợp lệ.")]
     public decimal? SpouseMonthlyIncome { get; set; }
 
-    /// <summary>Diện tích nhà ở bình quân đầu người (m²/người) — bắt buộc &lt; 10m² khi SMALL_HOUSE</summary>
+    /// <summary>Diện tích nhà ở bình quân đầu người (m²/người) — bắt buộc &lt; 15 m² khi SMALL_HOUSE</summary>
     [Range(0, 1000, ErrorMessage = "Diện tích bình quân không hợp lệ.")]
     public decimal? AverageHousingAreaPerPerson { get; set; }
 

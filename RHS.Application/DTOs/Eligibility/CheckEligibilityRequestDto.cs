@@ -26,7 +26,7 @@ public class CheckEligibilityRequestDto
     [Range(0, 1000000000, ErrorMessage = "Thu nhập vợ/chồng không hợp lệ.")]
     public decimal? SpouseMonthlyIncome { get; set; }
 
-    /// <summary>Thực trạng nhà ở: NO_HOUSE (Chưa có nhà) | SMALL_HOUSE (Nhà chật &lt; 10m²/người)</summary>
+    /// <summary>Thực trạng nhà ở: NO_HOUSE (Chưa có nhà) | SMALL_HOUSE (Nhà chật &lt; 15 m² sàn/người)</summary>
     public string? HousingStatus { get; set; }
 
     /// <summary>Diện tích nhà ở bình quân đầu người (m²/người)</summary>

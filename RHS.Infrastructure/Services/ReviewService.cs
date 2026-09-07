@@ -91,6 +91,16 @@ public class ReviewService : IReviewService
             allowedTargets: new[] { ApplicationStatusConstants.Submitted },
             validSources: new[] { ApplicationStatusConstants.Draft, ApplicationStatusConstants.NeedMoreDocuments });
 
+        // Đ38.1 — cổng nhận hồ sơ. Nháp tạo trong hạn vẫn phải nộp trong hạn; nếu dự án đã đóng
+        // hoặc đã chốt lịch bốc thăm thì không được nộp thêm hồ sơ mới.
+        // Hồ sơ bị yêu cầu bổ sung là hồ sơ đã tiếp nhận trong hạn — việc bổ sung diễn ra sau
+        // khi đóng đợt là bình thường, nên không áp cổng này.
+        if (application.ApplicationStatus == ApplicationStatusConstants.Draft)
+        {
+            await ProjectIntakeGate.RequireIntakeOpenAsync(
+                _context, application.ProjectId, "nộp hồ sơ", DateTime.UtcNow);
+        }
+
         // Nghiệp vụ: bắt buộc đủ giấy tờ tùy theo nhóm đối tượng
         // (A) Giấy xác nhận nhà ở — bắt buộc tất cả
         // (B) 1 giấy tờ chứng minh đối tượng — tùy PriorityGroup

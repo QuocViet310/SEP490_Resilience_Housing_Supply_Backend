@@ -31,4 +31,11 @@ public class ApplicationSummaryItemDto
     public decimal PriorityScore { get; set; }
     public DateTime SubmittedAt { get; set; }
     public string ApplicationStatus { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Nguyện vọng loại căn người dân đã khai. CĐT chỉ được gán căn đúng loại này
+    /// (xem ApartmentAssignmentGate), nên giao diện chốt đợt cần trường này để lọc danh sách căn.
+    /// </summary>
+    public Guid? DesiredApartmentTypeId { get; set; }
+    public string? DesiredApartmentTypeLabel { get; set; }
 }

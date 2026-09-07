@@ -140,7 +140,11 @@ public static class TriggerEventConstants
     /// <summary>Khi hồ sơ được Sở Xây dựng phê duyệt (APPROVED) — legacy / tùy chọn</summary>
     public const string OnApproved = "ON_APPROVED";
 
-    /// <summary>Khi trúng bốc thăm hoặc cấp nhà — mở đợt tiền cọc (Đợt 1).</summary>
+    /// <summary>
+    /// Khi trúng bốc thăm hoặc được cấp suất — mở đợt thanh toán lần đầu (Đợt 1).
+    /// Đợt này bao gồm cả tiền đặt cọc và không quá 30% giá trị hợp đồng (Đ25.1 Luật KDBĐS 2023).
+    /// Riêng phần tiền đặt cọc không được quá 5% giá bán (Đ23.5) và chỉ thu khi nhà đủ điều kiện bán.
+    /// </summary>
     public const string OnLotteryWon = "ON_LOTTERY_WON";
 
     /// <summary>Mốc sau khi người dân ký hợp đồng. Chủ đầu tư mở đợt thủ công khi tiến độ thật tới — không tự mở lúc ký.</summary>

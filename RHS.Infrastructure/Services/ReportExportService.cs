@@ -359,7 +359,9 @@ public class ReportExportService : IReportExportService
             ws.Cells[currentRow, 5].Value = r.PhoneNumber;
             ws.Cells[currentRow, 6].Value = r.BeneficiaryGroup;
             ws.Cells[currentRow, 7].Value = r.LotteryResult;
-            ws.Cells[currentRow, 8].Value = string.IsNullOrEmpty(r.SlotCode) ? "-" : r.SlotCode;
+            ws.Cells[currentRow, 8].Value = r.LotteryResult == LotteryResultConstants.Waitlist && r.WaitlistNumber.HasValue
+                ? $"Dự bị số {r.WaitlistNumber}"
+                : string.IsNullOrEmpty(r.SlotCode) ? "-" : r.SlotCode;
             ws.Cells[currentRow, 9].Value = r.DrawnAt?.ToString("dd/MM/yyyy HH:mm") ?? "-";
 
             for (int col = 1; col <= 9; col++)
@@ -485,7 +487,13 @@ public class ReportExportService : IReportExportService
         var (_, rows) = await GetLotteryExportDataAsync(projectId);
         var winners = rows.Where(r =>
             r.LotteryResult is "WON" or "PRIORITY_WON").ToList();
-        var losers = rows.Where(r => r.LotteryResult == "LOST").ToList();
+        // Hồ sơ không trúng không bị hủy mà vào Danh sách dự bị, nên biên bản phải ghi
+        // đúng thứ hạng dự bị — đó là căn cứ để sau này chuyển quyền mua căn bị trả lại.
+        var waitlisted = rows
+            .Where(r => r.LotteryResult == LotteryResultConstants.Waitlist)
+            .OrderBy(r => r.WaitlistNumber ?? int.MaxValue)
+            .ToList();
+        var losers = rows.Where(r => r.LotteryResult == LotteryResultConstants.Lost).ToList();
 
         var document = Document.Create(container =>
         {
@@ -531,12 +539,25 @@ public class ReportExportService : IReportExportService
                     if (winners.Count == 0)
                         col.Item().Text("(Không có)").Italic();
 
-                    col.Item().PaddingTop(12).Text("II. DANH SÁCH KHÔNG TRÚNG").Bold();
-                    foreach (var (l, i) in losers.Select((l, i) => (l, i + 1)))
-                        col.Item().Text($"{i}. {l.FullName} — CCCD {l.CitizenId}");
+                    col.Item().PaddingTop(12).Text("II. DANH SÁCH DỰ BỊ (THEO THỨ TỰ BỐC THĂM)").Bold();
+                    foreach (var w in waitlisted)
+                        col.Item().Text($"Dự bị số {w.WaitlistNumber}. {w.FullName} — CCCD {w.CitizenId}");
 
-                    if (losers.Count == 0)
+                    if (waitlisted.Count == 0)
                         col.Item().Text("(Không có)").Italic();
+                    else
+                        col.Item().PaddingTop(4).Text(
+                            "Hồ sơ trong Danh sách dự bị không bị hủy. Khi có căn hộ bị trả lại do hủy hợp đồng " +
+                            "hoặc không nộp tiền đúng hạn, quyền mua được chuyển lần lượt theo thứ tự trên, " +
+                            "không tổ chức đợt bốc thăm mới.")
+                            .Italic().FontSize(9);
+
+                    if (losers.Count > 0)
+                    {
+                        col.Item().PaddingTop(12).Text("III. DANH SÁCH MẤT SUẤT").Bold();
+                        foreach (var (l, i) in losers.Select((l, i) => (l, i + 1)))
+                            col.Item().Text($"{i}. {l.FullName} — CCCD {l.CitizenId}");
+                    }
 
                     col.Item().PaddingTop(20).Text(
                         "Biên bản được lập tự động từ hệ thống RHS sau khi kết thúc/công bố phiên bốc thăm, phục vụ giám sát minh bạch.")
@@ -745,6 +766,7 @@ public class ReportExportService : IReportExportService
             BeneficiaryGroup = a.PriorityGroup ?? string.Empty,
             LotteryResult = a.LotteryResult ?? string.Empty,
             SlotCode = a.SlotCode ?? string.Empty,
+            WaitlistNumber = a.WaitlistNumber,
             DrawnAt = a.UpdatedAt,
             HasPrincipleAgreement = a.PrincipleAgreement != null
         }).ToList();

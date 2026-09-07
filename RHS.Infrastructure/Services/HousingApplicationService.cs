@@ -55,25 +55,9 @@ public class HousingApplicationService : IHousingApplicationService
 
         var now = DateTime.UtcNow;
 
-        // 1. Kiểm tra dự án tồn tại và thời gian mở nhận hồ sơ
-        var project = await _context.HousingProjects
-            .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == request.ProjectId);
-
-        if (project == null)
-            throw new KeyNotFoundException($"Không tìm thấy dự án với ID: {request.ProjectId}");
-
-        if (project.ApplicationOpenDate.HasValue && now < project.ApplicationOpenDate.Value)
-        {
-            throw new ArgumentException(
-                $"Dự án chưa đến thời gian mở nhận hồ sơ (Thời gian mở: {project.ApplicationOpenDate.Value:dd/MM/yyyy HH:mm}).");
-        }
-
-        if (project.ApplicationCloseDate.HasValue && now > project.ApplicationCloseDate.Value)
-        {
-            throw new ArgumentException(
-                $"Dự án đã kết thúc thời hạn nhận hồ sơ (Hạn chót: {project.ApplicationCloseDate.Value:dd/MM/yyyy HH:mm}).");
-        }
+        // 1. Cổng nhận hồ sơ dùng chung với bước nộp hồ sơ (Đ38.1)
+        await ProjectIntakeGate.RequireIntakeOpenAsync(
+            _context, request.ProjectId, "tạo hồ sơ mới", now);
 
         // 2. Kiểm tra trùng lặp & Chống nộp nhiều nơi (Active App Check)
         var alreadyExists = await _applicationRepo.ExistsByApplicantAndProjectAsync(
@@ -797,6 +781,7 @@ public class HousingApplicationService : IHousingApplicationService
 
         var apps = await _context.HousingApplications
             .AsNoTracking()
+            .Include(a => a.DesiredApartmentType)
             .Where(a => a.ProjectId == projectId && qualifiedStatuses.Contains(a.ApplicationStatus) && !a.IsViolation)
             .OrderByDescending(a => a.PriorityScore)
             .ThenBy(a => a.SubmittedAt)
@@ -838,6 +823,7 @@ public class HousingApplicationService : IHousingApplicationService
 
         var apps = await _context.HousingApplications
             .Include(a => a.PrincipleAgreement)
+            .Include(a => a.DesiredApartmentType)
             .Where(a => a.ProjectId == projectId && qualifiedStatuses.Contains(a.ApplicationStatus) && !a.IsViolation)
             .OrderByDescending(a => a.PriorityScore)
             .ThenBy(a => a.SubmittedAt)
@@ -1043,6 +1029,7 @@ public class HousingApplicationService : IHousingApplicationService
             throw new InvalidOperationException("Không được gán cùng một căn cho nhiều hồ sơ.");
 
         var apartments = await _context.Apartments
+            .Include(a => a.ApartmentType)
             .Where(a => a.ProjectId == projectId && aptIds.Contains(a.Id))
             .ToListAsync();
 
@@ -1054,11 +1041,7 @@ public class HousingApplicationService : IHousingApplicationService
             var app = apps.First(a => a.ApplicationId == item.ApplicationId);
             var apt = apartments.First(a => a.Id == item.ApartmentId);
 
-            if (!string.Equals(apt.Status, ApartmentStatusConstants.Available, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException($"Căn '{apt.UnitName}' không còn trống (Status={apt.Status}).");
-
-            if (app.ApartmentId.HasValue)
-                throw new InvalidOperationException($"Hồ sơ {app.FullName} đã được gán căn trước đó.");
+            ApartmentAssignmentGate.EnsureAssignable(app, apt, app.FullName);
 
             app.ApartmentId = apt.Id;
             app.Apartment = apt;
@@ -1104,7 +1087,7 @@ public class HousingApplicationService : IHousingApplicationService
 
         pendingNotify.Add((
             app.ApplicantId,
-            "Hồ sơ của bạn đã được chốt suất và cấp căn. Vui lòng thanh toán cọc Đợt 1 (10%) trên ứng dụng để tiến hành ký hợp đồng mua bán NOXH."));
+            "Hồ sơ của bạn đã được chốt suất và cấp căn. Vui lòng thanh toán Đợt 1 (thanh toán lần đầu, gồm tiền đặt cọc) theo lịch trên ứng dụng để tiến hành ký hợp đồng mua bán NOXH."));
     }
 
     private static ApplicationSummaryItemDto MapToSummaryItem(HousingApplication a)
@@ -1117,7 +1100,9 @@ public class HousingApplicationService : IHousingApplicationService
             PriorityGroup = a.PriorityGroup,
             PriorityScore = a.PriorityScore,
             SubmittedAt = a.SubmittedAt,
-            ApplicationStatus = a.ApplicationStatus
+            ApplicationStatus = a.ApplicationStatus,
+            DesiredApartmentTypeId = a.DesiredApartmentTypeId,
+            DesiredApartmentTypeLabel = a.DesiredApartmentType?.TypeName
         };
     }
 

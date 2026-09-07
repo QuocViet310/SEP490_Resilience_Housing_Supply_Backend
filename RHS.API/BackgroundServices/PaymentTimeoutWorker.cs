@@ -14,6 +14,7 @@ namespace RHS.API.BackgroundServices;
 /// Hết hạn theo luồng chuẩn:
 /// - CONTRACT_PENDING quá hạn ký HĐ → EXPIRED (+ hoàn 1 suất căn)
 /// - CONTRACT_SIGNED quá hạn đặt cọc (từ SignedAt) → EXPIRED (+ hoàn 1 suất căn)
+/// - Người được đôn từ Danh sách dự bị quá hạn xác nhận → mất suất, gọi người kế tiếp
 /// Không expire APPROVED: sau duyệt còn chờ CĐT chốt / bốc thăm, chưa giữ suất.
 /// </summary>
 public class PaymentTimeoutWorker : BackgroundService
@@ -82,6 +83,8 @@ public class PaymentTimeoutWorker : BackgroundService
                 x.PrincipleAgreement.SignedAt.Value < depositCutoff)
             .ToListAsync(stoppingToken);
 
+        await ProcessExpiredWaitlistPromotionsAsync(scope, context, notificationService, stoppingToken);
+
         if (pendingSignExpired.Count == 0 && signedUnpaidExpired.Count == 0)
             return;
 
@@ -121,6 +124,117 @@ public class PaymentTimeoutWorker : BackgroundService
                 notifTitle: "Hồ sơ đã hết hạn thanh toán",
                 notifBody: $"Hồ sơ của bạn đã bị hủy do không thanh toán Đợt 1 trong vòng {depositHours} giờ sau khi ký hợp đồng mua bán nhà ở xã hội.",
                 stoppingToken);
+        }
+    }
+
+    /// <summary>
+    /// Người được đôn từ Danh sách dự bị có hạn xác nhận cụ thể (PolicyConfig WAITLIST_CONFIRM_HOURS).
+    /// Quá hạn mà chưa nộp tiền thì mất suất, căn được chuyển ngay cho người kế tiếp trong danh sách —
+    /// đây là điều làm cho hạn xác nhận có hiệu lực thật thay vì chỉ là một mốc hiển thị.
+    /// </summary>
+    private async Task ProcessExpiredWaitlistPromotionsAsync(
+        IServiceScope scope,
+        AppDbContext context,
+        INotificationService notificationService,
+        CancellationToken stoppingToken)
+    {
+        var now = DateTime.UtcNow;
+
+        var promotedStatuses = new[]
+        {
+            ApplicationStatusConstants.LotteryWon,
+            ApplicationStatusConstants.DepositPending
+        };
+
+        var expiredPromotions = await context.HousingApplications
+            .Where(x => promotedStatuses.Contains(x.ApplicationStatus)
+                        && x.WaitlistPromotedAt.HasValue
+                        && x.DepositDeadline.HasValue
+                        && x.DepositDeadline.Value < now)
+            .ToListAsync(stoppingToken);
+
+        if (expiredPromotions.Count == 0)
+            return;
+
+        var lotteryService = scope.ServiceProvider.GetRequiredService<ILotteryService>();
+
+        foreach (var app in expiredPromotions)
+        {
+            var isPaid = await context.Payments.AnyAsync(
+                p => p.ApplicationId == app.ApplicationId && p.Status == "Success",
+                stoppingToken);
+
+            if (isPaid)
+                continue;
+
+            var projectId = app.ProjectId;
+            var releasedApartmentId = app.ApartmentId;
+            var forfeitedRank = app.WaitlistNumber;
+            var desiredTypeId = app.DesiredApartmentTypeId;
+            var deadline = app.DepositDeadline!.Value;
+            var oldStatus = app.ApplicationStatus;
+
+            app.ApplicationStatus = ApplicationStatusConstants.LotteryLost;
+            app.LotteryResult = LotteryResultConstants.Lost;
+            app.ApartmentId = null;
+            // Đã dùng hết lượt được gọi — không xếp lại vào danh sách dự bị.
+            app.WaitlistNumber = null;
+            app.UpdatedAt = now;
+
+            if (releasedApartmentId.HasValue && releasedApartmentId.Value != Guid.Empty)
+            {
+                var apartment = await context.Apartments
+                    .FirstOrDefaultAsync(a => a.Id == releasedApartmentId.Value, stoppingToken);
+                if (apartment != null)
+                {
+                    apartment.Status = ApartmentStatusConstants.Available;
+                    apartment.UpdatedAt = now;
+                }
+            }
+
+            context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
+            {
+                HistoryId = Guid.NewGuid(),
+                ApplicationId = app.ApplicationId,
+                ChangedBy = app.ApplicantId,
+                Action = ReviewActionConstants.WaitlistForfeited,
+                OldStatus = oldStatus,
+                NewStatus = ApplicationStatusConstants.LotteryLost,
+                Note = $"Được đôn từ Danh sách dự bị #{forfeitedRank} nhưng không xác nhận nộp tiền " +
+                       $"trước hạn {deadline:dd/MM/yyyy HH:mm} nên mất suất. " +
+                       "Căn hộ được chuyển cho người kế tiếp trong Danh sách dự bị.",
+                ChangedAt = now
+            });
+
+            await context.SaveChangesAsync(stoppingToken);
+
+            _logger.LogInformation(
+                "Waitlist promotion forfeited: App={AppId}, Rank={Rank}, Deadline={Deadline}.",
+                app.ApplicationId, forfeitedRank, deadline);
+
+            try
+            {
+                await notificationService.SendAsync(
+                    app.ApplicantId,
+                    "Bạn đã mất suất mua do quá hạn xác nhận",
+                    $"Hồ sơ của bạn được chuyển quyền mua từ Danh sách dự bị nhưng chưa nộp tiền đợt 1 " +
+                    $"trước hạn {deadline:dd/MM/yyyy HH:mm}, nên suất đã được chuyển cho người kế tiếp.",
+                    NotificationTypeConstants.ApplicationExpired);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to send waitlist forfeiture notification for App={AppId}.", app.ApplicationId);
+            }
+
+            // Đôn người kế tiếp — cùng đường đôn duy nhất, tự đồng bộ lại số suất khả dụng.
+            var promoted = await lotteryService.PromoteNextWaitlistApplicantAsync(
+                projectId, desiredTypeId, releasedApartmentId, stoppingToken);
+
+            if (promoted == null)
+            {
+                await ProjectUnitSeatHelper.SyncAvailableUnitsAsync(context, projectId, _logger, stoppingToken);
+                await context.SaveChangesAsync(stoppingToken);
+            }
         }
     }
 
