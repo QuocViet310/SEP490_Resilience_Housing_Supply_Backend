@@ -961,6 +961,16 @@ public class HousingApplicationService : IHousingApplicationService
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
         }
+        catch (DbUpdateException ex) when (IsDuplicateApartmentAssignment(ex))
+        {
+            // Unique index chặn khi một căn trong lô vừa được gán cho hồ sơ khác ở phiên làm việc song song.
+            await transaction.RollbackAsync();
+            _logger.LogWarning(ex,
+                "Chốt đợt bị chặn do gán trùng căn ở dự án {ProjectId}", projectId);
+            throw new InvalidOperationException(
+                "Có căn trong danh sách vừa được gán cho hồ sơ khác nên toàn bộ đợt chốt đã được hoàn tác. " +
+                "Vui lòng tải lại danh sách căn trống và chọn lại.");
+        }
         catch (Exception ex)
         {
             await transaction.RollbackAsync();
@@ -1111,6 +1121,13 @@ public class HousingApplicationService : IHousingApplicationService
         return ex.InnerException is Microsoft.Data.SqlClient.SqlException sqlEx &&
                (sqlEx.Number == 2601 || sqlEx.Number == 2627);
     }
+
+    /// <summary>
+    /// Vi phạm unique index IX_HousingApplications_ApartmentId — một căn đã thuộc hồ sơ còn hiệu lực khác.
+    /// </summary>
+    private static bool IsDuplicateApartmentAssignment(DbUpdateException ex) =>
+        IsUniqueConstraintViolation(ex)
+        && ex.InnerException!.Message.Contains("ApartmentId", StringComparison.OrdinalIgnoreCase);
 
     private async Task<Guid?> ResolveDesiredApartmentTypeIdAsync(
         Guid? requestedTypeId,

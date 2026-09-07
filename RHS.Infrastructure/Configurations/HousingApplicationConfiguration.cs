@@ -165,6 +165,17 @@ public class HousingApplicationConfiguration : IEntityTypeConfiguration<HousingA
         builder.HasIndex(x => new { x.ApplicantId, x.ProjectId })
             .IsUnique()
             .HasFilter("[ApplicationStatus] <> N'CANCELED' AND [ApplicationStatus] <> N'REJECTED'");
+
+        // Một căn chỉ thuộc một hồ sơ còn hiệu lực. Kiểm tra Status=AVAILABLE trong code là
+        // đọc-rồi-ghi không khóa, nên hai nhân viên gán cùng một căn gần như đồng thời đều lọt:
+        // cả hai đọc thấy còn trống, lần ghi sau chỉ đặt lại ASSIGNED nên không xung đột, và hai
+        // hồ sơ cùng trỏ vào một căn. Khóa ở tầng dữ liệu thì không phụ thuộc code có nhớ kiểm.
+        // Lọc bỏ trạng thái đã chết để hồ sơ cũ còn sót ApartmentId không chặn việc gán lại căn.
+        builder.HasIndex(x => x.ApartmentId)
+            .IsUnique()
+            .HasFilter(
+                "[ApartmentId] IS NOT NULL " +
+                "AND [ApplicationStatus] NOT IN (N'CANCELED', N'REJECTED', N'EXPIRED', N'LOTTERY_LOST', N'WAITLIST')");
     }
 }
 

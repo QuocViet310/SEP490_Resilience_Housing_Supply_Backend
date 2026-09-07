@@ -799,7 +799,24 @@ public class HousingApplicationsController : ControllerBase
                 ChangedBy     = GetCurrentUserId()
             });
 
-            await context.SaveChangesAsync();
+            try
+            {
+                await context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (IsDuplicateApartmentAssignment(ex))
+            {
+                // Hai cán bộ gán cùng một căn gần như đồng thời: cả hai đều đọc thấy còn trống,
+                // unique index chặn người ghi sau. Trả về lý do thật thay vì lỗi 500.
+                _logger.LogWarning(ex,
+                    "Concurrent assignment rejected: Apartment={UnitName} already taken (App={AppId}).",
+                    apartment.UnitName, id);
+                return Conflict(new
+                {
+                    success = false,
+                    message = $"Căn '{apartment.UnitName}' vừa được gán cho một hồ sơ khác. " +
+                              "Vui lòng tải lại danh sách và chọn căn còn trống khác."
+                });
+            }
 
             await installmentService.FireTriggerEventAsync(
                 id,
@@ -836,6 +853,14 @@ public class HousingApplicationsController : ControllerBase
             });
         }
     }
+
+    /// <summary>
+    /// Vi phạm unique index IX_HousingApplications_ApartmentId — một căn đã thuộc hồ sơ còn hiệu lực khác.
+    /// </summary>
+    private static bool IsDuplicateApartmentAssignment(DbUpdateException ex) =>
+        ex.InnerException is Microsoft.Data.SqlClient.SqlException sqlEx
+        && (sqlEx.Number == 2601 || sqlEx.Number == 2627)
+        && sqlEx.Message.Contains("ApartmentId", StringComparison.OrdinalIgnoreCase);
 
     // ──────────────────────────────────────────────────────────────
     // HOUSEHOLD MEMBERS: CRUD thành viên hộ gia đình
