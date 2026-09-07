@@ -22,6 +22,7 @@ public class InstallmentService : IInstallmentService
     private readonly IPaymentRepository _paymentRepository;
     private readonly INotificationService _notificationService;
     private readonly ILotteryService _lotteryService;
+    private readonly IPolicyService _policyService;
     private readonly ILogger<InstallmentService> _logger;
 
     public InstallmentService(
@@ -30,6 +31,7 @@ public class InstallmentService : IInstallmentService
         IPaymentRepository paymentRepository,
         INotificationService notificationService,
         ILotteryService lotteryService,
+        IPolicyService policyService,
         ILogger<InstallmentService> logger)
     {
         _db                  = db;
@@ -37,7 +39,36 @@ public class InstallmentService : IInstallmentService
         _paymentRepository   = paymentRepository;
         _notificationService = notificationService;
         _lotteryService      = lotteryService;
+        _policyService       = policyService;
         _logger              = logger;
+    }
+
+    /// <summary>
+    /// Lãi phạt chậm nộp mỗi ngày. Lấy từ chính sách admin cấu hình được — trước đây con số
+    /// 0.0005 được cắm cứng ở ba nơi nên khoá LATE_PAYMENT_PENALTY_DAILY_RATE không có tác dụng.
+    /// </summary>
+    private Task<decimal> GetDailyPenaltyRateAsync(CancellationToken ct = default) =>
+        _policyService.GetValueAsync(PolicyKeys.LatePaymentPenaltyDailyRate, 0.0005m, ct);
+
+    /// <summary>Lãi phạt của một đợt quá hạn. Đợt đã đóng hoặc đã huỷ thì không tính.</summary>
+    private static decimal CalculatePenalty(
+        PaymentInstallment installment,
+        decimal dailyRate,
+        DateTime now,
+        out int overdueDays)
+    {
+        overdueDays = 0;
+
+        var unpaid = installment.Status == InstallmentStatusConstants.Pending
+                  || installment.Status == InstallmentStatusConstants.Overdue;
+        if (!unpaid || now <= installment.DueDate)
+            return 0m;
+
+        overdueDays = (int)Math.Floor((now - installment.DueDate).TotalDays);
+        if (overdueDays <= 0)
+            return 0m;
+
+        return Math.Round(installment.Amount * dailyRate * overdueDays, 0, MidpointRounding.AwayFromZero);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -144,21 +175,11 @@ public class InstallmentService : IInstallmentService
 
         var now = DateTime.UtcNow;
 
-        const decimal dailyRate = 0.0005m; // 0.05% / ngày
+        var dailyRate = await GetDailyPenaltyRateAsync();
 
         var phases = installments.Select(i =>
         {
-            int overdueDays = 0;
-            decimal penaltyAmount = 0m;
-
-            if ((i.Status == InstallmentStatusConstants.Pending || i.Status == InstallmentStatusConstants.Overdue) && now > i.DueDate)
-            {
-                overdueDays = (int)Math.Floor((now - i.DueDate).TotalDays);
-                if (overdueDays > 0)
-                {
-                    penaltyAmount = Math.Round(i.Amount * dailyRate * overdueDays, 0, MidpointRounding.AwayFromZero);
-                }
-            }
+            var penaltyAmount = CalculatePenalty(i, dailyRate, now, out var overdueDays);
 
             return new InstallmentDto
             {
@@ -314,17 +335,10 @@ public class InstallmentService : IInstallmentService
             await _paymentRepository.UpdateAsync(pending);
         }
 
-        // Tính tiền lãi phạt trễ hạn (0.05%/ngày) nếu đợt đã quá hạn
+        // Tiền lãi phạt trễ hạn theo chính sách, cộng vào số tiền thực thu của đợt này.
         var now = DateTime.UtcNow;
-        decimal penaltyAmount = 0m;
-        if ((installment.Status == InstallmentStatusConstants.Pending || installment.Status == InstallmentStatusConstants.Overdue) && now > installment.DueDate)
-        {
-            var overdueDays = (int)Math.Floor((now - installment.DueDate).TotalDays);
-            if (overdueDays > 0)
-            {
-                penaltyAmount = Math.Round(installment.Amount * 0.0005m * overdueDays, 0, MidpointRounding.AwayFromZero);
-            }
-        }
+        var dailyRate = await GetDailyPenaltyRateAsync();
+        var penaltyAmount = CalculatePenalty(installment, dailyRate, now, out _);
 
         var totalPayableAmount = installment.Amount + penaltyAmount;
 
@@ -1041,7 +1055,26 @@ public class InstallmentService : IInstallmentService
             };
         }
 
-        var isForced = dto.IsForcedRevocation || preview.IsEligibleForForcedRevocation;
+        // Cưỡng chế là quyền đơn phương chấm dứt của CĐT, kèm tịch thu cọc và chuyển căn cho
+        // người dự bị — nên điều kiện "trễ từ 2 đợt" phải được cưỡng chế ở đây.
+        // Trước đây điều kiện chỉ được TÍNH vào preview rồi ghép bằng "||" với cờ do client gửi,
+        // nên chỉ cần truyền IsForcedRevocation=true là thu hồi được căn của người không nợ đợt nào.
+        if (dto.IsForcedRevocation && !preview.IsEligibleForForcedRevocation)
+        {
+            return new ContractCancellationResultDto
+            {
+                Success = false,
+                Message = $"Không thể cưỡng chế thu hồi căn: người mua đang trễ {preview.OverduePhasesCount} đợt, "
+                    + "chỉ được đơn phương chấm dứt khi trễ từ 2 đợt trở lên. "
+                    + "Nếu người dân tự nguyện rút thì dùng luồng duyệt đơn xin ngừng thanh toán.",
+                ApplicationId = applicationId
+            };
+        }
+
+        // Ý chí của người thực hiện, không phải điều kiện đủ — điều kiện đã kiểm ở trên.
+        // Không suy ra từ preview: hồ sơ tự nguyện rút mà tình cờ nợ 2 đợt vẫn là tự nguyện,
+        // ghi nhầm thành cưỡng chế sẽ sai hồ sơ lưu vết.
+        var isForced = dto.IsForcedRevocation;
         var oldStatus = app.ApplicationStatus;
         var releasedApartmentId = app.ApartmentId ?? app.Apartment?.Id;
 
@@ -1171,7 +1204,7 @@ public class InstallmentService : IInstallmentService
             .ToDictionary(g => g.Key, g => g.ToList());
 
         var now = DateTime.UtcNow;
-        const decimal dailyRate = 0.0005m;
+        var dailyRate = await GetDailyPenaltyRateAsync();
         var items = new List<ApplicationProgressItemDto>();
 
         decimal totalExpected = 0m;
