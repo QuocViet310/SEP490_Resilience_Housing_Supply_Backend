@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using RHS.Application.DTOs.Installment;
 using RHS.Application.DTOs.Payment;
@@ -682,18 +683,47 @@ public class PaymentController : ControllerBase
     /// </summary>
     [HttpPatch("projects/{projectId}/unlock-phase")]
     [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator}")]
-    public async Task<IActionResult> UnlockProjectPhase(Guid projectId, [FromQuery] string triggerEvent)
+    public async Task<IActionResult> UnlockProjectPhase(
+        Guid projectId,
+        [FromQuery] string? triggerEvent,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] UnlockPhaseRequestDto? body)
     {
-        if (string.IsNullOrWhiteSpace(triggerEvent))
-            return BadRequest(new { success = false, message = "Vui lòng cung cấp triggerEvent." });
+        // FE từng gửi JSON body, endpoint này lại đọc query → 400 "thiếu triggerEvent"
+        // dù người dùng đã chọn mốc. Nhận cả hai nguồn.
+        var eventCode = !string.IsNullOrWhiteSpace(triggerEvent)
+            ? triggerEvent.Trim()
+            : body?.TriggerEvent?.Trim();
+
+        if (string.IsNullOrWhiteSpace(eventCode))
+            return BadRequest(new { success = false, message = "Vui lòng chọn cột mốc thi công để mở đợt thanh toán." });
+
+        if (!TriggerEventConstants.IsValid(eventCode))
+            return BadRequest(new { success = false, message = $"Cột mốc '{eventCode}' không hợp lệ." });
 
         try
         {
-            var unlockedCount = await _installmentService.UnlockPhaseByEventAsync(projectId, triggerEvent);
+            var unlockedCount = await _installmentService.UnlockPhaseByEventAsync(projectId, eventCode);
+            var displayName = TriggerEventConstants.GetDisplayName(eventCode);
+
+            if (unlockedCount == 0)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message =
+                        $"Không có hồ sơ nào được mở đợt '{displayName}'. " +
+                        "Đợt chỉ mở khi: (1) lịch thanh toán của dự án có gắn đúng mốc này, " +
+                        "(2) người dân đã nộp đợt liền trước, " +
+                        "(3) khoản đó đang khóa. " +
+                        "Nếu lịch dự án gắn Đợt 2 với 'sau khi ký hợp đồng' thì chọn mốc đó, không phải phần thô.",
+                    unlockedCount = 0
+                });
+            }
+
             return Ok(new
             {
                 success = true,
-                message = $"Đã kích hoạt đợt thu tiền ({triggerEvent}) cho {unlockedCount} hồ sơ hợp lệ.",
+                message = $"Đã kích hoạt đợt thu tiền '{displayName}' cho {unlockedCount} hồ sơ hợp lệ.",
                 unlockedCount
             });
         }
