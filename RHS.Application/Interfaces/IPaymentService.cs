@@ -48,6 +48,21 @@ public interface IPaymentService
     Task<IEnumerable<PaymentInfoDto>> GetPaymentsByUserIdAsync(Guid userId);
 
     /// <summary>
+    /// Lấy danh sách lịch sử thanh toán của người dùng có phân trang & lọc.
+    /// </summary>
+    Task<UserTransactionListResponseDto> GetMyTransactionsPagedAsync(Guid userId, UserTransactionQueryDto queryDto);
+
+    /// <summary>
+    /// Tra cứu danh sách lịch sử giao dịch toàn sàn dành cho Admin có phân trang & bộ lọc.
+    /// </summary>
+    Task<AdminTransactionListResponseDto> GetAdminTransactionsAsync(AdminTransactionQueryDto queryDto);
+
+    /// <summary>
+    /// Lấy chi tiết một giao dịch theo ID dành cho Admin.
+    /// </summary>
+    Task<AdminTransactionDetailDto?> GetAdminTransactionByIdAsync(Guid id);
+
+    /// <summary>
     /// Tra cứu kết quả thanh toán đặt cọc: SlotCode, PDF URL, thông tin giao dịch.
     /// Dùng cho FE hiển thị trang "Thanh toán thành công".
     /// </summary>

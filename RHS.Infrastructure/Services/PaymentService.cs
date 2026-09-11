@@ -392,6 +392,55 @@ public class PaymentService : IPaymentService
     }
 
     /// <inheritdoc/>
+    public async Task<UserTransactionListResponseDto> GetMyTransactionsPagedAsync(Guid userId, UserTransactionQueryDto queryDto)
+    {
+        var (items, totalCount) = await _paymentRepository.GetUserPaymentsPagedAsync(userId, queryDto);
+        var infoDtos = new List<PaymentInfoDto>();
+
+        foreach (var p in items)
+        {
+            infoDtos.Add(await MapToInfoDtoAsync(p));
+        }
+
+        return new UserTransactionListResponseDto
+        {
+            Items = infoDtos,
+            TotalCount = totalCount,
+            Page = queryDto.Page,
+            PageSize = queryDto.PageSize
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task<AdminTransactionListResponseDto> GetAdminTransactionsAsync(AdminTransactionQueryDto queryDto)
+    {
+        var (items, totalCount) = await _paymentRepository.GetAdminPaymentsPagedAsync(queryDto);
+        var detailDtos = new List<AdminTransactionDetailDto>();
+
+        foreach (var p in items)
+        {
+            detailDtos.Add(await MapToAdminDetailDtoAsync(p));
+        }
+
+        return new AdminTransactionListResponseDto
+        {
+            Items = detailDtos,
+            TotalCount = totalCount,
+            Page = queryDto.Page,
+            PageSize = queryDto.PageSize
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task<AdminTransactionDetailDto?> GetAdminTransactionByIdAsync(Guid id)
+    {
+        var payment = await _paymentRepository.GetByIdAsync(id);
+        if (payment == null) return null;
+
+        return await MapToAdminDetailDtoAsync(payment);
+    }
+
+    /// <inheritdoc/>
     public async Task<DepositPaymentResultDto?> GetDepositResultAsync(string orderId)
     {
         var payment = await _paymentRepository.GetByOrderIdAsync(orderId);
@@ -646,6 +695,9 @@ public class PaymentService : IPaymentService
             Amount           = payment.Amount,
             Status           = payment.Status,
             ApplicationId    = payment.ApplicationId,
+            HousingProjectId = payment.HousingProjectId,
+            ProjectName      = payment.HousingProject?.ProjectName,
+            ApplicantName    = payment.User?.FullName,
             VnpResponseCode  = payment.VnpResponseCode,
             VnpTransactionNo = payment.VnpTransactionNo,
             VnpBankCode      = payment.VnpBankCode,
@@ -657,10 +709,14 @@ public class PaymentService : IPaymentService
         // Enrich với SlotCode & PdfUrl nếu có ApplicationId
         if (payment.ApplicationId.HasValue && IsPaidStatus(payment.Status))
         {
-            var application = await _applicationRepo.GetByIdWithDetailsAsync(payment.ApplicationId.Value);
+            var application = payment.HousingApplication ?? await _applicationRepo.GetByIdWithDetailsAsync(payment.ApplicationId.Value);
             if (application != null)
             {
                 dto.SlotCode = application.SlotCode;
+                if (string.IsNullOrEmpty(dto.ApplicantName))
+                {
+                    dto.ApplicantName = application.FullName;
+                }
 
                 var agreement = await _agreementRepo.GetByApplicationIdAsync(application.ApplicationId);
                 dto.PdfUrl = agreement?.PdfUrl;
@@ -669,6 +725,48 @@ public class PaymentService : IPaymentService
 
         return dto;
     }
+
+    private async Task<AdminTransactionDetailDto> MapToAdminDetailDtoAsync(Payment payment)
+    {
+        var dto = new AdminTransactionDetailDto
+        {
+            Id                   = payment.Id,
+            OrderId              = payment.OrderId,
+            OrderInfo            = payment.OrderInfo,
+            Amount               = payment.Amount,
+            Status               = payment.Status,
+            UserId               = payment.UserId,
+            UserFullName         = payment.User?.FullName,
+            UserEmail            = payment.User?.Email,
+            UserPhoneNumber      = payment.User?.PhoneNumber,
+            HousingProjectId     = payment.HousingProjectId,
+            ProjectName          = payment.HousingProject?.ProjectName,
+            ApplicationId        = payment.ApplicationId,
+            VnpResponseCode      = payment.VnpResponseCode,
+            VnpTransactionNo     = payment.VnpTransactionNo,
+            VnpBankCode          = payment.VnpBankCode,
+            VnpBankTranNo        = payment.VnpBankTranNo,
+            VnpCardType          = payment.VnpCardType,
+            VnpPayDate           = payment.VnpPayDate,
+            VnpTransactionStatus = payment.VnpTransactionStatus,
+            CreatedAt            = payment.CreatedAt,
+            PaidAt               = payment.PaidAt
+        };
+
+        if (payment.ApplicationId.HasValue && IsPaidStatus(payment.Status))
+        {
+            var application = payment.HousingApplication ?? await _applicationRepo.GetByIdWithDetailsAsync(payment.ApplicationId.Value);
+            if (application != null)
+            {
+                dto.SlotCode = application.SlotCode;
+                var agreement = await _agreementRepo.GetByApplicationIdAsync(application.ApplicationId);
+                dto.PdfUrl = agreement?.PdfUrl;
+            }
+        }
+
+        return dto;
+    }
+
 
     private static bool IsPaidStatus(string? status) =>
         string.Equals(status, "Paid", StringComparison.OrdinalIgnoreCase)

@@ -274,22 +274,22 @@ public class PaymentController : ControllerBase
     }
 
     /// <summary>
-    /// Lấy lịch sử tất cả giao dịch của người dùng hiện tại.
+    /// Lấy lịch sử tất cả giao dịch của người dùng hiện tại (hỗ trợ phân trang & bộ lọc).
     /// </summary>
     [HttpGet("my-payments")]
     [Authorize]
-    public async Task<IActionResult> GetMyPayments()
+    public async Task<IActionResult> GetMyPayments([FromQuery] UserTransactionQueryDto queryDto)
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
         if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
             return Unauthorized(new { success = false, message = "Token không hợp lệ" });
 
-        var payments = await _paymentService.GetPaymentsByUserIdAsync(userId);
+        var result = await _paymentService.GetMyTransactionsPagedAsync(userId, queryDto);
 
         return Ok(new
         {
             success = true,
-            data    = payments
+            data    = result
         });
     }
 

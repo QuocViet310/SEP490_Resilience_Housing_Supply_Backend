@@ -1,3 +1,4 @@
+using RHS.Application.DTOs.Payment;
 using RHS.Domain.Entities;
 
 namespace RHS.Application.Interfaces;
@@ -21,4 +22,10 @@ public interface IPaymentRepository
 
     /// <summary>Lấy toàn bộ lịch sử thanh toán của một user</summary>
     Task<IEnumerable<Payment>> GetByUserIdAsync(Guid userId);
+
+    /// <summary>Lấy danh sách thanh toán phân trang & lọc dành cho Admin</summary>
+    Task<(IEnumerable<Payment> Items, int TotalCount)> GetAdminPaymentsPagedAsync(AdminTransactionQueryDto queryDto);
+
+    /// <summary>Lấy danh sách thanh toán phân trang & lọc của một user</summary>
+    Task<(IEnumerable<Payment> Items, int TotalCount)> GetUserPaymentsPagedAsync(Guid userId, UserTransactionQueryDto queryDto);
 }

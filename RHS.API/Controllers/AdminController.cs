@@ -288,6 +288,39 @@ public class AdminController : ControllerBase
         var result = await _dashboardService.GetApplicationValidityRatiosAsync(ct);
         return Ok(result);
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 4. Lịch sử giao dịch thanh toán toàn sàn (Admin Transactions)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>Truy vấn danh sách tất cả các giao dịch thanh toán trên toàn hệ thống có phân trang & bộ lọc</summary>
+    [HttpGet("transactions")]
+    [ProducesResponseType(typeof(RHS.Application.DTOs.Payment.AdminTransactionListResponseDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTransactions(
+        [FromQuery] RHS.Application.DTOs.Payment.AdminTransactionQueryDto queryDto,
+        [FromServices] IPaymentService paymentService)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var result = await paymentService.GetAdminTransactionsAsync(queryDto);
+        return Ok(result);
+    }
+
+    /// <summary>Xem thông tin chi tiết một bản ghi giao dịch thanh toán theo ID</summary>
+    [HttpGet("transactions/{id:guid}")]
+    [ProducesResponseType(typeof(RHS.Application.DTOs.Payment.AdminTransactionDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetTransactionById(
+        Guid id,
+        [FromServices] IPaymentService paymentService)
+    {
+        var result = await paymentService.GetAdminTransactionByIdAsync(id);
+        if (result == null)
+            return NotFound(new { success = false, message = $"Không tìm thấy giao dịch với ID {id}" });
+
+        return Ok(result);
+    }
 }
 
 /// <summary>

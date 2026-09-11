@@ -34,6 +34,15 @@ public class PaymentInfoDto
     /// <summary>ID hồ sơ đăng ký liên kết (nếu là thanh toán đặt cọc)</summary>
     public Guid? ApplicationId { get; set; }
 
+    /// <summary>ID dự án nhà ở liên kết</summary>
+    public Guid? HousingProjectId { get; set; }
+
+    /// <summary>Tên dự án nhà ở</summary>
+    public string? ProjectName { get; set; }
+
+    /// <summary>Tên người thanh toán</summary>
+    public string? ApplicantName { get; set; }
+
     public string? VnpResponseCode { get; set; }
     public string? VnpTransactionNo { get; set; }
     public string? VnpBankCode { get; set; }
