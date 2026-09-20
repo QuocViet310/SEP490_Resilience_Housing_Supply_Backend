@@ -134,8 +134,8 @@ public class InstallmentService : IInstallmentService
             return;
         }
 
-        // Trường hợp 3: Sự kiện tiến độ khác → Gọi UnlockPhaseByEventAsync
-        await UnlockPhaseByEventAsync(app.ProjectId, triggerEvent);
+        // Cột mốc thi công khác: chỉ mở khoản cho hồ sơ này nếu Chủ đầu tư đã bấm mở đợt đó.
+        await UnlockOpenedFollowOnPhasesAsync(applicationId);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -518,6 +518,7 @@ public class InstallmentService : IInstallmentService
         }
 
         await _db.SaveChangesAsync();
+        await UnlockOpenedFollowOnPhasesAsync(installment.ApplicationId);
     }
 
     /// <summary>
@@ -1275,6 +1276,8 @@ public class InstallmentService : IInstallmentService
 
         double collectionRate = totalExpected > 0 ? Math.Round((double)(totalCollected / totalExpected * 100m), 2) : 0;
 
+        var phases = await BuildPhaseProgressAsync(projectId, allInstallments);
+
         return new ProjectPaymentProgressDto
         {
             ProjectId = projectId,
@@ -1285,7 +1288,8 @@ public class InstallmentService : IInstallmentService
             TotalOverdueAmount = totalOverdue,
             TotalAccruedPenalties = totalPenalties,
             CollectionRatePercentage = collectionRate,
-            Items = items
+            Items = items,
+            Phases = phases
         };
     }
 
@@ -1294,65 +1298,217 @@ public class InstallmentService : IInstallmentService
     // ═══════════════════════════════════════════════════════════════════════
 
     /// <inheritdoc />
-    public async Task<int> UnlockPhaseByEventAsync(Guid projectId, string triggerEvent)
+    public async Task<int> UnlockPhaseByEventAsync(Guid projectId, string triggerEvent, int? phaseOrder = null)
     {
-        _logger.LogInformation("UnlockPhaseByEvent: Project={ProjectId}, Event={TriggerEvent}", projectId, triggerEvent);
+        _logger.LogInformation(
+            "UnlockPhaseByEvent: Project={ProjectId}, Event={TriggerEvent}, Phase={Phase}",
+            projectId, triggerEvent, phaseOrder);
+
+        await EnsureDefaultMilestonesAsync(projectId);
 
         var milestones = await _db.PaymentMilestones
-            .Where(m => m.ProjectId == projectId && m.TriggerEvent == triggerEvent && m.IsActive)
+            .Where(m => m.ProjectId == projectId && m.IsActive)
+            .OrderBy(m => m.PhaseOrder)
             .ToListAsync();
 
-        if (milestones.Count == 0) return 0;
+        if (milestones.Count == 0)
+            throw new InvalidOperationException("Dự án chưa có lịch thanh toán.");
 
-        var milestoneIds = milestones.Select(m => m.Id).ToList();
+        PaymentMilestone? target = null;
+        if (phaseOrder is > 0)
+            target = milestones.FirstOrDefault(m => m.PhaseOrder == phaseOrder.Value);
+        if (target == null)
+            target = milestones.FirstOrDefault(m =>
+                string.Equals(m.TriggerEvent, triggerEvent, StringComparison.OrdinalIgnoreCase));
+
+        if (target == null)
+            throw new InvalidOperationException(
+                "Lịch dự án không có đợt gắn mốc này. Kiểm tra lại cấu hình đợt thanh toán.");
+
+        if (TriggerEventConstants.IsAutoOpen(target.TriggerEvent))
+            throw new InvalidOperationException(
+                $"Đợt {target.PhaseOrder} ({target.PhaseName}) tự mở khi cấp căn. Không cần bấm mở.");
+
+        var next = milestones.FirstOrDefault(m =>
+            !TriggerEventConstants.IsAutoOpen(m.TriggerEvent) && m.UnlockedAt == null);
+        if (next != null && next.Id != target.Id && target.UnlockedAt == null)
+            throw new InvalidOperationException(
+                $"Chỉ được mở bước kế tiếp: Đợt {next.PhaseOrder} — {next.PhaseName}.");
+
+        var now = DateTime.UtcNow;
+        if (target.UnlockedAt == null)
+        {
+            target.UnlockedAt = now;
+            target.UpdatedAt = now;
+        }
+
+        var appsWithUnit = await _db.HousingApplications
+            .Where(a => a.ProjectId == projectId
+                        && a.ApartmentId.HasValue
+                        && a.ApplicationStatus != ApplicationStatusConstants.Draft
+                        && a.ApplicationStatus != ApplicationStatusConstants.Canceled
+                        && a.ApplicationStatus != ApplicationStatusConstants.Rejected
+                        && a.ApplicationStatus != ApplicationStatusConstants.Expired)
+            .Select(a => a.ApplicationId)
+            .ToListAsync();
+
+        foreach (var appId in appsWithUnit)
+            await EnsureInstallmentsForApplicationAsync(appId);
 
         var lockedInstallments = await _db.PaymentInstallments
             .Include(i => i.HousingApplication)
             .Include(i => i.Milestone)
-            .Where(i => milestoneIds.Contains(i.MilestoneId)
-                        && i.Status == InstallmentStatusConstants.Locked
-                        && i.HousingApplication.ProjectId == projectId)
+            .Where(i => i.MilestoneId == target.Id && i.Status == InstallmentStatusConstants.Locked)
             .ToListAsync();
 
         int unlockedCount = 0;
-        var now = DateTime.UtcNow;
-
         foreach (var inst in lockedInstallments)
         {
-            var prevPhaseOrder = inst.Milestone.PhaseOrder - 1;
-            var prevPaid = prevPhaseOrder < 1 || await _db.PaymentInstallments
-                .Include(i => i.Milestone)
-                .AnyAsync(i => i.ApplicationId == inst.ApplicationId
-                            && i.Milestone.PhaseOrder == prevPhaseOrder
-                            && i.Status == InstallmentStatusConstants.Paid);
+            if (!await IsPreviousPhasePaidAsync(inst.ApplicationId, inst.Milestone.PhaseOrder))
+                continue;
 
-            if (prevPaid)
-            {
-                inst.Status = InstallmentStatusConstants.Pending;
-                inst.StartDate = now;
-                inst.DueDate = now.AddDays(inst.Milestone.DueDays);
-                inst.UpdatedAt = now;
+            if (await TryUnlockInstallmentAsync(inst, now, triggerEvent))
                 unlockedCount++;
-
-                try
-                {
-                    var eventName = TriggerEventConstants.GetDisplayName(triggerEvent);
-                    await _notificationService.SendAsync(
-                        inst.HousingApplication.ApplicantId,
-                        $"🔔 Đợt thanh toán mới: {inst.Milestone.PhaseName}",
-                        $"Tiến độ dự án ({eventName}) đã được Chủ đầu tư kích hoạt. Số tiền: {inst.Amount:N0} VND. Hạn đóng: {inst.DueDate:dd/MM/yyyy}.",
-                        NotificationTypeConstants.InstallmentCreated);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to send notification for unlocked installment {Id}", inst.Id);
-                }
-            }
         }
 
         await _db.SaveChangesAsync();
         return unlockedCount;
     }
+
+    /// <inheritdoc />
+    public async Task UnlockOpenedFollowOnPhasesAsync(Guid applicationId)
+    {
+        var app = await _db.HousingApplications
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
+        if (app == null) return;
+
+        var opened = await _db.PaymentMilestones
+            .Where(m => m.ProjectId == app.ProjectId && m.IsActive && m.UnlockedAt != null)
+            .Select(m => m.Id)
+            .ToListAsync();
+        if (opened.Count == 0) return;
+
+        var locked = await _db.PaymentInstallments
+            .Include(i => i.HousingApplication)
+            .Include(i => i.Milestone)
+            .Where(i => i.ApplicationId == applicationId
+                        && opened.Contains(i.MilestoneId)
+                        && i.Status == InstallmentStatusConstants.Locked)
+            .ToListAsync();
+
+        var now = DateTime.UtcNow;
+        var changed = false;
+        foreach (var inst in locked)
+        {
+            if (!await IsPreviousPhasePaidAsync(inst.ApplicationId, inst.Milestone.PhaseOrder))
+                continue;
+            if (await TryUnlockInstallmentAsync(inst, now, inst.Milestone.TriggerEvent))
+                changed = true;
+        }
+
+        if (changed)
+            await _db.SaveChangesAsync();
+    }
+
+    private async Task<bool> IsPreviousPhasePaidAsync(Guid applicationId, int phaseOrder)
+    {
+        var prevPhaseOrder = phaseOrder - 1;
+        if (prevPhaseOrder < 1) return true;
+        return await _db.PaymentInstallments
+            .Include(i => i.Milestone)
+            .AnyAsync(i => i.ApplicationId == applicationId
+                           && i.Milestone.PhaseOrder == prevPhaseOrder
+                           && i.Status == InstallmentStatusConstants.Paid);
+    }
+
+    private async Task<bool> TryUnlockInstallmentAsync(PaymentInstallment inst, DateTime now, string triggerEvent)
+    {
+        inst.Status = InstallmentStatusConstants.Pending;
+        inst.StartDate = now;
+        inst.DueDate = now.AddDays(inst.Milestone.DueDays);
+        inst.UpdatedAt = now;
+
+        try
+        {
+            var eventName = TriggerEventConstants.GetDisplayName(triggerEvent);
+            await _notificationService.SendAsync(
+                inst.HousingApplication.ApplicantId,
+                $"🔔 Đợt thanh toán mới: {inst.Milestone.PhaseName}",
+                $"Tiến độ dự án ({eventName}) đã được Chủ đầu tư kích hoạt. Số tiền: {inst.Amount:N0} VND. Hạn đóng: {inst.DueDate:dd/MM/yyyy}.",
+                NotificationTypeConstants.InstallmentCreated);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send notification for unlocked installment {Id}", inst.Id);
+        }
+
+        return true;
+    }
+
+    private async Task<List<PhaseProgressItemDto>> BuildPhaseProgressAsync(
+        Guid projectId,
+        List<PaymentInstallment> allInstallments)
+    {
+        var milestones = await _db.PaymentMilestones
+            .AsNoTracking()
+            .Where(m => m.ProjectId == projectId && m.IsActive)
+            .OrderBy(m => m.PhaseOrder)
+            .ToListAsync();
+
+        var paidAppIdsByPhase = allInstallments
+            .Where(i => i.Milestone != null && i.Status == InstallmentStatusConstants.Paid)
+            .GroupBy(i => i.Milestone!.PhaseOrder)
+            .ToDictionary(g => g.Key, g => g.Select(i => i.ApplicationId).ToHashSet());
+
+        var nextUnopened = milestones.FirstOrDefault(m =>
+            !TriggerEventConstants.IsAutoOpen(m.TriggerEvent) && m.UnlockedAt == null);
+
+        var result = new List<PhaseProgressItemDto>();
+        foreach (var m in milestones)
+        {
+            var insts = allInstallments.Where(i => i.MilestoneId == m.Id).ToList();
+            var paid = insts.Count(i => i.Status == InstallmentStatusConstants.Paid);
+            var overdue = insts.Count(i => i.Status == InstallmentStatusConstants.Overdue);
+            var collecting = insts.Count(i =>
+                i.Status == InstallmentStatusConstants.Pending || i.Status == InstallmentStatusConstants.Overdue);
+            var locked = insts.Count(i => i.Status == InstallmentStatusConstants.Locked);
+            var auto = TriggerEventConstants.IsAutoOpen(m.TriggerEvent);
+            var opened = auto || m.UnlockedAt != null;
+
+            paidAppIdsByPhase.TryGetValue(m.PhaseOrder - 1, out var prevPaid);
+            var eligible = opened
+                ? 0
+                : insts.Count(i =>
+                    i.Status == InstallmentStatusConstants.Locked
+                    && (m.PhaseOrder <= 1 || (prevPaid != null && prevPaid.Contains(i.ApplicationId))));
+
+            result.Add(new PhaseProgressItemDto
+            {
+                PhaseOrder = m.PhaseOrder,
+                PhaseName = m.PhaseName,
+                Percentage = m.Percentage ?? 0m,
+                TriggerEvent = m.TriggerEvent,
+                TriggerEventLabel = TriggerEventConstants.GetDisplayName(m.TriggerEvent),
+                IsAutoOpen = auto,
+                IsOpened = opened,
+                HouseholdCount = insts.Select(i => i.ApplicationId).Distinct().Count(),
+                PaidCount = paid,
+                CollectingCount = collecting,
+                OverdueCount = overdue,
+                LockedCount = locked,
+                EligibleToUnlockCount = eligible,
+                IsNextToOpen = nextUnopened != null && nextUnopened.Id == m.Id
+            });
+        }
+
+        return result;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Private helpers
+    // ═══════════════════════════════════════════════════════════════════════
+
 
     /// <summary>
     /// Đảm bảo hồ sơ đã cấp căn có đủ các đợt đóng tiền theo cấu hình chủ đầu tư (tối thiểu 3 đợt).

@@ -686,6 +686,7 @@ public class PaymentController : ControllerBase
     public async Task<IActionResult> UnlockProjectPhase(
         Guid projectId,
         [FromQuery] string? triggerEvent,
+        [FromQuery] int? phaseOrder,
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] UnlockPhaseRequestDto? body)
     {
         // FE từng gửi JSON body, endpoint này lại đọc query → 400 "thiếu triggerEvent"
@@ -693,6 +694,7 @@ public class PaymentController : ControllerBase
         var eventCode = !string.IsNullOrWhiteSpace(triggerEvent)
             ? triggerEvent.Trim()
             : body?.TriggerEvent?.Trim();
+        var order = phaseOrder is > 0 ? phaseOrder : (body?.PhaseOrder > 0 ? body.PhaseOrder : null);
 
         if (string.IsNullOrWhiteSpace(eventCode))
             return BadRequest(new { success = false, message = "Vui lòng chọn cột mốc thi công để mở đợt thanh toán." });
@@ -702,30 +704,22 @@ public class PaymentController : ControllerBase
 
         try
         {
-            var unlockedCount = await _installmentService.UnlockPhaseByEventAsync(projectId, eventCode);
+            var unlockedCount = await _installmentService.UnlockPhaseByEventAsync(projectId, eventCode, order);
             var displayName = TriggerEventConstants.GetDisplayName(eventCode);
-
-            if (unlockedCount == 0)
-            {
-                return BadRequest(new
-                {
-                    success = false,
-                    message =
-                        $"Không có hồ sơ nào được mở đợt '{displayName}'. " +
-                        "Đợt chỉ mở khi: (1) lịch thanh toán của dự án có gắn đúng mốc này, " +
-                        "(2) người dân đã nộp đợt liền trước, " +
-                        "(3) khoản đó đang khóa. " +
-                        "Nếu lịch dự án gắn Đợt 2 với 'sau khi ký hợp đồng' thì chọn mốc đó, không phải phần thô.",
-                    unlockedCount = 0
-                });
-            }
+            var message = unlockedCount > 0
+                ? $"Đã mở '{displayName}' cho dự án. Đã mở khoản thu cho {unlockedCount} hộ đã nộp đợt trước."
+                : $"Đã mở '{displayName}' cho cả dự án. Hiện chưa có hộ đã nộp đợt trước nên chưa có khoản phải thu; khi hộ đóng đợt trước, đợt này sẽ mở cho họ.";
 
             return Ok(new
             {
                 success = true,
-                message = $"Đã kích hoạt đợt thu tiền '{displayName}' cho {unlockedCount} hồ sơ hợp lệ.",
+                message,
                 unlockedCount
             });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
         }
         catch (Exception ex)
         {

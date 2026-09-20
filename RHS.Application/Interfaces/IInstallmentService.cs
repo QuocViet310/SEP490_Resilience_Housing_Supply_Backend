@@ -39,9 +39,15 @@ public interface IInstallmentService
     Task ProcessOverdueInstallmentsAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Chủ đầu tư chọn Thời điểm phát hành (triggerEvent) để mở/unlock đợt tiến độ cho toàn dự án.
+    /// Chủ đầu tư mở đúng một đợt kế tiếp cho cả dự án (ghi nhận mốc dù chưa có hộ nộp).
+    /// Hộ đã nộp đợt trước được mở khoản ngay; hộ còn lại mở khi nộp xong đợt liền trước.
     /// </summary>
-    Task<int> UnlockPhaseByEventAsync(Guid projectId, string triggerEvent);
+    Task<int> UnlockPhaseByEventAsync(Guid projectId, string triggerEvent, int? phaseOrder = null);
+
+    /// <summary>
+    /// Sau khi hộ nộp một đợt: mở các đợt sau mà Chủ đầu tư đã bấm mở cho dự án.
+    /// </summary>
+    Task UnlockOpenedFollowOnPhasesAsync(Guid applicationId);
 
     /// <summary>
     /// Xem trước bảng kê chi tiết phạt cọc Đợt 1, tiền đợt 2+ đã đóng, khấu trừ phạt và tiền thực hoàn khi hủy căn.

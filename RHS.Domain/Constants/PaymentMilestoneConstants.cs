@@ -175,6 +175,11 @@ public static class TriggerEventConstants
 
     public static bool IsValid(string triggerEvent) => All.Contains(triggerEvent);
 
+    /// <summary>Đợt gắn cấp nhà / duyệt hồ sơ tự mở khi có căn — Chủ đầu tư không bấm.</summary>
+    public static bool IsAutoOpen(string? triggerEvent) =>
+        string.Equals(triggerEvent, OnLotteryWon, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(triggerEvent, OnApproved, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Map mã thời điểm phát hành sang tên hiển thị tiếng Việt</summary>
     public static string GetDisplayName(string triggerEvent) => triggerEvent switch
     {

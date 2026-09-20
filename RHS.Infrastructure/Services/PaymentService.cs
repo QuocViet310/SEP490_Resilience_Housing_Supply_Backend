@@ -596,6 +596,8 @@ public class PaymentService : IPaymentService
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
+            await _installmentService.UnlockOpenedFollowOnPhasesAsync(application.ApplicationId);
+
             _logger.LogInformation(
                 "Post-payment completed: AppId={AppId}, SlotCode={SlotCode}, Status={Old}→{New}.",
                 application.ApplicationId, slotCode, oldStatus, ApplicationStatusConstants.ContractPending);

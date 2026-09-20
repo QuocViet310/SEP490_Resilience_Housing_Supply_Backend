@@ -47,6 +47,12 @@ public class PaymentMilestone
 
     public DateTime? UpdatedAt { get; set; }
 
+    /// <summary>
+    /// Chủ đầu tư đã bấm mở đợt này cho cả dự án. Đợt 1 (cấp nhà) không dùng cột này — tự mở.
+    /// Hộ chưa nộp đợt trước vẫn nộp đợt đó; khi nộp xong, đợt này mở cho họ nếu mốc đã ghi nhận.
+    /// </summary>
+    public DateTime? UnlockedAt { get; set; }
+
     // Navigation
     public HousingProject HousingProject { get; set; } = null!;
 

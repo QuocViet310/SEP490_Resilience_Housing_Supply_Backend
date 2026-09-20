@@ -171,6 +171,28 @@ public class ProjectPaymentProgressDto
     public double CollectionRatePercentage { get; set; }
 
     public List<ApplicationProgressItemDto> Items { get; set; } = new();
+
+    /// <summary>Tiến độ từng đợt trên lịch dự án — dùng màn Chủ đầu tư mở bước kế tiếp.</summary>
+    public List<PhaseProgressItemDto> Phases { get; set; } = new();
+}
+
+/// <summary>Một đợt trên lịch thu tiền của dự án.</summary>
+public class PhaseProgressItemDto
+{
+    public int PhaseOrder { get; set; }
+    public string PhaseName { get; set; } = string.Empty;
+    public decimal Percentage { get; set; }
+    public string TriggerEvent { get; set; } = string.Empty;
+    public string TriggerEventLabel { get; set; } = string.Empty;
+    public bool IsAutoOpen { get; set; }
+    public bool IsOpened { get; set; }
+    public int HouseholdCount { get; set; }
+    public int PaidCount { get; set; }
+    public int CollectingCount { get; set; }
+    public int OverdueCount { get; set; }
+    public int LockedCount { get; set; }
+    public int EligibleToUnlockCount { get; set; }
+    public bool IsNextToOpen { get; set; }
 }
 
 /// <summary>

@@ -142,15 +142,26 @@ public class HousingDeveloperController : ControllerBase
         if (!TriggerEventConstants.IsValid(dto.TriggerEvent))
             return BadRequest(new { message = $"Thời điểm phát hành '{dto.TriggerEvent}' không hợp lệ." });
 
-        var count = await installmentService.UnlockPhaseByEventAsync(projectId, dto.TriggerEvent);
-        var displayName = TriggerEventConstants.GetDisplayName(dto.TriggerEvent);
-
-        return Ok(new
+        try
         {
-            success = true,
-            message = $"Đã kích hoạt tiến độ '{displayName}' cho dự án. Đã mở đợt thanh toán cho {count} hồ sơ đủ điều kiện.",
-            unlockedCount = count
-        });
+            var count = await installmentService.UnlockPhaseByEventAsync(
+                projectId, dto.TriggerEvent, dto.PhaseOrder > 0 ? dto.PhaseOrder : null);
+            var displayName = TriggerEventConstants.GetDisplayName(dto.TriggerEvent);
+            var message = count > 0
+                ? $"Đã mở '{displayName}' cho dự án. Đã mở khoản thu cho {count} hộ đã nộp đợt trước."
+                : $"Đã mở '{displayName}' cho cả dự án. Hiện chưa có hộ đã nộp đợt trước nên chưa có khoản phải thu; khi hộ đóng đợt trước, đợt này sẽ mở cho họ.";
+
+            return Ok(new
+            {
+                success = true,
+                message,
+                unlockedCount = count
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
     }
 
     /// <summary>
@@ -182,4 +193,5 @@ public class HousingDeveloperController : ControllerBase
 public class UnlockPhaseRequestDto
 {
     public string TriggerEvent { get; set; } = string.Empty;
+    public int PhaseOrder { get; set; }
 }
