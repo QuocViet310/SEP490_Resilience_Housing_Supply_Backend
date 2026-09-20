@@ -313,6 +313,21 @@ using (var scope = app.Services.CreateScope())
     {
         Console.WriteLine($"❌ Database setup error: {ex.Message}");
     }
+
+    // GET chi tiết dự án Include PaymentMilestones → 500 nếu thiếu cột UnlockedAt.
+    // Chạy ngoài try Migrate() vì production đang nuốt lỗi migration rồi vẫn start.
+    try
+    {
+        dbContext.Database.ExecuteSqlRaw(
+            """
+            IF COL_LENGTH(N'PaymentMilestones', N'UnlockedAt') IS NULL
+                ALTER TABLE [PaymentMilestones] ADD [UnlockedAt] datetime2 NULL;
+            """);
+    }
+    catch (Exception colEx)
+    {
+        Console.WriteLine($"⚠️ Ensure UnlockedAt column skipped: {colEx.Message}");
+    }
 }
 
 // Nạp ForwardedHeaders trước tiên để ASP.NET Core nhận diện đúng HTTPS scheme từ Render Edge Proxy

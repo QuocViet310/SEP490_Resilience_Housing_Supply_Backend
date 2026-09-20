@@ -191,6 +191,7 @@ public class HousingProjectRepository : IHousingProjectRepository
     public async Task<HousingProject?> GetByIdAsync(Guid id)
     {
         return await _context.HousingProjects
+            .AsSplitQuery()
             .Include(x => x.HousingProjectStatus)
             .Include(x => x.ProjectImages)
             .Include(x => x.Apartments)

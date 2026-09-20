@@ -503,7 +503,7 @@ public class HousingProjectService : IHousingProjectService
             ApplicationCloseDate = project.ApplicationCloseDate,
             RejectReason = project.RejectReason,
             PublicAnnounceAt = project.PublicAnnounceAt,
-            Images = project.ProjectImages
+            Images = (project.ProjectImages ?? Enumerable.Empty<ProjectImage>())
                 .OrderBy(x => x.DisplayOrder)
                 .Select(x => new ProjectImageResponseDto
                 {
@@ -512,7 +512,7 @@ public class HousingProjectService : IHousingProjectService
                     DisplayOrder = x.DisplayOrder
                 })
                 .ToList(),
-            Apartments = project.Apartments
+            Apartments = (project.Apartments ?? Enumerable.Empty<Apartment>())
                 .OrderBy(a => a.UnitName)
                 .Select(a => new ApartmentDto
                 {
@@ -550,7 +550,7 @@ public class HousingProjectService : IHousingProjectService
                     UpdatedAt              = a.UpdatedAt
                 })
                 .ToList(),
-            Milestones = project.PaymentMilestones
+            Milestones = (project.PaymentMilestones ?? Enumerable.Empty<PaymentMilestone>())
                 .OrderBy(m => m.PhaseOrder)
                 .Select(m => new MilestoneDto
                 {
