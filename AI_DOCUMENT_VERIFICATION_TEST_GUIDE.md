@@ -166,10 +166,26 @@ Hệ thống tích hợp AI (Gemini) để tự động kiểm tra giấy tờ �
 
 ---
 
+### Kịch bản 6: Chủ đầu tư & Cán bộ Sở Xây dựng thẩm định hồ sơ bằng AI
+
+**Mục tiêu**: Cán bộ thẩm định / CĐT dùng Token của mình để trigger AI kiểm tra lại hồ sơ người dân đã nộp.
+
+1. Lấy Token của **HousingDeveloper** hoặc **HousingAuthorityOfficer**.
+2. Gọi `POST /api/housing-applications/{applicationId}/documents/audit` với `applicationId` của bất kỳ người dân nào nộp vào dự án mình quản lý.
+3. **Kỳ vọng Response**: `200 OK` chứa đầy đủ kết quả thẩm định AI (`isComplete`, `isNameMatch`, `isDocumentTypeMatch`, `checkedDocuments`, `summaryNote`) để cán bộ căn cứ thẩm định và chốt Duyệt/Yêu cầu bổ sung.
+
+---
+
 ## 4. Gợi Ý Hiển Thị Lên Giao Diện (Frontend Integration)
 
 Khi kết nối với giao diện React/Vue/Mobile App:
-- Ở danh sách giấy tờ của Hồ sơ, hiển thị 2 Badge trạng thái:
-  - Badge 1 (Đúng chính chủ): `✅ Đúng tên người nộp` (nếu `isNameMatch == true`) hoặc `❌ Sai tên/CCCD` (nếu `isNameMatch == false`).
-  - Badge 2 (Đúng biểu mẫu): `✅ Đúng loại giấy tờ` (nếu `isDocumentTypeMatch == true`) hoặc `❌ Sai loại giấy tờ` (nếu `isDocumentTypeMatch == false`).
-- Nút **"Kiểm tra bằng AI"** cho từng giấy tờ và nút **"Kiểm tra toàn bộ hồ sơ bằng AI"** trước khi bấm gửi Nộp hồ sơ.
+- **Màn hình Người dân (Applicant Portal)**:
+  - Ở danh sách giấy tờ đang soạn thảo (DRAFT), hiển thị 2 Badge trạng thái:
+    - Badge 1 (Đúng chính chủ): `✅ Đúng tên người nộp` (nếu `isNameMatch == true`) hoặc `❌ Sai tên/CCCD` (nếu `isNameMatch == false`).
+    - Badge 2 (Đúng biểu mẫu): `✅ Đúng loại giấy tờ` (nếu `isDocumentTypeMatch == true`) hoặc `❌ Sai loại giấy tờ` (nếu `isDocumentTypeMatch == false`).
+  - Nút **"Kiểm tra AI trước khi nộp"** giúp người dân chủ động ra soát cả bộ hồ sơ.
+
+- **Màn hình Chủ đầu tư / Cán bộ thẩm định (Developer & Officer Portal)**:
+  - Khi xem chi tiết hồ sơ `SUBMITTED` hoặc `UNDER_REVIEW`, có tab/nút **"AI Thẩm định tự động"**.
+  - Hiển thị bảng tổng hợp báo cáo đúng tên/đúng biểu mẫu của tất cả các tài liệu, kèm nhận xét gợi ý để cán bộ quyết định phê duyệt (`APPROVED`), từ chối (`REJECTED`) hoặc yêu cầu bổ sung (`NEED_MORE_DOCUMENTS`).
+
