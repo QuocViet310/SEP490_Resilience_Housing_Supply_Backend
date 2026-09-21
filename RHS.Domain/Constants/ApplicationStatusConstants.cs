@@ -39,10 +39,10 @@ public static class ApplicationStatusConstants
     /// <summary>Người dân đã gửi đơn xin ngừng thanh toán / rút hồ sơ - Chờ CĐT phê duyệt</summary>
     public const string CancellationRequested = "CANCELLATION_REQUESTED";
 
-    /// <summary>Chờ thanh toán đặt cọc Đợt 1 (trúng bốc thăm / cấp suất)</summary>
+    /// <summary>Dữ liệu cũ: chờ đóng Đợt 1 trước khi ký. Luồng mới dùng CONTRACT_PENDING (ký trước, đóng Đợt 1 sau).</summary>
     public const string DepositPending = "DEPOSIT_PENDING";
 
-    /// <summary>Đã thanh toán đặt cọc thành công</summary>
+    /// <summary>Đã thanh toán Đợt 1 theo hợp đồng đã ký</summary>
     public const string DepositPaid = "DEPOSIT_PAID";
 
     /// <summary>Đã ký hợp đồng & đang trong quá trình thanh toán tiến độ đợt 3-6</summary>

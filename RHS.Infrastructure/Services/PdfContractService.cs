@@ -276,7 +276,7 @@ public class PdfContractService : IPdfContractService
                     Bullet(col, "3. Nội dung không trái quy định pháp luật về dân sự và nhà ở.");
 
                     Section(col, "Điều 12. Hiệu lực của hợp đồng");
-                    Bullet(col, $"1. Hợp đồng có hiệu lực kể từ ngày Bên mua ký xác nhận trên hệ thống ({now:dd/MM/yyyy}) hoặc ngày ghi nhận thanh toán Đợt 1 thành công (nếu muộn hơn).");
+                    Bullet(col, $"1. Hợp đồng có hiệu lực kể từ ngày Bên mua ký xác nhận trên hệ thống ({now:dd/MM/yyyy}). Thanh toán Đợt 1 và các đợt tiếp theo thực hiện theo lịch thanh toán đính kèm hợp đồng.");
                     Bullet(col, "2. Hợp đồng được lập thành chứng từ điện tử có giá trị pháp lý tương đương bản giấy; mỗi bên được tải/lưu bản PDF; bản lưu tại hệ thống phục vụ cơ quan thuế / cấp Giấy chứng nhận khi có yêu cầu.");
 
                     col.Item().PaddingTop(20).Row(row =>

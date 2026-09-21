@@ -862,12 +862,12 @@ public class HousingApplicationService : IHousingApplicationService
                             : LotteryResultConstants.Won;
                     }
 
-                    MoveToDepositPending(
+                    MoveToContractPending(
                         app,
                         developerUserId,
                         now,
                         ReviewActionConstants.DeveloperDecisionCloseAndSign,
-                        $"CĐT chốt danh sách + bàn giao căn {app.Apartment?.UnitName ?? ""}, chuyển sang bước thanh toán cọc Đợt 1 (10%).",
+                        $"CĐT chốt danh sách + bàn giao căn {app.Apartment?.UnitName ?? ""}, chuyển sang bước ký hợp đồng mua bán.",
                         pendingNotify);
                     appsNeedingInstallments.Add(app.ApplicationId);
                 }
@@ -940,12 +940,12 @@ public class HousingApplicationService : IHousingApplicationService
                 foreach (var app in selectedPriority)
                 {
                     app.LotteryResult = LotteryResultConstants.PriorityWon;
-                    MoveToDepositPending(
+                    MoveToContractPending(
                         app,
                         developerUserId,
                         now,
                         ReviewActionConstants.PriorityDirectApproval,
-                        $"Duyệt ưu tiên + bàn giao căn {app.Apartment?.UnitName ?? ""} (không qua bốc thăm), chuyển sang bước thanh toán cọc Đợt 1 (10%).",
+                        $"Duyệt ưu tiên + bàn giao căn {app.Apartment?.UnitName ?? ""} (không qua bốc thăm), chuyển sang bước ký hợp đồng mua bán.",
                         pendingNotify);
                     appsNeedingInstallments.Add(app.ApplicationId);
                 }
@@ -1071,7 +1071,7 @@ public class HousingApplicationService : IHousingApplicationService
         }
     }
 
-    private void MoveToDepositPending(
+    private void MoveToContractPending(
         HousingApplication app,
         Guid changedBy,
         DateTime now,
@@ -1080,7 +1080,7 @@ public class HousingApplicationService : IHousingApplicationService
         List<(Guid ApplicantId, string Note)> pendingNotify)
     {
         var oldStatus = app.ApplicationStatus;
-        app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
+        app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
         app.UpdatedAt = now;
 
         _context.ApplicationStatusHistories.Add(new ApplicationStatusHistory
@@ -1090,14 +1090,14 @@ public class HousingApplicationService : IHousingApplicationService
             ChangedBy = changedBy,
             Action = action,
             OldStatus = oldStatus,
-            NewStatus = ApplicationStatusConstants.DepositPending,
+            NewStatus = ApplicationStatusConstants.ContractPending,
             Note = note,
             ChangedAt = now
         });
 
         pendingNotify.Add((
             app.ApplicantId,
-            "Hồ sơ của bạn đã được chốt suất và cấp căn. Vui lòng thanh toán Đợt 1 (thanh toán lần đầu, gồm tiền đặt cọc) theo lịch trên ứng dụng để tiến hành ký hợp đồng mua bán NOXH."));
+            "Hồ sơ của bạn đã được chốt suất và cấp căn. Vui lòng đọc và ký hợp đồng mua bán. Đợt 1 (thanh toán lần đầu, gồm tiền đặt cọc nếu có) sẽ mở sau khi ký, theo thỏa thuận trong hợp đồng."));
     }
 
     private static ApplicationSummaryItemDto MapToSummaryItem(HousingApplication a)

@@ -70,13 +70,16 @@ public class ContractSignService : IContractSignService
             };
         }
 
-        // Chờ ký sau khi đóng cọc. DEPOSIT_PENDING / DEPOSIT_PAID: dữ liệu cũ hoặc
-        // thanh toán Đợt 1 chưa kịp chuyển CONTRACT_PENDING — vẫn cho ký nếu đã cọc + có căn.
+        // Điều 89 Luật Nhà ở 2023: ký HĐMB khi đã có căn; Đợt 1 nộp theo HĐ sau khi ký.
+        // DEPOSIT_PENDING / DEPOSIT_PAID: dữ liệu cũ — vẫn cho ký nếu đã cấp căn.
         var allowedStatuses = new[]
         {
             ApplicationStatusConstants.ContractPending,
-            ApplicationStatusConstants.DepositPaid,
             ApplicationStatusConstants.DepositPending,
+            ApplicationStatusConstants.DepositPaid,
+            ApplicationStatusConstants.LotteryWon,
+            ApplicationStatusConstants.Approved,
+            ApplicationStatusConstants.ApprovedByTimeout,
         };
 
         if (!allowedStatuses.Contains(application.ApplicationStatus))
@@ -107,24 +110,6 @@ public class ContractSignService : IContractSignService
             {
                 Success = false,
                 Message = "Hồ sơ chưa được cấp căn. Vui lòng chờ Chủ đầu tư bàn giao căn trước khi ký hợp đồng."
-            };
-        }
-
-        // Bắt buộc đã thanh toán cọc Đợt 1
-        var isD1Paid = await _context.PaymentInstallments
-            .Include(i => i.Milestone)
-            .AnyAsync(i => i.ApplicationId == applicationId
-                        && i.Milestone.PhaseOrder == 1
-                        && i.Status == InstallmentStatusConstants.Paid)
-            || await _context.Payments.AnyAsync(p => p.ApplicationId == applicationId
-                                                    && (p.Status == "Paid" || p.Status == "Success"));
-
-        if (!isD1Paid)
-        {
-            return new ContractSignResponseDto
-            {
-                Success = false,
-                Message = "Vui lòng hoàn tất thanh toán cọc Đợt 1 (10%) trước khi tiến hành ký hợp đồng mua bán."
             };
         }
 
@@ -221,7 +206,7 @@ public class ContractSignService : IContractSignService
         await _notificationService.SendAsync(
             applicantId,
             "Ký hợp đồng thành công",
-            "Bạn đã đồng ý điều khoản hợp đồng mua bán nhà ở xã hội. Lịch thanh toán Đợt 1 đã được tạo — vui lòng thanh toán đúng hạn.",
+            "Bạn đã ký hợp đồng mua bán nhà ở xã hội. Đợt 1 (thanh toán lần đầu, gồm tiền đặt cọc nếu có) đã mở theo hợp đồng — vui lòng thanh toán đúng hạn.",
             NotificationTypeConstants.ContractSigned);
 
         return new ContractSignResponseDto

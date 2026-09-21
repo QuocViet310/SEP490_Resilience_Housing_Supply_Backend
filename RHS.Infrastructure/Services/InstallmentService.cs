@@ -101,36 +101,52 @@ public class InstallmentService : IInstallmentService
                 .Include(i => i.Milestone)
                 .FirstOrDefaultAsync(i => i.ApplicationId == applicationId && i.Milestone.PhaseOrder == 1);
 
-            // Cập nhật trạng thái hồ sơ sang DEPOSIT_PENDING nếu đang APPROVED
-            if (app.ApplicationStatus == ApplicationStatusConstants.Approved
-                || app.ApplicationStatus == ApplicationStatusConstants.ApprovedByTimeout)
+            // Đã cấp căn → chờ ký HĐMB (Điều 89). Chưa có căn thì giữ LOTTERY_WON.
+            if (app.ApartmentId.HasValue
+                && (app.ApplicationStatus == ApplicationStatusConstants.Approved
+                    || app.ApplicationStatus == ApplicationStatusConstants.ApprovedByTimeout
+                    || app.ApplicationStatus == ApplicationStatusConstants.LotteryWon
+                    || app.ApplicationStatus == ApplicationStatusConstants.DepositPending))
             {
-                app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
+                app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
                 app.UpdatedAt = DateTime.UtcNow;
+                var hasAgreement = await _db.PrincipleAgreements
+                    .AnyAsync(p => p.ApplicationId == app.ApplicationId);
+                if (!hasAgreement)
+                {
+                    _db.PrincipleAgreements.Add(new PrincipleAgreement
+                    {
+                        Id            = Guid.NewGuid(),
+                        ApplicationId = app.ApplicationId,
+                        PdfUrl        = $"/api/payment/download-contract/{app.ApplicationId}",
+                        CreatedAt     = DateTime.UtcNow
+                    });
+                }
                 await _db.SaveChangesAsync();
             }
 
-            if (d1Inst != null && d1Inst.Status == InstallmentStatusConstants.Pending)
+            if (d1Inst != null && d1Inst.Status == InstallmentStatusConstants.Locked)
             {
                 try
                 {
                     await _notificationService.SendAsync(
                         app.ApplicantId,
-                        "🎉 Trúng bốc thăm / Cấp nhà - Thông báo đóng cọc (Đợt 1)",
-                        $"Chúc mừng bạn! Khoản cọc Đợt 1: {d1Inst.Amount:N0} VND. Hạn đóng: {d1Inst.DueDate:dd/MM/yyyy}.",
-                        NotificationTypeConstants.InstallmentCreated);
+                        "Đã cấp căn — ký hợp đồng mua bán",
+                        "Hồ sơ đã được cấp căn. Vui lòng đọc và ký hợp đồng mua bán. Đợt 1 sẽ mở sau khi ký, theo thỏa thuận trong hợp đồng.",
+                        NotificationTypeConstants.ContractPending);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to send notification for D1 installment {Id}.", d1Inst.Id);
+                    _logger.LogWarning(ex, "Failed to send sign-contract notice for D1 installment {Id}.", d1Inst.Id);
                 }
             }
             return;
         }
 
-        // Ký hợp đồng không tự mở đợt — chủ đầu tư mở khi tiến độ dự án thật tới.
+        // Ký HĐ → mở Đợt 1 (ứng tiền lần đầu theo HĐ). Đợt sau do CĐT mở khi tiến độ thật tới.
         if (string.Equals(triggerEvent, TriggerEventConstants.OnContractSigned, StringComparison.OrdinalIgnoreCase))
         {
+            await UnlockPhase1AfterContractSignedAsync(applicationId, eventDate);
             return;
         }
 
@@ -304,7 +320,16 @@ public class InstallmentService : IInstallmentService
 
         // Chỉ cho thanh toán PENDING hoặc OVERDUE
         if (installment.Status == InstallmentStatusConstants.Locked)
-            return Fail("Đợt thanh toán này đang bị khóa. Vui lòng chờ Chủ đầu tư kích hoạt tiến độ và hoàn tất các đợt trước đó.");
+            return Fail("Đợt thanh toán này đang bị khóa. Ký hợp đồng mua bán trước khi đóng Đợt 1; các đợt sau do chủ đầu tư mở theo tiến độ.");
+
+        var isPhase1Pay = installment.Milestone.PhaseOrder == 1
+            || string.Equals(installment.Milestone.TriggerEvent, TriggerEventConstants.OnLotteryWon, StringComparison.OrdinalIgnoreCase);
+        if (isPhase1Pay)
+        {
+            var signed = await HasSignedSaleContractAsync(installment.ApplicationId);
+            if (!signed)
+                return Fail("Vui lòng ký hợp đồng mua bán trước khi thanh toán Đợt 1 theo hợp đồng.");
+        }
 
         if (installment.Status != InstallmentStatusConstants.Pending
             && installment.Status != InstallmentStatusConstants.Overdue)
@@ -470,14 +495,15 @@ public class InstallmentService : IInstallmentService
         var isPhase1 = installment.Milestone.PhaseOrder == 1
             || string.Equals(installment.Milestone.TriggerEvent, TriggerEventConstants.OnLotteryWon, StringComparison.OrdinalIgnoreCase);
         if (isPhase1)
-            await PromoteToContractPendingAfterDepositAsync(application, applicantId);
+            await PromoteToDepositPaidAfterPhase1Async(application, applicantId);
 
         var isContractSigned = application.ApplicationStatus == ApplicationStatusConstants.ContractSigned
+            || application.ApplicationStatus == ApplicationStatusConstants.DepositPaid
             || application.ApplicationStatus == ApplicationStatusConstants.InstallmentInProgress
             || application.ApplicationStatus == ApplicationStatusConstants.FullyPaid
             || await _db.PrincipleAgreements.AnyAsync(p => p.ApplicationId == application.ApplicationId && p.IsSigned);
 
-        // Chỉ FULLY_PAID sau khi đã ký — nếu mới đóng Đợt 1 thì dừng ở CONTRACT_PENDING.
+        // Chỉ FULLY_PAID sau khi đã ký. Đóng Đợt 1 xong thì DEPOSIT_PAID (không nhảy FULLY_PAID dù chỉ 1 đợt).
         if (allPaid
             && allInstallments.Count > 0
             && isContractSigned
@@ -522,71 +548,49 @@ public class InstallmentService : IInstallmentService
     }
 
     /// <summary>
-    /// Đóng cọc Đợt 1 xong → chờ ký hợp đồng (không nhảy FULLY_PAID dù dự án chỉ có 1 đợt).
+    /// Đóng Đợt 1 sau khi đã ký → DEPOSIT_PAID (không nhảy FULLY_PAID dù dự án chỉ có 1 đợt).
     /// </summary>
-    private async Task PromoteToContractPendingAfterDepositAsync(HousingApplication application, Guid changedBy)
+    private async Task PromoteToDepositPaidAfterPhase1Async(HousingApplication application, Guid changedBy)
     {
-        var terminal = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        var skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            ApplicationStatusConstants.ContractSigned,
+            ApplicationStatusConstants.DepositPaid,
             ApplicationStatusConstants.InstallmentInProgress,
             ApplicationStatusConstants.FullyPaid,
             ApplicationStatusConstants.Canceled,
             ApplicationStatusConstants.Expired,
             ApplicationStatusConstants.Rejected,
         };
-        if (terminal.Contains(application.ApplicationStatus))
+        if (skip.Contains(application.ApplicationStatus))
             return;
 
-        var changed = false;
         var oldStatus = application.ApplicationStatus;
-        if (!string.Equals(oldStatus, ApplicationStatusConstants.ContractPending, StringComparison.OrdinalIgnoreCase))
+        application.ApplicationStatus = ApplicationStatusConstants.DepositPaid;
+        application.UpdatedAt = DateTime.UtcNow;
+
+        _db.Set<ApplicationStatusHistory>().Add(new ApplicationStatusHistory
         {
-            application.ApplicationStatus = ApplicationStatusConstants.ContractPending;
-            application.UpdatedAt = DateTime.UtcNow;
-            changed = true;
-
-            _db.Set<ApplicationStatusHistory>().Add(new ApplicationStatusHistory
-            {
-                HistoryId     = Guid.NewGuid(),
-                ApplicationId = application.ApplicationId,
-                ChangedBy     = changedBy,
-                OldStatus     = oldStatus,
-                NewStatus     = ApplicationStatusConstants.ContractPending,
-                Action        = ReviewActionConstants.DepositPayment,
-                Note          = "Thanh toán Đợt 1 thành công. Hồ sơ chuyển sang chờ ký hợp đồng.",
-                ChangedAt     = DateTime.UtcNow
-            });
-        }
-
-        var hasAgreement = await _db.PrincipleAgreements
-            .AnyAsync(p => p.ApplicationId == application.ApplicationId);
-        if (!hasAgreement)
-        {
-            _db.PrincipleAgreements.Add(new PrincipleAgreement
-            {
-                Id            = Guid.NewGuid(),
-                ApplicationId = application.ApplicationId,
-                PdfUrl        = $"/api/payment/download-contract/{application.ApplicationId}",
-                CreatedAt     = DateTime.UtcNow
-            });
-            changed = true;
-        }
-
-        if (!changed)
-            return;
+            HistoryId     = Guid.NewGuid(),
+            ApplicationId = application.ApplicationId,
+            ChangedBy     = changedBy,
+            OldStatus     = oldStatus,
+            NewStatus     = ApplicationStatusConstants.DepositPaid,
+            Action        = ReviewActionConstants.DepositPayment,
+            Note          = "Thanh toán Đợt 1 thành công theo hợp đồng đã ký.",
+            ChangedAt     = DateTime.UtcNow
+        });
 
         try
         {
             await _notificationService.SendAsync(
                 application.ApplicantId,
-                "Đã đóng cọc Đợt 1 — hãy ký hợp đồng",
-                "Thanh toán Đợt 1 thành công. Vui lòng đọc và đồng ý điều khoản hợp đồng mua bán nhà ở xã hội.",
+                "Đã thanh toán Đợt 1",
+                "Thanh toán lần đầu theo hợp đồng mua bán thành công. Các đợt sau do chủ đầu tư mở theo tiến độ.",
                 NotificationTypeConstants.DepositPaid);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to send post-deposit sign reminder for app {AppId}.",
+            _logger.LogWarning(ex, "Failed to send post-phase-1 notice for app {AppId}.",
                 application.ApplicationId);
         }
     }
@@ -1424,6 +1428,11 @@ public class InstallmentService : IInstallmentService
 
     private async Task<bool> TryUnlockInstallmentAsync(PaymentInstallment inst, DateTime now, string triggerEvent)
     {
+        var isPhase1 = inst.Milestone.PhaseOrder == 1
+            || string.Equals(triggerEvent, TriggerEventConstants.OnLotteryWon, StringComparison.OrdinalIgnoreCase);
+        if (isPhase1 && !await HasSignedSaleContractAsync(inst.ApplicationId))
+            return false;
+
         inst.Status = InstallmentStatusConstants.Pending;
         inst.StartDate = now;
         inst.DueDate = now.AddDays(inst.Milestone.DueDays);
@@ -1554,10 +1563,11 @@ public class InstallmentService : IInstallmentService
 
         var now = DateTime.UtcNow;
 
-        // Đã thanh toán Đợt 1 (cọc) nếu status từ CONTRACT_PENDING trở đi hoặc có Payment Success
-        var isD1Paid = app.ApplicationStatus == ApplicationStatusConstants.ContractPending
-                    || app.ApplicationStatus == ApplicationStatusConstants.ContractSigned
-                    || app.ApplicationStatus == ApplicationStatusConstants.DepositPaid
+        var isSigned = await HasSignedSaleContractAsync(applicationId);
+
+        // Đợt 1 đã trả: có giao dịch thành công / installment PAID / trạng thái sau thanh toán lần đầu.
+        // CONTRACT_PENDING / CONTRACT_SIGNED = đã/đang ký, chưa chắc đã đóng Đợt 1.
+        var isD1Paid = app.ApplicationStatus == ApplicationStatusConstants.DepositPaid
                     || app.ApplicationStatus == ApplicationStatusConstants.InstallmentInProgress
                     || app.ApplicationStatus == ApplicationStatusConstants.FullyPaid
                     || await _db.Payments.AnyAsync(p => p.ApplicationId == applicationId
@@ -1589,8 +1599,19 @@ public class InstallmentService : IInstallmentService
 
                 if (m.PhaseOrder == 1)
                 {
-                    status = isD1Paid ? InstallmentStatusConstants.Paid : InstallmentStatusConstants.Pending;
-                    if (isD1Paid) paidAt = app.UpdatedAt ?? now;
+                    if (isD1Paid)
+                    {
+                        status = InstallmentStatusConstants.Paid;
+                        paidAt = app.UpdatedAt ?? now;
+                    }
+                    else if (isSigned)
+                    {
+                        status = InstallmentStatusConstants.Pending;
+                    }
+                    else
+                    {
+                        status = InstallmentStatusConstants.Locked;
+                    }
                 }
                 else
                 {
@@ -1626,6 +1647,22 @@ public class InstallmentService : IInstallmentService
             {
                 d1.Status = InstallmentStatusConstants.Paid;
                 d1.PaidAt ??= app.UpdatedAt ?? now;
+                d1.UpdatedAt = now;
+                modified = true;
+            }
+            else if (d1 != null && !isD1Paid && isSigned
+                     && (d1.Status == InstallmentStatusConstants.Locked))
+            {
+                d1.Status = InstallmentStatusConstants.Pending;
+                d1.StartDate = now;
+                d1.DueDate = now.AddDays(d1.Milestone.DueDays);
+                d1.UpdatedAt = now;
+                modified = true;
+            }
+            else if (d1 != null && !isD1Paid && !isSigned
+                     && d1.Status == InstallmentStatusConstants.Pending)
+            {
+                d1.Status = InstallmentStatusConstants.Locked;
                 d1.UpdatedAt = now;
                 modified = true;
             }
@@ -1674,7 +1711,7 @@ public class InstallmentService : IInstallmentService
 
         var standardConfigs = new (int PhaseOrder, string PhaseName, decimal Pct, string Trigger, int DueDays, string Desc)[]
         {
-            (1, "Đợt 1", 20m, TriggerEventConstants.OnLotteryWon, 7, "Đợt 1 — thanh toán lần đầu (gồm cả tiền đặt cọc), không quá 30% giá trị hợp đồng theo Đ25.1 Luật Kinh doanh bất động sản 2023"),
+            (1, "Đợt 1", 20m, TriggerEventConstants.OnLotteryWon, 7, "Đợt 1 — thanh toán lần đầu theo hợp đồng đã ký (gồm tiền đặt cọc nếu có), không quá 30% theo Điều 89 Luật Nhà ở năm 2023"),
             (2, "Đợt 2", 50m, TriggerEventConstants.OnContractSigned, 15, "Đợt 2 — sau khi ký hợp đồng mua bán"),
             (3, "Đợt 3", 30m, TriggerEventConstants.Handover, 15, "Đợt 3 — khi bàn giao nhà")
         };
@@ -1779,6 +1816,60 @@ public class InstallmentService : IInstallmentService
                 $"CalculationType không hợp lệ: '{milestone.CalculationType}' "
                 + $"cho milestone '{milestone.PhaseName}'.")
         };
+    }
+
+    /// <summary>Ký HĐMB xong mới mở Đợt 1 (hạn tính từ ngày ký).</summary>
+    private async Task UnlockPhase1AfterContractSignedAsync(Guid applicationId, DateTime eventDate)
+    {
+        if (!await HasSignedSaleContractAsync(applicationId))
+            return;
+
+        var d1 = await _db.PaymentInstallments
+            .Include(i => i.Milestone)
+            .Include(i => i.HousingApplication)
+            .Where(i => i.ApplicationId == applicationId
+                        && i.Milestone.PhaseOrder == 1
+                        && i.Status != InstallmentStatusConstants.Paid
+                        && i.Status != InstallmentStatusConstants.Cancelled)
+            .OrderBy(i => i.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (d1 == null)
+            return;
+
+        d1.Status = InstallmentStatusConstants.Pending;
+        d1.StartDate = eventDate;
+        d1.DueDate = eventDate.AddDays(d1.Milestone.DueDays);
+        d1.UpdatedAt = eventDate;
+        await _db.SaveChangesAsync();
+
+        try
+        {
+            await _notificationService.SendAsync(
+                d1.HousingApplication.ApplicantId,
+                "Đợt 1 đã mở — thanh toán theo hợp đồng",
+                $"Khoản thanh toán lần đầu: {d1.Amount:N0} VND. Hạn: {d1.DueDate:dd/MM/yyyy}.",
+                NotificationTypeConstants.InstallmentCreated);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send D1-open notice after sign for Application {AppId}.", applicationId);
+        }
+    }
+
+    private async Task<bool> HasSignedSaleContractAsync(Guid applicationId)
+    {
+        if (await _db.PrincipleAgreements.AnyAsync(p => p.ApplicationId == applicationId && p.IsSigned))
+            return true;
+
+        var status = await _db.HousingApplications
+            .Where(a => a.ApplicationId == applicationId)
+            .Select(a => a.ApplicationStatus)
+            .FirstOrDefaultAsync();
+
+        return status == ApplicationStatusConstants.ContractSigned
+            || status == ApplicationStatusConstants.InstallmentInProgress
+            || status == ApplicationStatusConstants.FullyPaid;
     }
 
     private static string GenerateOrderId()

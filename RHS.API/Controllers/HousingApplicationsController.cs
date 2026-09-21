@@ -777,9 +777,10 @@ public class HousingApplicationsController : ControllerBase
             var oldStatus = app.ApplicationStatus;
             app.ApartmentId = apartment.Id;
             app.SlotCode = apartment.UnitName;
-            if (app.ApplicationStatus == ApplicationStatusConstants.LotteryWon)
+            if (app.ApplicationStatus == ApplicationStatusConstants.LotteryWon
+                || app.ApplicationStatus == ApplicationStatusConstants.DepositPending)
             {
-                app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
+                app.ApplicationStatus = ApplicationStatusConstants.ContractPending;
             }
             app.UpdatedAt = DateTime.UtcNow;
             apartment.Status = ApartmentStatusConstants.Assigned;

@@ -88,13 +88,10 @@ public class PaymentService : IPaymentService
             };
         }
 
-        // Cho phép thanh toán Đợt 1 (cọc) khi hồ sơ ở trạng thái DEPOSIT_PENDING, APPROVED hoặc APPROVED_BY_TIMEOUT
+        // Cho phép thanh toán Đợt 1 sau khi đã ký HĐMB (CONTRACT_SIGNED)
         var allowedDepositStatuses = new[]
         {
-            ApplicationStatusConstants.DepositPending,
-            ApplicationStatusConstants.Approved,
-            ApplicationStatusConstants.ApprovedByTimeout,
-            ApplicationStatusConstants.ContractPending
+            ApplicationStatusConstants.ContractSigned,
         };
 
         if (!allowedDepositStatuses.Contains(application.ApplicationStatus))
@@ -102,7 +99,21 @@ public class PaymentService : IPaymentService
             return new PaymentResponseDto
             {
                 Success = false,
-                Message = $"Hồ sơ không ở trạng thái nộp cọc. Trạng thái hiện tại: {application.ApplicationStatus}"
+                Message = application.ApplicationStatus == ApplicationStatusConstants.ContractPending
+                    || application.ApplicationStatus == ApplicationStatusConstants.DepositPending
+                    ? "Vui lòng ký hợp đồng mua bán trước khi thanh toán Đợt 1 theo hợp đồng."
+                    : $"Hồ sơ chưa đến bước thanh toán Đợt 1. Trạng thái hiện tại: {application.ApplicationStatus}"
+            };
+        }
+
+        var signed = await _context.PrincipleAgreements
+            .AnyAsync(p => p.ApplicationId == dto.ApplicationId && p.IsSigned);
+        if (!signed)
+        {
+            return new PaymentResponseDto
+            {
+                Success = false,
+                Message = "Vui lòng ký hợp đồng mua bán trước khi thanh toán Đợt 1 theo hợp đồng."
             };
         }
 
@@ -494,10 +505,8 @@ public class PaymentService : IPaymentService
             return;
         }
 
-        // Đã qua bước cọc (chờ ký / đã ký / đã trả đủ) — không chạy lại SlotCode.
-        // DEPOSIT_PAID (dữ liệu cũ) vẫn rơi xuống dưới để chuyển CONTRACT_PENDING.
-        if (application.ApplicationStatus == ApplicationStatusConstants.ContractPending
-            || application.ApplicationStatus == ApplicationStatusConstants.ContractSigned
+        // Đã xử lý Đợt 1 xong — không chạy lại SlotCode / chuyển trạng thái.
+        if (application.ApplicationStatus == ApplicationStatusConstants.DepositPaid
             || application.ApplicationStatus == ApplicationStatusConstants.InstallmentInProgress
             || application.ApplicationStatus == ApplicationStatusConstants.FullyPaid)
         {
@@ -559,7 +568,7 @@ public class PaymentService : IPaymentService
             }
 
             var oldStatus = application.ApplicationStatus;
-            application.ApplicationStatus = ApplicationStatusConstants.ContractPending;
+            application.ApplicationStatus = ApplicationStatusConstants.DepositPaid;
             application.UpdatedAt = DateTime.UtcNow;
             await _applicationRepo.UpdateAsync(application);
 
@@ -570,8 +579,8 @@ public class PaymentService : IPaymentService
                 ChangedBy     = application.ApplicantId,
                 Action        = ReviewActionConstants.DepositPayment,
                 OldStatus     = oldStatus,
-                NewStatus     = ApplicationStatusConstants.ContractPending,
-                Note          = $"Thanh toán Đợt 1 thành công. OrderId: {payment.OrderId}, SlotCode: {slotCode}",
+                NewStatus     = ApplicationStatusConstants.DepositPaid,
+                Note          = $"Thanh toán Đợt 1 thành công theo hợp đồng đã ký. OrderId: {payment.OrderId}, SlotCode: {slotCode}",
                 ChangedAt     = DateTime.UtcNow
             });
 
@@ -600,12 +609,12 @@ public class PaymentService : IPaymentService
 
             _logger.LogInformation(
                 "Post-payment completed: AppId={AppId}, SlotCode={SlotCode}, Status={Old}→{New}.",
-                application.ApplicationId, slotCode, oldStatus, ApplicationStatusConstants.ContractPending);
+                application.ApplicationId, slotCode, oldStatus, ApplicationStatusConstants.DepositPaid);
 
             await _notificationService.SendAsync(
                 application.ApplicantId,
-                "Đã đóng cọc Đợt 1 — hãy ký hợp đồng",
-                $"Mã giao dịch/suất: {slotCode}. Vui lòng đọc và đồng ý điều khoản hợp đồng mua bán nhà ở xã hội.",
+                "Đã thanh toán Đợt 1",
+                $"Mã giao dịch/suất: {slotCode}. Thanh toán lần đầu theo hợp đồng mua bán thành công. Các đợt sau do chủ đầu tư mở theo tiến độ.",
                 NotificationTypeConstants.DepositPaid);
         }
         catch (Exception ex)

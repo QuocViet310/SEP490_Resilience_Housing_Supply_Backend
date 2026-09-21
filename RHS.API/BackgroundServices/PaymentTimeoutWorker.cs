@@ -143,7 +143,8 @@ public class PaymentTimeoutWorker : BackgroundService
         var promotedStatuses = new[]
         {
             ApplicationStatusConstants.LotteryWon,
-            ApplicationStatusConstants.DepositPending
+            ApplicationStatusConstants.DepositPending,
+            ApplicationStatusConstants.ContractPending
         };
 
         var expiredPromotions = await context.HousingApplications
@@ -160,6 +161,13 @@ public class PaymentTimeoutWorker : BackgroundService
 
         foreach (var app in expiredPromotions)
         {
+            var isSigned = await context.PrincipleAgreements.AnyAsync(
+                p => p.ApplicationId == app.ApplicationId && p.IsSigned,
+                stoppingToken);
+
+            if (isSigned)
+                continue;
+
             var isPaid = await context.Payments.AnyAsync(
                 p => p.ApplicationId == app.ApplicationId && p.Status == "Success",
                 stoppingToken);

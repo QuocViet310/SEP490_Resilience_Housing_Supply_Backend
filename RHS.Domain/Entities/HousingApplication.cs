@@ -101,7 +101,7 @@ public class HousingApplication
     /// <summary>Thời điểm được đôn từ Danh sách chờ (Waitlist) lên trúng tuyển</summary>
     public DateTime? WaitlistPromotedAt { get; set; }
 
-    /// <summary>Hạn chót xác nhận nộp cọc Đợt 1 (VD: 48 giờ kể từ lúc trúng / được đôn)</summary>
+    /// <summary>Hạn xác nhận sau khi được đôn từ danh sách dự bị (ký HĐ; Đợt 1 mở sau khi ký)</summary>
     public DateTime? DepositDeadline { get; set; }
 
     // ─────────────────────────────────────────────────────────────

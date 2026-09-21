@@ -373,7 +373,7 @@ public class LotteryService : ILotteryService
             winners.Add(app.ApplicationId);
             var oldStatus = app.ApplicationStatus;
             app.LotteryResult = LotteryResultConstants.PriorityWon;
-            app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
+            app.ApplicationStatus = ApplicationStatusConstants.LotteryWon;
             app.UpdatedAt = now;
             results.Add(MapParticipant(app, LotteryResultConstants.PriorityWon, true));
 
@@ -384,8 +384,8 @@ public class LotteryService : ILotteryService
                 ChangedBy = drawnBy,
                 Action = ReviewActionConstants.PriorityDirectApproval,
                 OldStatus = oldStatus,
-                NewStatus = ApplicationStatusConstants.DepositPending,
-                Note = "Hồ sơ thuộc diện ưu tiên được phê duyệt trực tiếp, chuyển sang bước thanh toán Đợt 1 (thanh toán lần đầu, gồm cả tiền đặt cọc).",
+                NewStatus = ApplicationStatusConstants.LotteryWon,
+                Note = "Hồ sơ thuộc diện ưu tiên được phê duyệt trực tiếp, chờ chủ đầu tư cấp căn rồi ký hợp đồng mua bán.",
                 ChangedAt = now
             });
         }
@@ -407,7 +407,7 @@ public class LotteryService : ILotteryService
             winners.Add(app.ApplicationId);
             var oldStatus = app.ApplicationStatus;
             app.LotteryResult = LotteryResultConstants.Won;
-            app.ApplicationStatus = ApplicationStatusConstants.DepositPending;
+            app.ApplicationStatus = ApplicationStatusConstants.LotteryWon;
             app.UpdatedAt = now;
             results.Add(MapParticipant(app, LotteryResultConstants.Won, !string.IsNullOrWhiteSpace(app.PriorityGroup)));
 
@@ -418,8 +418,8 @@ public class LotteryService : ILotteryService
                 ChangedBy = drawnBy,
                 Action = ReviewActionConstants.LotteryWon,
                 OldStatus = oldStatus,
-                NewStatus = ApplicationStatusConstants.DepositPending,
-                Note = "Hồ sơ trúng bốc thăm, chuyển sang bước thanh toán Đợt 1 (thanh toán lần đầu, gồm cả tiền đặt cọc).",
+                NewStatus = ApplicationStatusConstants.LotteryWon,
+                Note = "Hồ sơ trúng bốc thăm, chờ chủ đầu tư cấp căn rồi ký hợp đồng mua bán.",
                 ChangedAt = now
             });
         }
@@ -508,7 +508,7 @@ public class LotteryService : ILotteryService
             .ToListAsync(ct);
 
         var wonStatuses = new[] { LotteryResultConstants.Won, LotteryResultConstants.PriorityWon };
-        // Trúng đã chuyển CONTRACT_PENDING — không còn trong pool APPROVED, query riêng.
+        // Trúng đã chuyển LOTTERY_WON — không còn trong pool APPROVED, query riêng.
         var drawnWinners = await _db.HousingApplications
             .AsNoTracking()
             .Include(a => a.Applicant)
@@ -1569,7 +1569,7 @@ public class LotteryService : ILotteryService
             // chưa có căn cụ thể thì chờ CĐT cấp căn (LOTTERY_WON).
             nextCandidate.LotteryResult = LotteryResultConstants.Won;
             nextCandidate.ApplicationStatus = releasedApartment != null
-                ? ApplicationStatusConstants.DepositPending
+                ? ApplicationStatusConstants.ContractPending
                 : ApplicationStatusConstants.LotteryWon;
             nextCandidate.WaitlistPromotedAt = now;
             nextCandidate.DepositDeadline = now.AddHours(confirmHours);
@@ -1580,6 +1580,19 @@ public class LotteryService : ILotteryService
                 nextCandidate.ApartmentId = releasedApartment.Id;
                 releasedApartment.Status = ApartmentStatusConstants.Assigned;
                 releasedApartment.UpdatedAt = now;
+
+                var hasAgreement = await _db.PrincipleAgreements
+                    .AnyAsync(p => p.ApplicationId == nextCandidate.ApplicationId, ct);
+                if (!hasAgreement)
+                {
+                    _db.PrincipleAgreements.Add(new PrincipleAgreement
+                    {
+                        Id            = Guid.NewGuid(),
+                        ApplicationId = nextCandidate.ApplicationId,
+                        PdfUrl        = $"/api/payment/download-contract/{nextCandidate.ApplicationId}",
+                        CreatedAt     = now
+                    });
+                }
             }
 
             var typeName = releasedApartment?.UnitName
@@ -1597,7 +1610,7 @@ public class LotteryService : ILotteryService
                 NewStatus = nextCandidate.ApplicationStatus,
                 Note = $"Được đôn từ Danh sách dự bị #{nextCandidate.WaitlistNumber} lên suất trúng mua ({typeName}) " +
                        $"do có căn hoàn lại. Không mở đợt bốc thăm mới. " +
-                       $"Hạn xác nhận nộp tiền đợt 1: {deadlineText} ({confirmHours} giờ). " +
+                       $"Hạn xác nhận và ký hợp đồng: {deadlineText} ({confirmHours} giờ). " +
                        "Quá hạn thì mất suất và hệ thống gọi người kế tiếp.",
                 ChangedAt = now
             });
@@ -1612,8 +1625,8 @@ public class LotteryService : ILotteryService
                     nextCandidate.ApplicantId,
                     "Bạn đã được đôn từ Danh sách dự bị lên suất trúng mua NOXH",
                     $"Do có căn hộ ({typeName}) bị trả lại, hồ sơ của bạn (dự bị số {nextCandidate.WaitlistNumber}) " +
-                    $"đã được chuyển quyền mua. Vui lòng xác nhận và hoàn tất nộp tiền đợt 1 trước {deadlineText} " +
-                    $"(trong {confirmHours} giờ). Quá hạn, suất sẽ được chuyển cho người kế tiếp trong danh sách.",
+                    $"đã được chuyển quyền mua. Vui lòng xác nhận và ký hợp đồng mua bán trước {deadlineText} " +
+                    $"(trong {confirmHours} giờ). Đợt 1 mở sau khi ký. Quá hạn, suất sẽ được chuyển cho người kế tiếp trong danh sách.",
                     NotificationTypeConstants.ContractPending);
             }
             catch (Exception ex)

@@ -355,7 +355,7 @@ public class PaymentController : ControllerBase
             if (project == null)
                 return NotFound(new { success = false, message = "Không tìm thấy dự án" });
 
-            // Payment có thể chưa có (xem trước HĐ trước khi đóng cọc)
+            // Payment có thể chưa có (xem trước HĐ trước khi đóng Đợt 1)
             var payment = await context.Payments
                 .Where(p => p.ApplicationId == applicationId
                             && (p.Status == "Success" || p.Status == "Paid"))
