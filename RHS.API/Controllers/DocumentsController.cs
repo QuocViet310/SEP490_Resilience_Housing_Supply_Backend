@@ -187,11 +187,17 @@ public class DocumentsController : ControllerBase
         if (result == null)
             return NotFound(new { message = "Chưa có kết quả xác minh AI cho tài liệu này." });
 
+        bool isMatch = string.Equals(result.ValidationResult, "MATCH", StringComparison.OrdinalIgnoreCase);
+
         return Ok(new
         {
             result.VerificationId,
             result.DocumentId,
             result.ValidationResult,
+            isNameMatch = isMatch,
+            isDocumentTypeMatch = isMatch,
+            nameCheckDetails = isMatch ? "Họ tên và CCCD trùng khớp với Profile người dùng." : (result.ErrorDetails ?? "Họ tên hoặc CCCD không khớp."),
+            documentTypeCheckDetails = isMatch ? "File PDF nộp đúng loại/biểu mẫu giấy tờ quy định." : (result.ErrorDetails ?? "Không đúng loại giấy tờ."),
             result.ExtractedFullName,
             result.ExtractedCitizenId,
             result.ExtractedAddress,
@@ -203,16 +209,28 @@ public class DocumentsController : ControllerBase
 
     /// <summary>
     /// Trigger xác minh AI thủ công cho tài liệu.
+    /// Hỗ trợ cả Người dân (Applicant), Chủ đầu tư và Cán bộ quản lý.
     /// </summary>
     [HttpPost("{documentId:guid}/verify")]
-    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.HousingAuthorityOfficer}")]
+    [Authorize(Roles = $"{RoleConstants.Applicant},{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.HousingAuthorityOfficer}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> TriggerVerification(
+        Guid applicationId,
         Guid documentId, 
-        [FromServices] IDocumentVerificationService verificationService)
+        [FromServices] IDocumentVerificationService verificationService,
+        [FromServices] AppDbContext dbContext)
     {
+        var userId = GetCurrentUserId();
+        if (User.IsInRole(RoleConstants.Applicant))
+        {
+            var application = await dbContext.HousingApplications.AsNoTracking().FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
+            if (application == null || application.ApplicantId != userId)
+                return Forbid();
+        }
+
         try
         {
             var result = await verificationService.VerifyDocumentAsync(documentId);
@@ -230,19 +248,29 @@ public class DocumentsController : ControllerBase
     }
 
     /// <summary>
-    /// [Chủ đầu tư] Trigger AI kiểm tra toàn bộ giấy tờ trong hồ sơ xem đúng Form mẫu quy định 
-    /// (Giấy xác nhận đối tượng, Giấy xác nhận thu nhập, Giấy xác nhận điều kiện nhà ở Mẫu 03)
-    /// và đối chiếu xem hồ sơ đã nộp ĐỦ hay THIẾU giấy tờ nào theo nhóm Đối tượng ưu tiên của người dân.
+    /// Trigger AI kiểm tra toàn bộ giấy tờ trong hồ sơ xem ĐÚNG TÊN và ĐÚNG LOẠI GIẤY TỜ quy định hay không,
+    /// và đối chiếu xem hồ sơ đã nộp ĐỦ hay THIẾU giấy tờ nào theo nhóm Đối tượng ưu tiên.
+    /// Hỗ trợ cả Người dân (Applicant), Chủ đầu tư và Cán bộ quản lý.
     /// </summary>
     [HttpPost("audit")]
-    [Authorize(Roles = $"{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.HousingAuthorityOfficer}")]
+    [Authorize(Roles = $"{RoleConstants.Applicant},{RoleConstants.HousingDeveloper},{RoleConstants.SystemAdministrator},{RoleConstants.HousingAuthorityOfficer}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> AuditApplicationDocuments(
         Guid applicationId,
-        [FromServices] IDocumentVerificationService verificationService)
+        [FromServices] IDocumentVerificationService verificationService,
+        [FromServices] AppDbContext dbContext)
     {
+        var userId = GetCurrentUserId();
+        if (User.IsInRole(RoleConstants.Applicant))
+        {
+            var application = await dbContext.HousingApplications.AsNoTracking().FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
+            if (application == null || application.ApplicantId != userId)
+                return Forbid();
+        }
+
         try
         {
             var result = await verificationService.AuditApplicationDocumentsAsync(applicationId);
@@ -254,7 +282,7 @@ public class DocumentsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Lỗi khi CĐT trigger AI kiểm tra toàn bộ giấy tờ cho hồ sơ {AppId}", applicationId);
+            _logger.LogError(ex, "Lỗi khi trigger AI kiểm tra toàn bộ giấy tờ cho hồ sơ {AppId}", applicationId);
             return StatusCode(500, new { message = "Lỗi hệ thống khi kiểm tra giấy tờ.", details = ex.Message });
         }
     }

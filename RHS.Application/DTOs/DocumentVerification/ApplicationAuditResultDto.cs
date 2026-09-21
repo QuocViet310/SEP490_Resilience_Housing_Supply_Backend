@@ -10,10 +10,14 @@ public class DocumentFormCheckDto
     public string DocumentTypeName { get; set; } = string.Empty;
     public string FileUrl { get; set; } = string.Empty;
     public bool IsCorrectForm { get; set; }
+    public bool IsNameMatch { get; set; }
+    public bool IsDocumentTypeMatch { get; set; }
     public string FormMatchStatus { get; set; } = string.Empty; // "MATCH", "MISMATCH", "ERROR", "MISSING"
     public string Status => FormMatchStatus;
     public string? Details { get; set; }
     public string? Note => Details;
+    public string? NameCheckDetails { get; set; }
+    public string? DocumentTypeCheckDetails { get; set; }
 }
 
 public class ApplicationAuditResultDto

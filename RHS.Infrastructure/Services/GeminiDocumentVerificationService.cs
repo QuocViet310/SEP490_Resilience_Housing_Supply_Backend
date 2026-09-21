@@ -139,13 +139,17 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
                         properties = new
                         {
                             isMatch = new { type = "BOOLEAN" },
+                            isNameMatch = new { type = "BOOLEAN", description = "True nếu Họ tên/CCCD trích xuất trên giấy tờ khớp đúng với thông tin đăng ký của User" },
+                            isDocumentTypeMatch = new { type = "BOOLEAN", description = "True nếu file PDF nộp đúng là loại giấy tờ được yêu cầu" },
+                            nameCheckDetails = new { type = "STRING", description = "Nhận xét chi tiết về kiểm tra Họ tên/CCCD bằng tiếng Việt" },
+                            documentTypeCheckDetails = new { type = "STRING", description = "Nhận xét chi tiết về kiểm tra loại giấy tờ/biểu mẫu bằng tiếng Việt" },
                             mismatchDetails = new { type = "STRING", description = "Mô tả chi tiết những thông tin bị lệch hoặc thiếu so với Profile bằng tiếng Việt để báo lại cho user sửa. Ví dụ: 'Số CCCD trên tài liệu (123456789012) không khớp với profile (987654321098)' hoặc 'Không tìm thấy thông tin Ngày sinh trên giấy tờ'." },
                             extractedFullName = new { type = "STRING", description = "Họ tên đầy đủ trích xuất được từ giấy tờ" },
                             extractedCitizenId = new { type = "STRING", description = "Số CCCD/CMND trích xuất được từ giấy tờ" },
                             extractedAddress = new { type = "STRING", description = "Địa chỉ thường trú hoặc nơi ở trích xuất được từ giấy tờ" },
                             extractedDateOfBirth = new { type = "STRING", description = "Ngày sinh trích xuất được dưới định dạng yyyy-MM-dd" }
                         },
-                        required = new[] { "isMatch", "mismatchDetails" }
+                        required = new[] { "isMatch", "isNameMatch", "isDocumentTypeMatch", "mismatchDetails" }
                     }
                 }
             };
@@ -182,6 +186,10 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
             bool finalMatch = geminiResult.IsMatch;
             
             resultDto.ValidationResult = finalMatch ? "MATCH" : "MISMATCH";
+            resultDto.IsNameMatch = geminiResult.IsNameMatch;
+            resultDto.IsDocumentTypeMatch = geminiResult.IsDocumentTypeMatch;
+            resultDto.NameCheckDetails = geminiResult.NameCheckDetails ?? (geminiResult.IsNameMatch ? "Họ tên và CCCD trùng khớp với thông tin người nộp." : "Họ tên hoặc số CCCD không khớp với profile.");
+            resultDto.DocumentTypeCheckDetails = geminiResult.DocumentTypeCheckDetails ?? (geminiResult.IsDocumentTypeMatch ? "File PDF nộp đúng loại/biểu mẫu giấy tờ yêu cầu." : "File PDF không đúng loại giấy tờ đã chọn.");
             resultDto.ErrorDetails = finalMatch ? null : geminiResult.MismatchDetails;
             resultDto.ExtractedFullName = geminiResult.ExtractedFullName;
             resultDto.ExtractedCitizenId = geminiResult.ExtractedCitizenId;
@@ -199,6 +207,10 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
         {
             _logger.LogError(ex, "Lỗi xảy ra trong quá trình AI Verification cho tài liệu {DocumentId}", documentId);
             resultDto.ValidationResult = "ERROR";
+            resultDto.IsNameMatch = false;
+            resultDto.IsDocumentTypeMatch = false;
+            resultDto.NameCheckDetails = "Lỗi hệ thống khi kiểm tra tên";
+            resultDto.DocumentTypeCheckDetails = "Lỗi hệ thống khi kiểm tra loại giấy tờ";
             resultDto.ErrorDetails = "Lỗi hệ thống khi phân tích tài liệu: " + ex.Message;
             
             // Nếu có lỗi hệ thống, đặt trạng thái tài liệu là REJECTED để chặn lỗi và yêu cầu kiểm tra lại
@@ -299,10 +311,14 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
                 DocumentTypeName = DocumentTypeConstants.GetLabel(doc.DocumentType),
                 FileUrl = doc.FileUrl,
                 IsCorrectForm = isMatch,
+                IsNameMatch = aiResult.IsNameMatch,
+                IsDocumentTypeMatch = aiResult.IsDocumentTypeMatch,
+                NameCheckDetails = aiResult.NameCheckDetails,
+                DocumentTypeCheckDetails = aiResult.DocumentTypeCheckDetails,
                 FormMatchStatus = aiResult.ValidationResult,
                 Details = isMatch
-                    ? "Giấy tờ khớp đúng Form mẫu quy định."
-                    : (aiResult.ErrorDetails ?? "File nộp không đúng Form mẫu giấy tờ yêu cầu.")
+                    ? "Giấy tờ khớp đúng Form mẫu quy định và đúng tên người nộp."
+                    : (aiResult.ErrorDetails ?? "File nộp không đúng Form mẫu giấy tờ yêu cầu hoặc lệch thông tin tên.")
             });
         }
 
@@ -331,6 +347,10 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
                     DocumentTypeName = reqLabel,
                     FileUrl = string.Empty,
                     IsCorrectForm = false,
+                    IsNameMatch = false,
+                    IsDocumentTypeMatch = false,
+                    NameCheckDetails = "Giấy tờ chưa được nộp trong hồ sơ",
+                    DocumentTypeCheckDetails = "Giấy tờ chưa được nộp trong hồ sơ",
                     FormMatchStatus = "MISSING",
                     Details = $"⚠️ Giấy tờ chưa được nộp trong hồ sơ ({reqLabel})."
                 });
@@ -623,6 +643,18 @@ Nhiệm vụ:
     {
         [JsonPropertyName("isMatch")]
         public bool IsMatch { get; set; }
+
+        [JsonPropertyName("isNameMatch")]
+        public bool IsNameMatch { get; set; }
+
+        [JsonPropertyName("isDocumentTypeMatch")]
+        public bool IsDocumentTypeMatch { get; set; }
+
+        [JsonPropertyName("nameCheckDetails")]
+        public string? NameCheckDetails { get; set; }
+
+        [JsonPropertyName("documentTypeCheckDetails")]
+        public string? DocumentTypeCheckDetails { get; set; }
 
         [JsonPropertyName("mismatchDetails")]
         public string? MismatchDetails { get; set; }

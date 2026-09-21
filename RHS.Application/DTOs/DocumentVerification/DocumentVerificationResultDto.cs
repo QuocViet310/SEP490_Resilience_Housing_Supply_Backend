@@ -15,5 +15,11 @@ public class DocumentVerificationResultDto
     public string? ExtractedAddress { get; set; }
     public string? ExtractedDateOfBirth { get; set; }
     
+    // Chi tiết kiểm tra AI (Đúng Tên & Đúng Loại Giấy Tờ)
+    public bool IsNameMatch { get; set; }
+    public bool IsDocumentTypeMatch { get; set; }
+    public string? NameCheckDetails { get; set; }
+    public string? DocumentTypeCheckDetails { get; set; }
+    
     public DateTime VerifiedAt { get; set; }
 }
