@@ -227,8 +227,10 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
             resultDto.IsNameMatch = false;
             resultDto.IsDocumentTypeMatch = false;
             resultDto.NameCheckDetails = "Lỗi hệ thống khi kiểm tra tên";
-            resultDto.DocumentTypeCheckDetails = "Lỗi hệ thống khi kiểm tra loại giấy tờ";
-            resultDto.ErrorDetails = "Lỗi hệ thống khi phân tích tài liệu: " + ex.Message;
+            string friendlyMsg = ex.Message.Contains("has no pages", StringComparison.OrdinalIgnoreCase)
+                ? "File PDF không hợp lệ, bị hỏng hoặc không chứa trang nào (The document has no pages)."
+                : ex.Message;
+            resultDto.ErrorDetails = "Lỗi hệ thống khi phân tích tài liệu: " + friendlyMsg;
             
             // Nếu có lỗi hệ thống, đặt trạng thái tài liệu là REJECTED để chặn lỗi và yêu cầu kiểm tra lại
             document.VerificationStatus = "REJECTED";
@@ -603,28 +605,141 @@ Nhiệm vụ:
 ";
         }
 
-        // ── HOUSING_CONDITION_PROOF (default) ──
-        var housingExpectation = housingStatus switch
+        // ── HOUSING_CONDITION_PROOF ──
+        if (string.Equals(documentType, DocumentTypeConstants.HousingConditionProof, StringComparison.OrdinalIgnoreCase))
         {
-            HousingStatusConstants.NoHouse =>
-                "Người nộp khai CHƯA CÓ nhà ở thuộc sở hữu (NO_HOUSE). Giấy phải xác nhận chưa có nhà/không có nhà thuộc sở hữu.",
-            HousingStatusConstants.SmallHouse =>
-                $"Người nộp khai CÓ nhà nhưng diện tích bình quân < 15 m²/người (SMALL_HOUSE). " +
-                $"Diện tích đã khai trên hồ sơ: {(averageAreaPerPerson.HasValue ? $"{averageAreaPerPerson.Value:0.##} m²/người" : "chưa ghi số")}. " +
-                "Giấy phải xác nhận còn nhà với diện tích bình quân đầu người dưới 15 m².",
-            _ => "Giấy xác nhận nhà ở theo Đ29: chưa có nhà, hoặc có nhà dưới 15 m²/người."
-        };
+            var housingExpectation = housingStatus switch
+            {
+                HousingStatusConstants.NoHouse =>
+                    "Người nộp khai CHƯA CÓ nhà ở thuộc sở hữu (NO_HOUSE). Giấy phải xác nhận chưa có nhà/không có nhà thuộc sở hữu.",
+                HousingStatusConstants.SmallHouse =>
+                    $"Người nộp khai CÓ nhà nhưng diện tích bình quân < 15 m²/người (SMALL_HOUSE). " +
+                    $"Diện tích đã khai trên hồ sơ: {(averageAreaPerPerson.HasValue ? $"{averageAreaPerPerson.Value:0.##} m²/người" : "chưa ghi số")}. " +
+                    "Giấy phải xác nhận còn nhà với diện tích bình quân đầu người dưới 15 m².",
+                _ => "Giấy xác nhận nhà ở theo Đ29: chưa có nhà, hoặc có nhà dưới 15 m²/người."
+            };
 
-        return $@"
-Đọc PDF đính kèm. Đây phải là GIẤY XÁC NHẬN NHÀ Ở / xác nhận thực trạng nhà ở.
+            return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY XÁC NHẬN NHÀ Ở / XÁC NHẬN THỰC TRẠNG NHÀ Ở (Mẫu số 03 hoặc tương đương).
 {housingExpectation}
 
 Nhiệm vụ:
-1) Xác nhận đúng loại giấy xác nhận nhà ở (không nhầm với giấy hộ nghèo).
-2) Kiểm tra nội dung giấy có khớp với thực trạng đã khai ở trên (chưa có nhà HOẶC có nhà < 15 m²/người).
+1) Xác nhận đúng loại giấy xác nhận nhà ở / thực trạng nhà ở (isDocumentTypeMatch = true). Nếu là loại giấy khác (hộ nghèo, thu nhập, hôn nhân, cư trú...) → set isDocumentTypeMatch = false và isMatch = false.
+2) Kiểm tra nội dung giấy có khớp với thực trạng đã khai ở trên.
 3) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ (nếu có).
 4) Đối chiếu danh tính với Profile User.
-5) Nếu loại giấy sai, hoặc nội dung mâu thuẫn thực trạng đã khai → isMatch = false.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── SINGLE_STATUS_CERTIFICATE ──
+        if (string.Equals(documentType, DocumentTypeConstants.SingleStatusCertificate, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY XÁC NHẬN TÌNH TRẠNG HÔN NHÂN / GIẤY XÁC NHẬN ĐỘC THÂN do UBND cấp xã/phường/thị trấn cấp.
+
+Nhiệm vụ:
+1) Xác nhận đúng là Giấy xác nhận tình trạng hôn nhân/độc thân (isDocumentTypeMatch = true). Nếu nộp nhầm sang loại giấy khác (như Giấy xác nhận nhà ở, Cư trú, Thu nhập...) → set isDocumentTypeMatch = false và isMatch = false.
+2) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ (nếu có trên giấy).
+3) Đối chiếu danh tính với Profile User bên dưới.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── RESIDENCE_CONFIRMATION ──
+        if (string.Equals(documentType, DocumentTypeConstants.ResidenceConfirmation, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY XÁC NHẬN THÔNG TIN VỀ CƯ TRÚ (Mẫu CT07 / CT08 do Cơ quan Công an cấp) hoặc SỔ HỘ KHẨU.
+
+Nhiệm vụ:
+1) Xác nhận đúng là Giấy xác nhận thông tin về cư trú / Sổ hộ khẩu (isDocumentTypeMatch = true). Nếu nộp nhầm sang loại giấy khác (như Giấy xác nhận nhà ở, Hôn nhân, Thu nhập...) → set isDocumentTypeMatch = false và isMatch = false.
+2) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ thường trú/tạm trú trên giấy.
+3) Đối chiếu danh tính với Profile User bên dưới.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── MARRIAGE_CERTIFICATE ──
+        if (string.Equals(documentType, DocumentTypeConstants.MarriageCertificate, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY CHỨNG NHẬN KẾT HÔN do cơ quan có thẩm quyền cấp.
+
+Nhiệm vụ:
+1) Xác nhận đúng là Giấy chứng nhận kết hôn (isDocumentTypeMatch = true). Nếu nộp nhầm sang loại giấy khác → set isDocumentTypeMatch = false và isMatch = false.
+2) Trích xuất họ tên, CCCD, ngày sinh của một trong hai vợ chồng khớp với User bên dưới.
+3) Đối chiếu danh tính với Profile User bên dưới.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── DIVORCE_CERTIFICATE ──
+        if (string.Equals(documentType, DocumentTypeConstants.DivorceCertificate, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là QUYẾT ĐỊNH / BẢN ÁN LY HÔN của Tòa án.
+
+Nhiệm vụ:
+1) Xác nhận đúng là Quyết định/Bản án ly hôn (isDocumentTypeMatch = true). Nếu nộp nhầm sang loại giấy khác → set isDocumentTypeMatch = false và isMatch = false.
+2) Trích xuất họ tên, CCCD, ngày sinh.
+3) Đối chiếu danh tính với Profile User bên dưới.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── DEPENDENT_PROOF ──
+        if (string.Equals(documentType, DocumentTypeConstants.DependentProof, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF đính kèm. Đây phải là GIẤY TỜ CHỨNG MINH NGƯỜI PHỤ THUỘC (Giấy khai sinh con, xác nhận sinh viên, giám định khuyết tật, xác nhận nuôi dưỡng...).
+
+Nhiệm vụ:
+1) Xác nhận đúng là Giấy tờ chứng minh người phụ thuộc (isDocumentTypeMatch = true). Nếu nộp nhầm sang loại giấy khác → set isDocumentTypeMatch = false và isMatch = false.
+2) Trích xuất họ tên, CCCD/số định danh, ngày sinh.
+3) Đối chiếu danh tính với Profile User bên dưới.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── CITIZEN_ID_FRONT & CITIZEN_ID_BACK ──
+        if (string.Equals(documentType, DocumentTypeConstants.CitizenIdFront, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(documentType, DocumentTypeConstants.CitizenIdBack, StringComparison.OrdinalIgnoreCase))
+        {
+            return $@"
+Đọc PDF/Ảnh đính kèm. Đây phải là CĂN CƯỚC CÔNG DÂN (CCCD) / CMND.
+
+Nhiệm vụ:
+1) Xác nhận đúng là Thẻ Căn cước công dân / CMND (isDocumentTypeMatch = true). Nếu nộp nhầm sang loại giấy khác → set isDocumentTypeMatch = false và isMatch = false.
+2) Trích xuất họ tên, số CCCD, ngày sinh, địa chỉ.
+3) Đối chiếu danh tính với Profile User bên dưới.
+
+{profileBlock}
+{identityRules}
+";
+        }
+
+        // ── DYNAMIC FALLBACK FOR ALL OTHER DOCUMENT TYPES ──
+        string docTypeLabel = DocumentTypeConstants.GetLabel(documentType);
+        return $@"
+Đọc PDF đính kèm. Đây phải là loại giấy tờ: [{docTypeLabel}] (mã loại: {documentType}).
+
+Nhiệm vụ:
+1) Kiểm tra file PDF đính kèm có đúng tiêu đề hoặc nội dung là loại giấy tờ [{docTypeLabel}] hay không. Nếu nộp nhầm sang loại giấy tờ khác → set isDocumentTypeMatch = false và isMatch = false.
+2) Trích xuất họ tên, CCCD, ngày sinh, địa chỉ (nếu có trên giấy).
+3) Đối chiếu danh tính với Profile User bên dưới.
 
 {profileBlock}
 {identityRules}
