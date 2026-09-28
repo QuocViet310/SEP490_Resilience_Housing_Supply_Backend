@@ -154,8 +154,25 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
                 }
             };
 
-            // 5. Gọi Gemini API
-            string geminiUrl = $"models/{_options.ModelName}:generateContent?key={_options.ApiKey}";
+            // 5. Xác định API Key từ _options hoặc biến môi trường fallback (hỗ trợ các kiểu đặt tên GEMINI_API_KEY, GeminiAi__ApiKey...)
+            string apiKey = _options.ApiKey;
+            if (string.IsNullOrWhiteSpace(apiKey) || apiKey.Equals("YOUR_GEMINI_API_KEY", StringComparison.OrdinalIgnoreCase))
+            {
+                apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY")
+                    ?? Environment.GetEnvironmentVariable("GeminiAi__ApiKey")
+                    ?? Environment.GetEnvironmentVariable("GeminiAi_ApiKey")
+                    ?? string.Empty;
+            }
+
+            // Xóa Authorization header để tránh bị Google hiểu nhầm là Google OAuth2 token
+            _geminiClient.DefaultRequestHeaders.Authorization = null;
+            _geminiClient.DefaultRequestHeaders.Remove("x-goog-api-key");
+            if (!string.IsNullOrWhiteSpace(apiKey))
+            {
+                _geminiClient.DefaultRequestHeaders.Add("x-goog-api-key", apiKey);
+            }
+
+            string geminiUrl = $"models/{_options.ModelName}:generateContent?key={apiKey}";
             var response = await _geminiClient.PostAsJsonAsync(geminiUrl, payload, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
