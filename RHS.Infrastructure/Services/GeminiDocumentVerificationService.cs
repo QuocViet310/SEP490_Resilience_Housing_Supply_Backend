@@ -237,34 +237,55 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
             _dbContext.Entry(document).State = EntityState.Modified;
         }
 
-        // 7. Lưu AIVerificationResult vào Database
-        var aiResultEntity = new AIVerificationResult
+        // 7. Lưu / Cập nhật AIVerificationResult vào Database (bọc try-catch an toàn để không làm gián đoạn kết quả trả về cho FE nếu DB có sự cố)
+        try
         {
-            VerificationId = resultDto.VerificationId,
-            DocumentId = resultDto.DocumentId,
-            ExtractedText = $"Full Name: {resultDto.ExtractedFullName} | Citizen ID: {resultDto.ExtractedCitizenId} | Address: {resultDto.ExtractedAddress} | DOB: {resultDto.ExtractedDateOfBirth}",
-            FaceMatchScore = 0,
-            RiskScore = 0,
-            ValidationResult = resultDto.ValidationResult,
-            VerifiedAt = resultDto.VerifiedAt,
-            ExtractedFullName = resultDto.ExtractedFullName,
-            ExtractedCitizenId = resultDto.ExtractedCitizenId,
-            ExtractedAddress = resultDto.ExtractedAddress,
-            ExtractedDateOfBirth = resultDto.ExtractedDateOfBirth,
-            ErrorDetails = resultDto.ErrorDetails,
-            AiModelUsed = _options.ModelName
-        };
+            string rawExtractedText = $"Full Name: {resultDto.ExtractedFullName} | Citizen ID: {resultDto.ExtractedCitizenId} | Address: {resultDto.ExtractedAddress} | DOB: {resultDto.ExtractedDateOfBirth}";
 
-        // Xóa kết quả xác minh cũ của tài liệu này (nếu có) để tránh lỗi trùng lặp One-to-One
-        var existingResult = await _dbContext.AIVerificationResults
-            .FirstOrDefaultAsync(r => r.DocumentId == documentId, cancellationToken);
-        if (existingResult != null)
-        {
-            _dbContext.AIVerificationResults.Remove(existingResult);
+            var existingResult = await _dbContext.AIVerificationResults
+                .FirstOrDefaultAsync(r => r.DocumentId == documentId, cancellationToken);
+
+            if (existingResult != null)
+            {
+                existingResult.ExtractedText = Truncate(rawExtractedText, 2000) ?? "";
+                existingResult.ValidationResult = Truncate(resultDto.ValidationResult, 100) ?? "ERROR";
+                existingResult.VerifiedAt = resultDto.VerifiedAt;
+                existingResult.ExtractedFullName = Truncate(resultDto.ExtractedFullName, 255);
+                existingResult.ExtractedCitizenId = Truncate(resultDto.ExtractedCitizenId, 50);
+                existingResult.ExtractedAddress = Truncate(resultDto.ExtractedAddress, 500);
+                existingResult.ExtractedDateOfBirth = Truncate(resultDto.ExtractedDateOfBirth, 50);
+                existingResult.ErrorDetails = Truncate(resultDto.ErrorDetails, 1000);
+                existingResult.AiModelUsed = Truncate(_options.ModelName, 100);
+
+                _dbContext.AIVerificationResults.Update(existingResult);
+            }
+            else
+            {
+                var aiResultEntity = new AIVerificationResult
+                {
+                    VerificationId = resultDto.VerificationId,
+                    DocumentId = resultDto.DocumentId,
+                    ExtractedText = Truncate(rawExtractedText, 2000) ?? "",
+                    FaceMatchScore = 0,
+                    RiskScore = 0,
+                    ValidationResult = Truncate(resultDto.ValidationResult, 100) ?? "ERROR",
+                    VerifiedAt = resultDto.VerifiedAt,
+                    ExtractedFullName = Truncate(resultDto.ExtractedFullName, 255),
+                    ExtractedCitizenId = Truncate(resultDto.ExtractedCitizenId, 50),
+                    ExtractedAddress = Truncate(resultDto.ExtractedAddress, 500),
+                    ExtractedDateOfBirth = Truncate(resultDto.ExtractedDateOfBirth, 50),
+                    ErrorDetails = Truncate(resultDto.ErrorDetails, 1000),
+                    AiModelUsed = Truncate(_options.ModelName, 100)
+                };
+                await _dbContext.AIVerificationResults.AddAsync(aiResultEntity, cancellationToken);
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
         }
-
-        await _dbContext.AIVerificationResults.AddAsync(aiResultEntity, cancellationToken);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        catch (Exception dbEx)
+        {
+            _logger.LogError(dbEx, "Lỗi khi lưu kết quả AIVerificationResult vào Database cho tài liệu {DocumentId}", documentId);
+        }
 
         return resultDto;
     }
@@ -323,6 +344,27 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
             }
 
             bool isMatch = string.Equals(aiResult.ValidationResult, "MATCH", StringComparison.OrdinalIgnoreCase);
+
+            string detailsText;
+            if (isMatch)
+            {
+                detailsText = "Giấy tờ khớp đúng Form mẫu quy định và đúng tên người nộp.";
+            }
+            else
+            {
+                var reasons = new List<string>();
+                if (!string.IsNullOrWhiteSpace(aiResult.DocumentTypeCheckDetails))
+                    reasons.Add(aiResult.DocumentTypeCheckDetails);
+                if (!string.IsNullOrWhiteSpace(aiResult.NameCheckDetails))
+                    reasons.Add(aiResult.NameCheckDetails);
+                if (!string.IsNullOrWhiteSpace(aiResult.ErrorDetails) && !reasons.Contains(aiResult.ErrorDetails))
+                    reasons.Add(aiResult.ErrorDetails);
+
+                detailsText = reasons.Count > 0 
+                    ? string.Join(" | ", reasons) 
+                    : "File nộp không đúng Form mẫu giấy tờ yêu cầu hoặc lệch thông tin tên.";
+            }
+
             auditResult.CheckedDocuments.Add(new DocumentFormCheckDto
             {
                 DocumentId = doc.DocumentId,
@@ -335,9 +377,7 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
                 NameCheckDetails = aiResult.NameCheckDetails,
                 DocumentTypeCheckDetails = aiResult.DocumentTypeCheckDetails,
                 FormMatchStatus = aiResult.ValidationResult,
-                Details = isMatch
-                    ? "Giấy tờ khớp đúng Form mẫu quy định và đúng tên người nộp."
-                    : (aiResult.ErrorDetails ?? "File nộp không đúng Form mẫu giấy tờ yêu cầu hoặc lệch thông tin tên.")
+                Details = detailsText
             });
         }
 
@@ -802,6 +842,12 @@ Nhiệm vụ:
 
         [JsonPropertyName("extractedDateOfBirth")]
         public string? ExtractedDateOfBirth { get; set; }
+    }
+
+    private static string? Truncate(string? value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        return value.Length <= maxLength ? value : value[..maxLength];
     }
     #endregion
 }
