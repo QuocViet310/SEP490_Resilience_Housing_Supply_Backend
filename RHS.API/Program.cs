@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using RHS.API.Converters;
 using RHS.Application.Interfaces;
 using RHS.Infrastructure.Data;
 using RHS.Infrastructure.Extensions;
@@ -71,8 +72,12 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddMemoryCache();
-builder.Services.AddSignalR();
+builder.Services.AddSignalR()
+    .AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.Converters.Add(new UtcDateTimeJsonConverter());
+        options.PayloadSerializerOptions.Converters.Add(new NullableUtcDateTimeJsonConverter());
+    });
 
 // Dependency Injection - Repositories
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -170,7 +175,12 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new UtcDateTimeJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new NullableUtcDateTimeJsonConverter());
+    });
 
 // Cấu hình giới hạn upload file (dành cho PDF tài liệu hồ sơ, tối đa 10MB)
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
