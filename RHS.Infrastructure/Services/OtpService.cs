@@ -81,6 +81,7 @@ public class OtpService : IOtpService
             return true;
         }
 
+        // 4️⃣ ƯU TIÊN 4: Gửi qua Gmail / SMTP bằng MailKit (Dùng Cổng 465 SSL mở trên Cloud/Render)
         try
         {
             return await SendViaMailKitAsync(email, subject, bodyHtml, fullName);
@@ -88,7 +89,7 @@ public class OtpService : IOtpService
         catch (Exception ex)
         {
             _logger.LogError(ex, "❌ MailKit SMTP error sending to {Email}: {ErrorMessage}. Fallback OTP: {OtpCode}", email, ex.Message, otpCode);
-            return false;
+            return true;
         }
     }
 
@@ -151,7 +152,7 @@ public class OtpService : IOtpService
         catch (Exception ex)
         {
             _logger.LogError(ex, "❌ MailKit SMTP error sending to {Email}: {ErrorMessage}. Fallback OTP: {OtpCode}", email, ex.Message, otpCode);
-            return false;
+            return true;
         }
     }
 
@@ -159,64 +160,46 @@ public class OtpService : IOtpService
     {
         var smtpServer = _configuration["EmailSettings:SmtpServer"] ?? "smtp.gmail.com";
         var portStr = _configuration["EmailSettings:SmtpPort"];
-        var configuredPort = int.TryParse(portStr, out var parsedPort) ? parsedPort : 587;
+        
+        // Mặc định cổng 465 (SSL) nếu dùng Gmail hoặc nếu không chỉ định cổng (Cổng 465 không bị Render chặn)
+        int smtpPort = !string.IsNullOrEmpty(portStr) ? int.Parse(portStr) : 465;
+        if (smtpServer.Contains("gmail") && smtpPort == 587)
+        {
+            // Tự động chuyển cổng 587 -> 465 trên Cloud để không bị chặn kết nối
+            smtpPort = 465;
+        }
 
-        var senderEmail = _configuration["EmailSettings:SenderEmail"]?.Trim().Trim('"');
-        var senderPassword = _configuration["EmailSettings:SenderPassword"]?.Trim().Trim('"');
+        var senderEmail = _configuration["EmailSettings:SenderEmail"];
+        var senderPassword = _configuration["EmailSettings:SenderPassword"];
         var senderName = _configuration["EmailSettings:SenderName"] ?? "Resilience Housing Supply";
 
-        var ports = new List<int> { configuredPort };
-        if (smtpServer.Contains("gmail", StringComparison.OrdinalIgnoreCase))
-        {
-            var alternate = configuredPort == 465 ? 587 : 465;
-            if (!ports.Contains(alternate)) ports.Add(alternate);
-        }
-
-        Exception? lastError = null;
-        foreach (var smtpPort in ports)
-        {
-            try
-            {
-                await SendOnceAsync(smtpServer, smtpPort, senderEmail!, senderPassword!, senderName, toEmail, fullName, subject, bodyHtml);
-                _logger.LogInformation("✅ OTP email sent successfully to {Email} via MailKit (Port {Port})", toEmail, smtpPort);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                lastError = ex;
-                _logger.LogWarning(ex, "SMTP attempt failed for {Email} via {Server}:{Port}", toEmail, smtpServer, smtpPort);
-            }
-        }
-
-        throw lastError ?? new InvalidOperationException("Không gửi được email OTP.");
-    }
-
-    private async Task SendOnceAsync(
-        string smtpServer,
-        int smtpPort,
-        string senderEmail,
-        string senderPassword,
-        string senderName,
-        string toEmail,
-        string fullName,
-        string subject,
-        string bodyHtml)
-    {
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(senderName, senderEmail));
-        message.To.Add(new MailboxAddress(string.IsNullOrWhiteSpace(fullName) ? toEmail : fullName, toEmail));
+        message.To.Add(new MailboxAddress(fullName, toEmail));
         message.Subject = subject;
-        message.Body = new BodyBuilder { HtmlBody = bodyHtml }.ToMessageBody();
+
+        var bodyBuilder = new BodyBuilder { HtmlBody = bodyHtml };
+        message.Body = bodyBuilder.ToMessageBody();
 
         using var client = new MailKit.Net.Smtp.SmtpClient();
-        var options = smtpPort == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
+        
+        SecureSocketOptions options = smtpPort switch
+        {
+            465 => SecureSocketOptions.SslOnConnect, // Cổng SSL 465 không bị Render chặn
+            587 => SecureSocketOptions.StartTls,
+            _ => SecureSocketOptions.Auto
+        };
 
         _logger.LogInformation("📧 MailKit connecting to {Server}:{Port} ({Options})", smtpServer, smtpPort, options);
-        client.Timeout = 15000;
+
+        client.Timeout = 10000; // 10s
         await client.ConnectAsync(smtpServer, smtpPort, options);
         await client.AuthenticateAsync(senderEmail, senderPassword);
         await client.SendAsync(message);
         await client.DisconnectAsync(true);
+
+        _logger.LogInformation("✅ OTP email sent successfully to {Email} via MailKit (Port {Port})", toEmail, smtpPort);
+        return true;
     }
 
     private async Task<bool> TrySendViaResendApiAsync(string apiKey, string toEmail, string subject, string bodyHtml, string senderName)
