@@ -78,6 +78,16 @@ public static class DemoDataSeeder
             }
         }
 
+        // PolicyConfig.UpdatedBy bắt buộc FK Users — phải chạy sau EnsureDemoStaffAsync.
+        // POST /api/Auth/seed-demo-data trước đây không đụng bảng này nên DB vẫn trống / thiếu khóa.
+        try { result.PoliciesAdded = await EnsurePolicyConfigsAsync(db, logger, ct); }
+        catch (Exception ex)
+        {
+            var msg = $"EnsurePolicyConfigsAsync: {ex.InnerException?.Message ?? ex.Message}";
+            result.Errors.Add(msg);
+            logger?.LogError(ex, "{Msg}", msg);
+        }
+
         try { await EnsureDemoApplicantsAndApplicationsAsync(db, result, logger, ct); }
         catch (Exception ex)
         {
@@ -103,6 +113,7 @@ public static class DemoDataSeeder
         public int UsersUpdated { get; set; }
         public int AppsAdded { get; set; }
         public int AgreementsAdded { get; set; }
+        public int PoliciesAdded { get; set; }
         public List<string> SeededEmails { get; set; } = new();
         public List<string> Errors { get; set; } = new();
     }
@@ -172,6 +183,46 @@ public static class DemoDataSeeder
         db.HousingProjectStatuses.AddRange(toAdd);
         await db.SaveChangesAsync(ct);
         logger?.LogInformation("Demo seed: added {Count} HousingProjectStatus codes.", toAdd.Count);
+    }
+
+    private static async Task<int> EnsurePolicyConfigsAsync(AppDbContext db, ILogger? logger, CancellationToken ct)
+    {
+        var existing = await db.PolicyConfigs.Select(p => p.PolicyName).ToListAsync(ct);
+        var updatedBy = await db.Users.AnyAsync(u => u.Id == DemoAdminUserId, ct)
+            ? DemoAdminUserId
+            : await db.Users.Select(u => u.Id).FirstOrDefaultAsync(ct);
+
+        if (updatedBy == Guid.Empty)
+        {
+            logger?.LogWarning("Demo seed: skip PolicyConfig — chưa có user để gán UpdatedBy.");
+            return 0;
+        }
+
+        var toAdd = PolicyKeys.Defaults
+            .Where(d => !existing.Contains(d.Key))
+            .Select(d => new PolicyConfig
+            {
+                PolicyId = Guid.NewGuid(),
+                PolicyName = d.Key,
+                PolicyValue = d.Value,
+                Category = d.Category,
+                Description = d.Description,
+                IsActive = true,
+                EffectiveDate = DateTime.UtcNow,
+                UpdatedBy = updatedBy
+            })
+            .ToList();
+
+        if (toAdd.Count == 0)
+        {
+            logger?.LogInformation("Demo seed: PolicyConfig already complete ({Count} keys).", existing.Count);
+            return 0;
+        }
+
+        db.PolicyConfigs.AddRange(toAdd);
+        await db.SaveChangesAsync(ct);
+        logger?.LogInformation("Demo seed: PolicyConfig +{Count} (tổng {Total}).", toAdd.Count, existing.Count + toAdd.Count);
+        return toAdd.Count;
     }
 
     private static async Task<User> EnsureDemoStaffAsync(AppDbContext db, ILogger? logger, CancellationToken ct)

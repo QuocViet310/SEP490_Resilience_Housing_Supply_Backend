@@ -312,7 +312,7 @@ using (var scope = app.Services.CreateScope())
         {
             var policyService = scope.ServiceProvider.GetRequiredService<IPolicyService>();
             var before = dbContext.PolicyConfigs.Count();
-            policyService.EnsureDefaultsSeededAsync(RHS.Domain.Constants.RoleConstants.SystemAdministratorId)
+            policyService.EnsureDefaultsSeededAsync(RHS.Infrastructure.Seed.DemoDataSeeder.DemoAdminUserId)
                 .GetAwaiter().GetResult();
             var after = dbContext.PolicyConfigs.Count();
             if (after == 0)

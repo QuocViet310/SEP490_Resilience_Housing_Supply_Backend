@@ -227,15 +227,28 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Kích hoạt nạp dữ liệu demo & 10 tài khoản test mẫu vào Database
+    /// Nạp dữ liệu demo (user/dự án/hồ sơ) và bổ sung PolicyConfig còn thiếu.
     /// </summary>
     [HttpPost("seed-demo-data")]
     public async Task<IActionResult> SeedDemoData(
         [FromServices] RHS.Infrastructure.Data.AppDbContext db,
-        [FromServices] ILoggerFactory loggerFactory)
+        [FromServices] ILoggerFactory loggerFactory,
+        [FromServices] IPolicyService policyService)
     {
         var logger = loggerFactory.CreateLogger("DemoDataSeeder");
         var seedResult = await RHS.Infrastructure.Seed.DemoDataSeeder.EnsureSeededAsync(db, logger);
+
+        // Cache PolicyService 5 phút — phải invalidate sau khi seeder insert, nếu không GET vẫn 404 khóa mới.
+        try
+        {
+            await policyService.EnsureDefaultsSeededAsync(
+                RHS.Infrastructure.Seed.DemoDataSeeder.DemoAdminUserId);
+            policyService.InvalidateCache();
+        }
+        catch (Exception policyEx)
+        {
+            seedResult.Errors.Add($"PolicyConfig seed: {policyEx.InnerException?.Message ?? policyEx.Message}");
+        }
 
         var demoUsersInDb = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
             .ToListAsync(
@@ -257,14 +270,15 @@ public class AuthController : ControllerBase
         {
             success = seedResult.Errors.Count == 0,
             message = seedResult.Errors.Count == 0
-                ? $"Đã nạp thành công! Thêm mới {seedResult.UsersAdded} users, cập nhật {seedResult.UsersUpdated} users. Tổng {demoUsersInDb.Count} tài khoản trong DB."
-                : $"Hoàn tất có cảnh báo ({seedResult.Errors.Count} lỗi). Thêm {seedResult.UsersAdded}, cập nhật {seedResult.UsersUpdated}. Tổng {demoUsersInDb.Count} tài khoản trong DB.",
+                ? $"Đã nạp thành công! Thêm {seedResult.UsersAdded} users, {seedResult.PoliciesAdded} policy. Tổng {demoUsersInDb.Count} tài khoản demo trong DB."
+                : $"Hoàn tất có cảnh báo ({seedResult.Errors.Count} lỗi). Thêm {seedResult.UsersAdded} users, {seedResult.PoliciesAdded} policy. Tổng {demoUsersInDb.Count} tài khoản demo trong DB.",
             summary = new
             {
                 usersAdded = seedResult.UsersAdded,
                 usersUpdated = seedResult.UsersUpdated,
                 appsAdded = seedResult.AppsAdded,
                 agreementsAdded = seedResult.AgreementsAdded,
+                policiesAdded = seedResult.PoliciesAdded,
                 totalDemoUsersInDb = demoUsersInDb.Count,
                 errors = seedResult.Errors
             },
