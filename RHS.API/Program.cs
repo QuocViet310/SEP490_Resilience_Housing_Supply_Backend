@@ -286,20 +286,8 @@ using (var scope = app.Services.CreateScope())
             Console.WriteLine("✅ Seeded project statuses!");
         }
 
-        // Seed PolicyConfig defaults (NOXH decree parameters)
-        try
-        {
-            var policyService = scope.ServiceProvider.GetRequiredService<IPolicyService>();
-            policyService.EnsureDefaultsSeededAsync(RHS.Domain.Constants.RoleConstants.SystemAdministratorId)
-                .GetAwaiter().GetResult();
-            Console.WriteLine("✅ PolicyConfig defaults ensured!");
-        }
-        catch (Exception seedEx)
-        {
-            Console.WriteLine($"⚠️ PolicyConfig seed skipped: {seedEx.Message}");
-        }
-
-        // Seed demo staff + housing projects (idempotent)
+        // Seed demo staff trước PolicyConfig: UpdatedBy là FK tới Users.
+        // Nếu seed policy chạy khi chưa có user thì hàm return im lặng và bảng vẫn trống.
         try
         {
             var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
@@ -317,6 +305,26 @@ using (var scope = app.Services.CreateScope())
         catch (Exception demoEx)
         {
             Console.WriteLine($"⚠️ Demo data seed skipped: {demoEx.Message}");
+        }
+
+        // Seed PolicyConfig defaults (NOXH decree parameters)
+        try
+        {
+            var policyService = scope.ServiceProvider.GetRequiredService<IPolicyService>();
+            var before = dbContext.PolicyConfigs.Count();
+            policyService.EnsureDefaultsSeededAsync(RHS.Domain.Constants.RoleConstants.SystemAdministratorId)
+                .GetAwaiter().GetResult();
+            var after = dbContext.PolicyConfigs.Count();
+            if (after == 0)
+                Console.WriteLine("⚠️ PolicyConfig seed skipped: chưa có user để gán UpdatedBy, bảng vẫn trống.");
+            else if (after > before)
+                Console.WriteLine($"✅ PolicyConfig defaults seeded ({after - before} rows, tổng {after}).");
+            else
+                Console.WriteLine($"✅ PolicyConfig defaults already present ({after} rows).");
+        }
+        catch (Exception seedEx)
+        {
+            Console.WriteLine($"⚠️ PolicyConfig seed skipped: {seedEx.Message}");
         }
     }
     catch (Exception ex)
