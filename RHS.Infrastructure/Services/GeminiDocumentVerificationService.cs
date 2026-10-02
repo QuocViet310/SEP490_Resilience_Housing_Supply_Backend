@@ -227,9 +227,7 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
             resultDto.IsNameMatch = false;
             resultDto.IsDocumentTypeMatch = false;
             resultDto.NameCheckDetails = "Lỗi hệ thống khi kiểm tra tên";
-            string friendlyMsg = ex.Message.Contains("has no pages", StringComparison.OrdinalIgnoreCase)
-                ? "File PDF không hợp lệ, bị hỏng hoặc không chứa trang nào (The document has no pages)."
-                : ex.Message;
+            string friendlyMsg = FormatGeminiErrorMessage(ex);
             resultDto.ErrorDetails = "Lỗi hệ thống khi phân tích tài liệu: " + friendlyMsg;
             
             // Nếu có lỗi hệ thống, đặt trạng thái tài liệu là REJECTED để chặn lỗi và yêu cầu kiểm tra lại
@@ -339,7 +337,7 @@ public class GeminiDocumentVerificationService : IDocumentVerificationService
                 {
                     DocumentId = doc.DocumentId,
                     ValidationResult = "ERROR",
-                    ErrorDetails = ex.Message
+                    ErrorDetails = FormatGeminiErrorMessage(ex)
                 };
             }
 
@@ -842,6 +840,36 @@ Nhiệm vụ:
 
         [JsonPropertyName("extractedDateOfBirth")]
         public string? ExtractedDateOfBirth { get; set; }
+    }
+
+    private static string FormatGeminiErrorMessage(Exception ex)
+    {
+        if (ex == null) return "Lỗi hệ thống khi kết nối dịch vụ AI.";
+        
+        string msg = ex.Message ?? string.Empty;
+        string lower = msg.ToLowerInvariant();
+
+        if (lower.Contains("resource_exhausted") || lower.Contains("quota") || lower.Contains("rate limit") || lower.Contains("429"))
+        {
+            return "Dịch vụ AI Gemini tạm thời hết hạn ngạch/lượt gọi (Quota / Token Limit). Vui lòng thử lại sau hoặc liên hệ quản trị viên để cập nhật API Key mới.";
+        }
+
+        if (lower.Contains("api_key_invalid") || lower.Contains("api key not valid") || lower.Contains("invalid_argument") || lower.Contains("400") || lower.Contains("403") || lower.Contains("401"))
+        {
+            return "Dịch vụ AI Gemini tạm thời gián đoạn do API Key không hợp lệ hoặc đã hết hạn. Vui lòng liên hệ quản trị viên để cập nhật API Key mới trong cấu hình.";
+        }
+
+        if (lower.Contains("has no pages"))
+        {
+            return "File PDF không hợp lệ, bị hỏng hoặc không chứa trang nào (The document has no pages).";
+        }
+
+        if (lower.Contains("gemini api error"))
+        {
+            return "Dịch vụ AI Gemini không thể phản hồi yêu cầu phân tích tài liệu vào lúc này. Vui lòng thử lại sau.";
+        }
+
+        return msg;
     }
 
     private static string? Truncate(string? value, int maxLength)
