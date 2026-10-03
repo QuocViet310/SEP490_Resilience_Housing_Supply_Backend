@@ -202,12 +202,12 @@ public class HousingProjectService : IHousingProjectService
         }
 
         // Update entity
-        existingProject.ProjectName = request.ProjectName.Trim();
+        existingProject.ProjectName = request.ProjectName?.Trim() ?? string.Empty;
         existingProject.Description = request.Description?.Trim() ?? string.Empty;
-        existingProject.Province = request.Province.Trim();
-        existingProject.District = request.District.Trim();
-        existingProject.Street = request.Street.Trim();
-        existingProject.Ward = request.Ward.Trim();
+        existingProject.Province = request.Province?.Trim() ?? string.Empty;
+        existingProject.District = request.District?.Trim() ?? string.Empty;
+        existingProject.Street = request.Street?.Trim() ?? string.Empty;
+        existingProject.Ward = request.Ward?.Trim() ?? string.Empty;
         existingProject.MinPrice = request.MinPrice;
         existingProject.MaxPrice = request.MaxPrice;
         existingProject.MinArea = request.MinArea;
@@ -218,7 +218,7 @@ public class HousingProjectService : IHousingProjectService
         // Giữ nguyên trạng thái PENDING, không thay đổi trạng thái qua API PUT
 
         // Update legal fields
-        existingProject.DecisionNumber = request.DecisionNumber.Trim();
+        existingProject.DecisionNumber = request.DecisionNumber?.Trim() ?? string.Empty;
         existingProject.DecisionDocumentUrl = request.DecisionDocumentUrl?.Trim();
         existingProject.ApplicationOpenDate = request.ApplicationOpenDate;
         existingProject.ApplicationCloseDate = request.ApplicationCloseDate;
@@ -342,44 +342,66 @@ public class HousingProjectService : IHousingProjectService
         }
     }
 
-    private static void ValidateHousingProjectRequest(dynamic request)
+    private static void ValidateHousingProjectRequest(CreateHousingProjectRequestDto request)
     {
-        if (string.IsNullOrWhiteSpace(request.ProjectName))
+        ValidateProjectRequestInternal(
+            request.ProjectName, request.Province, request.District, request.Ward,
+            request.Street, request.DecisionNumber, request.MinPrice, request.MaxPrice,
+            request.MinArea, request.MaxArea, request.AvailableUnits,
+            request.ApplicationOpenDate, request.ApplicationCloseDate);
+    }
+
+    private static void ValidateHousingProjectRequest(UpdateHousingProjectRequestDto request)
+    {
+        ValidateProjectRequestInternal(
+            request.ProjectName, request.Province, request.District, request.Ward,
+            request.Street, request.DecisionNumber, request.MinPrice, request.MaxPrice,
+            request.MinArea, request.MaxArea, request.AvailableUnits,
+            request.ApplicationOpenDate, request.ApplicationCloseDate);
+    }
+
+    private static void ValidateProjectRequestInternal(
+        string? projectName, string? province, string? district, string? ward,
+        string? street, string? decisionNumber, decimal minPrice, decimal maxPrice,
+        double minArea, double maxArea, int availableUnits,
+        DateTime? openDate, DateTime? closeDate)
+    {
+        if (string.IsNullOrWhiteSpace(projectName))
             throw new ArgumentException("Tên dự án là bắt buộc (ProjectName).");
 
-        if (string.IsNullOrWhiteSpace(request.Province))
+        if (string.IsNullOrWhiteSpace(province))
             throw new ArgumentException("Tỉnh/Thành phố là bắt buộc (Province).");
 
-        if (string.IsNullOrWhiteSpace(request.District))
+        if (string.IsNullOrWhiteSpace(district))
             throw new ArgumentException("Quận/Huyện là bắt buộc (District).");
 
-        if (string.IsNullOrWhiteSpace(request.Ward))
+        if (string.IsNullOrWhiteSpace(ward))
             throw new ArgumentException("Phường/Xã là bắt buộc (Ward).");
 
-        if (string.IsNullOrWhiteSpace(request.Street))
+        if (string.IsNullOrWhiteSpace(street))
             throw new ArgumentException("Đường/Phố là bắt buộc (Street).");
 
-        if (string.IsNullOrWhiteSpace(request.DecisionNumber))
+        if (string.IsNullOrWhiteSpace(decisionNumber))
             throw new ArgumentException("Số quyết định phê duyệt là bắt buộc (DecisionNumber).");
 
-        if (request.MinPrice < 0)
+        if (minPrice < 0)
             throw new ArgumentException("Giá bán tối thiểu không được âm.");
 
-        if (request.MaxPrice < request.MinPrice)
+        if (maxPrice < minPrice)
             throw new ArgumentException("Giá bán tối đa phải lớn hơn hoặc bằng giá tối thiểu.");
 
-        if (request.MinArea < 0)
+        if (minArea < 0)
             throw new ArgumentException("Diện tích tối thiểu không được âm.");
 
-        if (request.MaxArea < request.MinArea)
+        if (maxArea < minArea)
             throw new ArgumentException("Diện tích tối đa phải lớn hơn hoặc bằng diện tích tối thiểu.");
 
-        if (request.AvailableUnits < 0)
+        if (availableUnits < 0)
             throw new ArgumentException("Số lượng căn hộ không được âm.");
 
-        if (request.ApplicationOpenDate != null && request.ApplicationCloseDate != null)
+        if (openDate != null && closeDate != null)
         {
-            if (request.ApplicationOpenDate >= request.ApplicationCloseDate)
+            if (openDate >= closeDate)
             {
                 throw new ArgumentException("Thời gian mở nhận hồ sơ phải diễn ra trước thời gian đóng nhận hồ sơ.");
             }
