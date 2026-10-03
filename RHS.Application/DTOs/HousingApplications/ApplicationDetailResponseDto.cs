@@ -26,6 +26,8 @@ public class ApplicationDetailResponseDto
     public Guid ApplicantId { get; set; }
     public string FullName { get; set; } = string.Empty;
     public string CitizenId { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+    public string? Email { get; set; }
     public string? Occupation { get; set; }
     public string? WorkPlace { get; set; }
     public string CurrentResidence { get; set; } = string.Empty;

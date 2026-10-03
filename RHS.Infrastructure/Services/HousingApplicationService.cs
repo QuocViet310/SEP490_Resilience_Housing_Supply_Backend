@@ -428,6 +428,8 @@ public class HousingApplicationService : IHousingApplicationService
             ApplicantId            = app.ApplicantId,
             FullName               = app.FullName,
             CitizenId              = app.CitizenId,
+            PhoneNumber            = app.Applicant?.PhoneNumber,
+            Email                  = app.Applicant?.Email,
             Occupation             = app.Occupation,
             WorkPlace              = app.WorkPlace,
             CurrentResidence       = app.CurrentResidence,
