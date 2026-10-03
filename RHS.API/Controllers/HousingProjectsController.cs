@@ -218,13 +218,18 @@ public class HousingProjectsController : ControllerBase
         catch (InvalidOperationException ex)
         {
             _logger.LogWarning(ex, "Invalid operation while updating housing project");
-            return NotFound(new { message = ex.Message });
+            if (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            return BadRequest(new { message = ex.Message });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "An error occurred while updating housing project");
+            var errorMsg = ex.InnerException?.Message ?? ex.Message;
             return StatusCode(StatusCodes.Status500InternalServerError, 
-                new { message = "An error occurred while processing your request" });
+                new { message = errorMsg });
         }
     }
 

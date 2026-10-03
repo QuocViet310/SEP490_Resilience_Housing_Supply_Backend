@@ -203,30 +203,85 @@ public class HousingProjectRepository : IHousingProjectRepository
 
     public async Task UpdateAsync(HousingProject entity)
     {
-        entity.UpdatedAt = DateTime.UtcNow;
+        var existing = await _context.HousingProjects
+            .Include(x => x.ProjectImages)
+            .Include(x => x.PaymentMilestones)
+            .FirstOrDefaultAsync(x => x.Id == entity.Id);
+
+        if (existing == null)
+        {
+            throw new InvalidOperationException($"Housing project with ID {entity.Id} not found.");
+        }
+
+        // Cập nhật thông tin dự án
+        existing.ProjectName = entity.ProjectName;
+        existing.Description = entity.Description;
+        existing.Province = entity.Province;
+        existing.District = entity.District;
+        existing.Street = entity.Street;
+        existing.Ward = entity.Ward;
+        existing.MinPrice = entity.MinPrice;
+        existing.MaxPrice = entity.MaxPrice;
+        existing.MinArea = entity.MinArea;
+        existing.MaxArea = entity.MaxArea;
+        existing.AvailableUnits = entity.AvailableUnits;
+        existing.ThumbnailUrl = entity.ThumbnailUrl;
+        existing.DecisionNumber = entity.DecisionNumber;
+        existing.DecisionDocumentUrl = entity.DecisionDocumentUrl;
+        existing.ApplicationOpenDate = entity.ApplicationOpenDate;
+        existing.ApplicationCloseDate = entity.ApplicationCloseDate;
+        existing.UpdatedAt = DateTime.UtcNow;
+
+        if (entity.DeveloperId.HasValue)
+        {
+            existing.DeveloperId = entity.DeveloperId;
+        }
 
         // Cập nhật thư viện hình ảnh dự án
-        var existingImages = await _context.ProjectImages
-            .Where(x => x.ProjectId == entity.Id)
-            .ToListAsync();
-        _context.ProjectImages.RemoveRange(existingImages);
-
-        if (entity.ProjectImages != null && entity.ProjectImages.Count > 0)
+        if (entity.ProjectImages != null)
         {
+            _context.ProjectImages.RemoveRange(existing.ProjectImages);
+            existing.ProjectImages.Clear();
+
             foreach (var img in entity.ProjectImages)
             {
-                if (img.Id == Guid.Empty) img.Id = Guid.NewGuid();
-                img.ProjectId = entity.Id;
-                _context.ProjectImages.Add(img);
+                existing.ProjectImages.Add(new ProjectImage
+                {
+                    Id = img.Id == Guid.Empty ? Guid.NewGuid() : img.Id,
+                    ProjectId = existing.Id,
+                    ImageUrl = img.ImageUrl,
+                    DisplayOrder = img.DisplayOrder,
+                    CreatedAt = img.CreatedAt == default ? DateTime.UtcNow : img.CreatedAt
+                });
             }
         }
 
-        // Bỏ qua navigation properties Apartments và PaymentMilestones để tránh xung đột EF Core tracking key.
-        // Quỹ căn hộ và Lịch thanh toán được quản lý và cập nhật qua các API chuyên biệt.
-        entity.Apartments = new List<Apartment>();
-        entity.PaymentMilestones = new List<PaymentMilestone>();
+        // Cập nhật lịch thanh toán (nếu có)
+        if (entity.PaymentMilestones != null && entity.PaymentMilestones.Count > 0)
+        {
+            _context.PaymentMilestones.RemoveRange(existing.PaymentMilestones);
+            existing.PaymentMilestones.Clear();
 
-        _context.HousingProjects.Update(entity);
+            foreach (var m in entity.PaymentMilestones)
+            {
+                existing.PaymentMilestones.Add(new PaymentMilestone
+                {
+                    Id = m.Id == Guid.Empty ? Guid.NewGuid() : m.Id,
+                    ProjectId = existing.Id,
+                    PhaseOrder = m.PhaseOrder,
+                    PhaseName = m.PhaseName,
+                    CalculationType = m.CalculationType,
+                    FixedAmount = m.FixedAmount,
+                    Percentage = m.Percentage,
+                    TriggerEvent = m.TriggerEvent,
+                    DueDays = m.DueDays,
+                    Description = m.Description,
+                    IsActive = m.IsActive,
+                    CreatedAt = m.CreatedAt == default ? DateTime.UtcNow : m.CreatedAt
+                });
+            }
+        }
+
         await _context.SaveChangesAsync();
 
         // AvailableUnits = Count(AVAILABLE) − soft-hold
