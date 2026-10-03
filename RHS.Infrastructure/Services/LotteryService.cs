@@ -281,6 +281,8 @@ public class LotteryService : ILotteryService
             throw new InvalidOperationException(
                 "Chỉ được chạy bốc thăm khi lịch ONLINE đã được Sở phê duyệt. Hãy dùng luồng sảnh Live.");
 
+        RequireSxdOnline(projectId, "chạy bốc thăm");
+
         var participants = await _db.HousingApplications
             .Include(a => a.PrincipleAgreement)
             .Where(a => a.ProjectId == projectId

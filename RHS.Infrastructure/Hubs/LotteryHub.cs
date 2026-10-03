@@ -206,8 +206,7 @@ public class LotteryHub : Hub<ILotteryHubClient>
     private bool IsSxd()
     {
         var roles = GetRoles();
-        return roles.Contains(RoleConstants.DepartmentOfConstruction)
-               || roles.Contains(RoleConstants.SystemAdministrator);
+        return roles.Contains(RoleConstants.DepartmentOfConstruction);
     }
 
     private void RequireHousingDeveloper()
