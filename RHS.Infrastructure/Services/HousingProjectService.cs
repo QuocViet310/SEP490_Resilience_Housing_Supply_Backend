@@ -167,7 +167,7 @@ public class HousingProjectService : IHousingProjectService
         var existingProject = await _repository.GetByIdAsync(id);
         if (existingProject == null)
         {
-            throw new InvalidOperationException($"Housing project with ID {id} not found.");
+            throw new InvalidOperationException("Dự án không tồn tại hoặc đã bị xóa.");
         }
 
         // Nạp dự án trước khi kiểm khung thời gian để biết CĐT có thực sự đổi ngày mở hay không.
@@ -279,7 +279,7 @@ public class HousingProjectService : IHousingProjectService
         var existingProject = await _repository.GetByIdAsync(id);
         if (existingProject == null)
         {
-            throw new InvalidOperationException($"Housing project with ID {id} not found.");
+            throw new InvalidOperationException("Dự án không tồn tại hoặc đã bị xóa.");
         }
 
         // Soft delete
@@ -292,7 +292,7 @@ public class HousingProjectService : IHousingProjectService
         var project = await _repository.GetByIdAsync(id);
         if (project == null)
         {
-            throw new InvalidOperationException($"Housing project with ID {id} not found.");
+            throw new InvalidOperationException("Dự án không tồn tại hoặc đã bị xóa.");
         }
 
         // Return mapped response
@@ -670,7 +670,7 @@ public class HousingProjectService : IHousingProjectService
         var project = await _repository.GetByIdAsync(id);
         if (project == null)
         {
-            throw new InvalidOperationException($"Housing project with ID {id} not found.");
+            throw new InvalidOperationException("Dự án không tồn tại hoặc đã bị xóa.");
         }
 
         // Must be PENDING to approve/reject
@@ -747,7 +747,7 @@ public class HousingProjectService : IHousingProjectService
         var project = await _repository.GetByIdAsync(id);
         if (project == null || project.IsDeleted)
         {
-            throw new InvalidOperationException($"Housing project with ID {id} not found.");
+            throw new InvalidOperationException("Dự án không tồn tại hoặc đã bị xóa.");
         }
 
         var currentCode = project.HousingProjectStatus?.StatusCode?.ToUpperInvariant();
