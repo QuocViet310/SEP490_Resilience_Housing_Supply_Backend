@@ -205,45 +205,25 @@ public class HousingProjectRepository : IHousingProjectRepository
     {
         entity.UpdatedAt = DateTime.UtcNow;
 
+        // Cập nhật thư viện hình ảnh dự án
         var existingImages = await _context.ProjectImages
             .Where(x => x.ProjectId == entity.Id)
             .ToListAsync();
         _context.ProjectImages.RemoveRange(existingImages);
 
-        // Chỉ xóa căn còn AVAILABLE; giữ căn đã ASSIGNED
-        var availableApartments = await _context.Apartments
-            .Where(x => x.ProjectId == entity.Id
-                        && x.Status == ApartmentStatusConstants.Available)
-            .ToListAsync();
-        _context.Apartments.RemoveRange(availableApartments);
-
-        var existingMilestones = await _context.PaymentMilestones
-            .Where(x => x.ProjectId == entity.Id)
-            .ToListAsync();
-        _context.PaymentMilestones.RemoveRange(existingMilestones);
-
-        // Chỉ attach căn mới (AVAILABLE) từ entity — bỏ qua ASSIGNED đã giữ trong DB
-        foreach (var apt in entity.Apartments
-                     .Where(a => a.Status == ApartmentStatusConstants.Available)
-                     .ToList())
+        if (entity.ProjectImages != null && entity.ProjectImages.Count > 0)
         {
-            if (apt.Id == Guid.Empty) apt.Id = Guid.NewGuid();
-            apt.ProjectId = entity.Id;
-            _context.Apartments.Add(apt);
+            foreach (var img in entity.ProjectImages)
+            {
+                if (img.Id == Guid.Empty) img.Id = Guid.NewGuid();
+                img.ProjectId = entity.Id;
+                _context.ProjectImages.Add(img);
+            }
         }
 
-        // Ghi lại milestones (Đợt 1/2, …)
-        foreach (var ms in entity.PaymentMilestones.ToList())
-        {
-            if (ms.Id == Guid.Empty) ms.Id = Guid.NewGuid();
-            ms.ProjectId = entity.Id;
-            _context.PaymentMilestones.Add(ms);
-        }
-
-        // Tránh EF track lại collection ASSIGNED cũ / milestone trùng
-        entity.Apartments = entity.Apartments
-            .Where(a => a.Status == ApartmentStatusConstants.Available)
-            .ToList();
+        // Bỏ qua navigation properties Apartments và PaymentMilestones để tránh xung đột EF Core tracking key.
+        // Quỹ căn hộ và Lịch thanh toán được quản lý và cập nhật qua các API chuyên biệt.
+        entity.Apartments = new List<Apartment>();
         entity.PaymentMilestones = new List<PaymentMilestone>();
 
         _context.HousingProjects.Update(entity);
